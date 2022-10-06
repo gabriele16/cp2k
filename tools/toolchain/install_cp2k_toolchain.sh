@@ -98,6 +98,8 @@ OPTIONS:
                           default option. Explicitly setting --with-acml, --with-mkl,
                           or --with-openblas options will switch --math-mode to the
                           respective modes.
+--nequip-mode             Selects which nequip interface to build with. Available options
+                          are: cpu, cuda.                          
 --gpu-ver                 Selects the GPU architecture for which to compile. Available
                           options are: K20X, K40, K80, P100, V100, Mi50, Mi100, Mi250, 
                           and no.
@@ -196,6 +198,10 @@ The --with-PKG options follow the rules:
                           Default = no
   --with-quip             Enable interface to QUIP library
                           Default = no
+  --with-deepmd           Enable interface to Nequip library.
+                          Mode of library should be selected from --nequip-mode
+                          for compatibility with CPU or CUDA version. 
+                          Default = no
   --with-plumed           Enable interface to the PLUMED library.
                           Default = no
   --with-sirius           Enable interface to the plane wave SIRIUS library.
@@ -255,7 +261,7 @@ mpi_list="mpich openmpi intelmpi"
 math_list="mkl acml openblas"
 lib_list="fftw libint libxc libxsmm cosma scalapack elpa plumed \
           spfft spla ptscotch superlu pexsi quip gsl spglib hdf5 libvdwxc sirius
-          libvori"
+          libvori nequip"
 package_list="${tool_list} ${mpi_list} ${math_list} ${lib_list}"
 # ------------------------------------------------------------------------
 
@@ -432,6 +438,17 @@ while [ $# -ge 1 ]; do
           ;;
       esac
       ;;
+    --nequip-mode=*)
+          user_input="${1#*=}"
+          case "$user_input" in
+            cuda)
+              export NEQUIP_MODE=cuda
+              ;;
+            *)
+              export NEQUIP_MODE=cpu
+              ;;
+          esac
+          ;;      
     --gpu-ver=*)
       user_input="${1#*=}"
       case "${user_input}" in
@@ -577,6 +594,9 @@ while [ $# -ge 1 ]; do
       ;;
     --with-quip*)
       with_quip=$(read_with "${1}")
+      ;;
+    --with-nequip*)
+      with_nequip=$(read_with "${1}")
       ;;
     --with-plumed*)
       with_plumed=$(read_with "${1}")
