@@ -131,9 +131,11 @@ MODULE rpa_im_time_force_methods
    USE qs_integrate_potential,          ONLY: integrate_pgf_product,&
                                               integrate_v_core_rspace,&
                                               integrate_v_rspace
+   USE qs_interactions,                 ONLY: init_interaction_radii_orb_basis
    USE qs_kind_types,                   ONLY: qs_kind_type
    USE qs_kinetic,                      ONLY: build_kinetic_matrix
    USE qs_ks_methods,                   ONLY: calc_rho_tot_gspace
+   USE qs_ks_reference,                 ONLY: ks_ref_potential
    USE qs_ks_types,                     ONLY: set_ks_env
    USE qs_linres_types,                 ONLY: linres_control_create,&
                                               linres_control_release,&
@@ -160,11 +162,8 @@ MODULE rpa_im_time_force_methods
                                               distribution_3d_type,&
                                               neighbor_list_3c_type
    USE realspace_grid_types,            ONLY: map_gaussian_here,&
-                                              realspace_grid_p_type,&
-                                              rs_grid_release,&
-                                              rs_grid_retain
-   USE response_solver,                 ONLY: ks_ref_potential,&
-                                              response_equation_new
+                                              realspace_grid_type
+   USE response_solver,                 ONLY: response_equation_new
    USE rpa_hfx,                         ONLY: add_exx_to_rhs
    USE rpa_im_time,                     ONLY: compute_mat_dm_global
    USE rpa_im_time_force_types,         ONLY: im_time_force_type
@@ -204,9 +203,9 @@ CONTAINS
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'init_im_time_forces'
 
-      INTEGER                                            :: handle, i_mem, i_xyz, ispin, &
+      INTEGER                                            :: handle, i_mem, i_xyz, ibasis, ispin, &
                                                             mp_comm_t3c, n_dependent, n_mem, &
-                                                            natom, nkind, nspins
+                                                            n_rep, natom, nkind, nspins
       INTEGER(int_8)                                     :: nze, nze_tot
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: dist1, dist2, dist_AO_1, dist_AO_2, &
                                                             dist_RI, dummy_end, dummy_start, &
@@ -216,7 +215,8 @@ CONTAINS
       INTEGER, DIMENSION(3)                              :: nblks_total, pcoord, pdims, pdims_t3c
       INTEGER, DIMENSION(:), POINTER                     :: col_bsize, row_bsize
       LOGICAL                                            :: do_periodic
-      REAL(dp)                                           :: compression_factor, memory, occ
+      REAL(dp)                                           :: compression_factor, eps_pgf_orb, &
+                                                            eps_pgf_orb_old, memory, occ
       TYPE(cell_type), POINTER                           :: cell
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
       TYPE(cp_para_env_type), POINTER                    :: para_env
@@ -233,6 +233,7 @@ CONTAINS
       TYPE(distribution_3d_type)                         :: dist_3d
       TYPE(gto_basis_set_p_type), ALLOCATABLE, &
          DIMENSION(:), TARGET                            :: basis_set_ao, basis_set_ri_aux
+      TYPE(gto_basis_set_type), POINTER                  :: orb_basis, ri_basis
       TYPE(libint_potential_type)                        :: identity_pot
       TYPE(neighbor_list_3c_type)                        :: nl_3c
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
@@ -240,9 +241,10 @@ CONTAINS
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_rho_type), POINTER                         :: rho
+      TYPE(section_vals_type), POINTER                   :: qs_section
 
       NULLIFY (dft_control, para_env, particle_set, qs_kind_set, dist_2d, nl_2c, blacs_env, matrix_s, &
-               rho, rho_ao, cell)
+               rho, rho_ao, cell, qs_section, orb_basis, ri_basis)
 
       CALL timeset(routineN, handle)
 
@@ -251,6 +253,17 @@ CONTAINS
       IF (dft_control%qs_control%gapw) THEN
          CPABORT("Low-scaling RPA/SOS-MP2 forces only available with GPW")
       END IF
+
+      !Make sure we use the proper QS EPS_PGF_ORB values
+      qs_section => section_vals_get_subs_vals(qs_env%input, "DFT%QS")
+      CALL section_vals_val_get(qs_section, "EPS_PGF_ORB", n_rep_val=n_rep)
+      IF (n_rep /= 0) THEN
+         CALL section_vals_val_get(qs_section, "EPS_PGF_ORB", r_val=eps_pgf_orb)
+      ELSE
+         CALL section_vals_val_get(qs_section, "EPS_DEFAULT", r_val=eps_pgf_orb)
+         eps_pgf_orb = SQRT(eps_pgf_orb)
+      END IF
+      eps_pgf_orb_old = dft_control%qs_control%eps_pgf_orb
 
       do_periodic = .FALSE.
       IF (ANY(cell%perd == 1)) do_periodic = .TRUE.
@@ -266,6 +279,13 @@ CONTAINS
       CALL get_particle_set(particle_set, qs_kind_set, nsgf=sizes_RI, basis=basis_set_ri_aux)
       CALL basis_set_list_setup(basis_set_ao, "ORB", qs_kind_set)
       CALL get_particle_set(particle_set, qs_kind_set, nsgf=sizes_AO, basis=basis_set_ao)
+
+      DO ibasis = 1, SIZE(basis_set_ao)
+         orb_basis => basis_set_ao(ibasis)%gto_basis_set
+         CALL init_interaction_radii_orb_basis(orb_basis, eps_pgf_orb)
+         ri_basis => basis_set_ri_aux(ibasis)%gto_basis_set
+         CALL init_interaction_radii_orb_basis(ri_basis, eps_pgf_orb)
+      END DO
 
       CALL create_3c_tensor(t_3c_template, dist_RI, dist_AO_1, dist_AO_2, pgrid_t3c, &
                             sizes_RI, sizes_AO, sizes_AO, map1=[1], map2=[2, 3], name="der (RI AO | AO)")
@@ -303,7 +323,7 @@ CONTAINS
       CALL get_idx_to_atom(force_data%idx_to_at_AO, force_data%bsizes_AO_split, sizes_AO)
 
       n_mem = mp2_env%ri_rpa_im_time%cut_memory
-      CALL create_tensor_batches(sizes_AO, n_mem, dummy_start, dummy_end, start_blocks, end_blocks)
+      CALL create_tensor_batches(sizes_RI, n_mem, dummy_start, dummy_end, start_blocks, end_blocks)
       DEALLOCATE (dummy_start, dummy_end)
 
       ALLOCATE (force_data%t_3c_der_AO_comp(n_mem, 3), force_data%t_3c_der_RI_comp(n_mem, 3))
@@ -315,7 +335,7 @@ CONTAINS
          CALL build_3c_derivatives(t_3c_der_RI_prv, t_3c_der_AO_prv, mp2_env%ri_rpa_im_time%eps_filter, &
                                    qs_env, nl_3c, basis_set_ri_aux, basis_set_ao, basis_set_ao, &
                                    mp2_env%ri_metric, der_eps=mp2_env%ri_rpa_im_time%eps_filter, op_pos=1, &
-                                   bounds_j=[start_blocks(i_mem), end_blocks(i_mem)])
+                                   bounds_i=[start_blocks(i_mem), end_blocks(i_mem)])
 
          DO i_xyz = 1, 3
             CALL dbt_copy(t_3c_der_RI_prv(1, 1, i_xyz), force_data%t_3c_der_RI(i_xyz), move_data=.TRUE.)
@@ -544,6 +564,13 @@ CONTAINS
       DO ispin = 1, nspins
          CALL dbcsr_copy(force_data%P_virt(ispin)%matrix, force_data%inv_ovlp)
          CALL dbcsr_add(force_data%P_virt(ispin)%matrix, force_data%P_occ(ispin)%matrix, 1.0_dp, -1.0_dp)
+      END DO
+
+      DO ibasis = 1, SIZE(basis_set_ao)
+         orb_basis => basis_set_ao(ibasis)%gto_basis_set
+         CALL init_interaction_radii_orb_basis(orb_basis, eps_pgf_orb_old)
+         ri_basis => basis_set_ri_aux(ibasis)%gto_basis_set
+         CALL init_interaction_radii_orb_basis(ri_basis, eps_pgf_orb_old)
       END DO
 
       CALL dbt_destroy(t_2c_template)
@@ -1952,6 +1979,7 @@ CONTAINS
             CALL dbt_batched_contract_finalize(t_R_virt)
          END DO
          CALL dbt_copy(t_3c_M, t_3c_3)
+         CALL dbt_copy(t_3c_M, t_M_virt)
          CALL timestop(handle2)
 
          CALL dbt_copy(t_M_occ, t_3c_4, move_data=.TRUE.)
@@ -2003,58 +2031,58 @@ CONTAINS
 
             END DO !k_mem
          END DO !j_mem
+         CALL dbt_copy(t_3c_8, t_3c_help_1, move_data=.TRUE.)
+
+         pref = 1.0_dp*fac
+         IF (use_virial) THEN
+            DO k_mem = 1, cut_memory
+               DO i_xyz = 1, 3
+                  CALL dbt_clear(force_data%t_3c_der_RI(i_xyz))
+                  CALL decompress_tensor(force_data%t_3c_der_RI(i_xyz), force_data%t_3c_der_RI_ind(k_mem, i_xyz)%ind, &
+                                         force_data%t_3c_der_RI_comp(k_mem, i_xyz), mp2_env%ri_rpa_im_time%eps_compress)
+               END DO
+               CALL get_force_from_3c_trace(force, t_3c_help_1, force_data%t_3c_der_RI, atom_of_kind, kind_of, &
+                                            force_data%idx_to_at_RI, pref, work_virial, cell, particle_set, &
+                                            do_mp2=.TRUE., deriv_dim=1)
+            END DO
+
+            CALL dbt_copy(t_3c_help_1, t_3c_help_2)
+            CALL dbt_copy(t_3c_help_1, t_3c_help_2, order=[1, 3, 2], move_data=.TRUE., summation=.TRUE.)
+            DO k_mem = 1, cut_memory
+               DO i_xyz = 1, 3
+                  CALL dbt_clear(force_data%t_3c_der_AO(i_xyz))
+                  CALL decompress_tensor(force_data%t_3c_der_AO(i_xyz), force_data%t_3c_der_AO_ind(k_mem, i_xyz)%ind, &
+                                         force_data%t_3c_der_AO_comp(k_mem, i_xyz), mp2_env%ri_rpa_im_time%eps_compress)
+               END DO
+               CALL get_force_from_3c_trace(force, t_3c_help_2, force_data%t_3c_der_AO, atom_of_kind, kind_of, &
+                                            force_data%idx_to_at_AO, pref, work_virial, cell, particle_set, &
+                                            do_mp2=.TRUE., deriv_dim=3)
+            END DO
+         ELSE
+            DO k_mem = 1, cut_memory
+               DO i_xyz = 1, 3
+                  CALL dbt_clear(force_data%t_3c_der_RI(i_xyz))
+                  CALL decompress_tensor(force_data%t_3c_der_RI(i_xyz), force_data%t_3c_der_RI_ind(k_mem, i_xyz)%ind, &
+                                         force_data%t_3c_der_RI_comp(k_mem, i_xyz), mp2_env%ri_rpa_im_time%eps_compress)
+               END DO
+               CALL get_force_from_3c_trace(force, t_3c_help_1, force_data%t_3c_der_RI, atom_of_kind, kind_of, &
+                                            force_data%idx_to_at_RI, pref, do_mp2=.TRUE., deriv_dim=1)
+            END DO
+
+            CALL dbt_copy(t_3c_help_1, t_3c_help_2)
+            CALL dbt_copy(t_3c_help_1, t_3c_help_2, order=[1, 3, 2], move_data=.TRUE., summation=.TRUE.)
+            DO k_mem = 1, cut_memory
+               DO i_xyz = 1, 3
+                  CALL dbt_clear(force_data%t_3c_der_AO(i_xyz))
+                  CALL decompress_tensor(force_data%t_3c_der_AO(i_xyz), force_data%t_3c_der_AO_ind(k_mem, i_xyz)%ind, &
+                                         force_data%t_3c_der_AO_comp(k_mem, i_xyz), mp2_env%ri_rpa_im_time%eps_compress)
+               END DO
+               CALL get_force_from_3c_trace(force, t_3c_help_2, force_data%t_3c_der_AO, atom_of_kind, kind_of, &
+                                            force_data%idx_to_at_AO, pref, do_mp2=.TRUE., deriv_dim=3)
+            END DO
+         END IF
+         CALL dbt_clear(t_3c_help_2)
       END DO !i_mem
-      CALL dbt_copy(t_3c_8, t_3c_help_1, move_data=.TRUE.)
-
-      pref = 1.0_dp*fac
-      IF (use_virial) THEN
-         DO i_mem = 1, cut_memory
-            DO i_xyz = 1, 3
-               CALL dbt_clear(force_data%t_3c_der_RI(i_xyz))
-               CALL decompress_tensor(force_data%t_3c_der_RI(i_xyz), force_data%t_3c_der_RI_ind(i_mem, i_xyz)%ind, &
-                                      force_data%t_3c_der_RI_comp(i_mem, i_xyz), mp2_env%ri_rpa_im_time%eps_compress)
-            END DO
-            CALL get_force_from_3c_trace(force, t_3c_help_1, force_data%t_3c_der_RI, atom_of_kind, kind_of, &
-                                         force_data%idx_to_at_RI, pref, work_virial, cell, particle_set, &
-                                         do_mp2=.TRUE., deriv_dim=1)
-         END DO
-
-         CALL dbt_copy(t_3c_help_1, t_3c_help_2)
-         CALL dbt_copy(t_3c_help_1, t_3c_help_2, order=[1, 3, 2], move_data=.TRUE., summation=.TRUE.)
-         DO i_mem = 1, cut_memory
-            DO i_xyz = 1, 3
-               CALL dbt_clear(force_data%t_3c_der_AO(i_xyz))
-               CALL decompress_tensor(force_data%t_3c_der_AO(i_xyz), force_data%t_3c_der_AO_ind(i_mem, i_xyz)%ind, &
-                                      force_data%t_3c_der_AO_comp(i_mem, i_xyz), mp2_env%ri_rpa_im_time%eps_compress)
-            END DO
-            CALL get_force_from_3c_trace(force, t_3c_help_2, force_data%t_3c_der_AO, atom_of_kind, kind_of, &
-                                         force_data%idx_to_at_AO, pref, work_virial, cell, particle_set, &
-                                         do_mp2=.TRUE., deriv_dim=3)
-         END DO
-      ELSE
-         DO i_mem = 1, cut_memory
-            DO i_xyz = 1, 3
-               CALL dbt_clear(force_data%t_3c_der_RI(i_xyz))
-               CALL decompress_tensor(force_data%t_3c_der_RI(i_xyz), force_data%t_3c_der_RI_ind(i_mem, i_xyz)%ind, &
-                                      force_data%t_3c_der_RI_comp(i_mem, i_xyz), mp2_env%ri_rpa_im_time%eps_compress)
-            END DO
-            CALL get_force_from_3c_trace(force, t_3c_help_1, force_data%t_3c_der_RI, atom_of_kind, kind_of, &
-                                         force_data%idx_to_at_RI, pref, do_mp2=.TRUE., deriv_dim=1)
-         END DO
-
-         CALL dbt_copy(t_3c_help_1, t_3c_help_2)
-         CALL dbt_copy(t_3c_help_1, t_3c_help_2, order=[1, 3, 2], move_data=.TRUE., summation=.TRUE.)
-         DO i_mem = 1, cut_memory
-            DO i_xyz = 1, 3
-               CALL dbt_clear(force_data%t_3c_der_AO(i_xyz))
-               CALL decompress_tensor(force_data%t_3c_der_AO(i_xyz), force_data%t_3c_der_AO_ind(i_mem, i_xyz)%ind, &
-                                      force_data%t_3c_der_AO_comp(i_mem, i_xyz), mp2_env%ri_rpa_im_time%eps_compress)
-            END DO
-            CALL get_force_from_3c_trace(force, t_3c_help_2, force_data%t_3c_der_AO, atom_of_kind, kind_of, &
-                                         force_data%idx_to_at_AO, pref, do_mp2=.TRUE., deriv_dim=3)
-         END DO
-      END IF
-      CALL dbt_clear(t_3c_help_2)
 
       DO k_mem = 1, n_mem_RI
          DO i_mem = 1, cut_memory
@@ -2582,12 +2610,12 @@ CONTAINS
          POINTER                                         :: sab_orb
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(pw_env_type), POINTER                         :: pw_env_ext
-      TYPE(pw_p_type)                                    :: dvg(3), pot_g, psi_L, rho_g, rho_g_copy, &
-                                                            rho_r
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
+      TYPE(pw_type)                                      :: dvg(3), pot_g, psi_L, rho_g, rho_g_copy, &
+                                                            rho_r
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
-      TYPE(realspace_grid_p_type), DIMENSION(:), POINTER :: rs_v
+      TYPE(realspace_grid_type), DIMENSION(:), POINTER   :: rs_v
       TYPE(task_list_type), POINTER                      :: task_list_ext
 
       NULLIFY (sab_orb, task_list_ext, particle_set, qs_kind_set, dft_control, pw_env_ext, auxbas_pw_pool, &
@@ -2666,13 +2694,11 @@ CONTAINS
                        auxbas_pw_pool, poisson_env, task_list_ext, rho_r, rho_g, pot_g, psi_L, sab_orb)
 
       IF (use_virial) THEN
-         ALLOCATE (rho_g_copy%pw)
-         CALL pw_pool_create_pw(auxbas_pw_pool, rho_g_copy%pw, &
+         CALL pw_pool_create_pw(auxbas_pw_pool, rho_g_copy, &
                                 use_data=COMPLEXDATA1D, &
                                 in_space=RECIPROCALSPACE)
          DO i_xyz = 1, 3
-            ALLOCATE (dvg(i_xyz)%pw)
-            CALL pw_pool_create_pw(auxbas_pw_pool, dvg(i_xyz)%pw, &
+            CALL pw_pool_create_pw(auxbas_pw_pool, dvg(i_xyz), &
                                    use_data=COMPLEXDATA1D, &
                                    in_space=RECIPROCALSPACE)
          END DO
@@ -2706,7 +2732,7 @@ CONTAINS
             wf_vector = 0.0_dp
             wf_vector(j_RI) = 1.0_dp
 
-            CALL calculate_wavefunction(mos(1)%mo_set%mo_coeff, 1, psi_L%pw, rho_g%pw, atomic_kind_set, &
+            CALL calculate_wavefunction(mos(1)%mo_set%mo_coeff, 1, psi_L, rho_g, atomic_kind_set, &
                                         qs_kind_set, cell, dft_control, particle_set, pw_env_ext, &
                                         basis_type="RI_AUX", external_vector=wf_vector)
 
@@ -2727,8 +2753,8 @@ CONTAINS
                   wf_vector(i_RI + 1:i_RI + sizes_RI(iatom)) = pblock(:, j_RI - lb_RI)
                END DO
 
-               CALL pw_copy(rho_g%pw, rho_g_copy%pw)
-               CALL calculate_wavefunction(mos(1)%mo_set%mo_coeff, 1, psi_L%pw, rho_g%pw, atomic_kind_set, &
+               CALL pw_copy(rho_g, rho_g_copy)
+               CALL calculate_wavefunction(mos(1)%mo_set%mo_coeff, 1, psi_L, rho_g, atomic_kind_set, &
                                            qs_kind_set, cell, dft_control, particle_set, pw_env_ext, &
                                            basis_type="RI_AUX", external_vector=wf_vector)
 
@@ -2742,10 +2768,7 @@ CONTAINS
 
             NULLIFY (rs_v)
             CALL pw_env_get(pw_env_ext, rs_grids=rs_v)
-            DO i = 1, SIZE(rs_v)
-               CALL rs_grid_retain(rs_v(i)%rs_grid)
-            END DO
-            CALL potential_pw2rs(rs_v, rho_r%pw, pw_env_ext)
+            CALL potential_pw2rs(rs_v, rho_r, pw_env_ext)
 
             DO iatom = 1, natom
 
@@ -2796,7 +2819,7 @@ CONTAINS
 
                   ! The last three parameters are used to check whether a given function is within the own range.
                   ! Here, it is always the case, so let's enforce it because mod(0, 1)==0
-                  IF (map_gaussian_here(rs_v(igrid_level)%rs_grid, cell%h_inv, ra, 0, 1, 0)) THEN
+                  IF (map_gaussian_here(rs_v(igrid_level), cell%h_inv, ra, 0, 1, 0)) THEN
                      DO ipgf = 1, npgfa(iset)
                         o1 = (ipgf - 1)*ncoset(la_max(iset))
                         igrid_level = gaussian_gridlevel(pw_env_ext%gridlevel_info, zeta(ipgf, iset))
@@ -2811,7 +2834,7 @@ CONTAINS
                            la_max=la_max(iset), zeta=zeta(ipgf, iset), la_min=la_min(iset), &
                            lb_max=0, zetb=0.0_dp, lb_min=0, &
                            ra=ra, rab=(/0.0_dp, 0.0_dp, 0.0_dp/), &
-                           rsgrid=rs_v(igrid_level)%rs_grid, &
+                           rsgrid=rs_v(igrid_level), &
                            hab=h_tmp, pab=pab, &
                            o1=o1, &
                            o2=0, &
@@ -2832,19 +2855,13 @@ CONTAINS
                IF (use_virial) h_stress = h_stress + my_virial_a + my_virial_b
 
             END DO !iatom
-
-            DO i = 1, SIZE(rs_v)
-               CALL rs_grid_release(rs_v(i)%rs_grid)
-            END DO
          END DO !j_RI
       END DO !jatom
 
       IF (use_virial) THEN
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_g_copy%pw)
-         DEALLOCATE (rho_g_copy%pw)
+         CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_g_copy)
          DO i_xyz = 1, 3
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, dvg(i_xyz)%pw)
-            DEALLOCATE (dvg(i_xyz)%pw)
+            CALL pw_pool_give_back_pw(auxbas_pw_pool, dvg(i_xyz))
          END DO
       END IF
 
@@ -3128,6 +3145,7 @@ CONTAINS
       IF (use_virial) THEN
          h_stress = 0.0_dp
          virial%pv_xc = 0.0_dp
+         NULLIFY (vxc_rspace, vtau_rspace, vadmm_rspace)
          CALL ks_ref_potential(qs_env, vh_rspace, vxc_rspace, vtau_rspace, vadmm_rspace, &
                                dummy_real1, dummy_real2, h_stress)
          virial%pv_ehartree = virial%pv_ehartree + h_stress/REAL(para_env%num_pe, dp)
@@ -3805,31 +3823,35 @@ CONTAINS
 !> \param weights_cos_tf_t_to_w ...
 !> \param weights_cos_tf_w_to_t ...
 !> \param do_laplace ...
+!> \param do_im_time ...
 !> \param num_integ_points ...
 !> \param unit_nr ...
 !> \param qs_env ...
 ! **************************************************************************************************
    SUBROUTINE keep_initial_quad(tj, wj, tau_tj, tau_wj, weights_cos_tf_t_to_w, weights_cos_tf_w_to_t, &
-                                do_laplace, num_integ_points, unit_nr, qs_env)
+                                do_laplace, do_im_time, num_integ_points, unit_nr, qs_env)
 
-      REAL(dp), DIMENSION(:), INTENT(INOUT)              :: tj, wj, tau_tj, tau_wj
-      REAL(dp), DIMENSION(:, :), INTENT(INOUT)           :: weights_cos_tf_t_to_w, &
+      REAL(dp), ALLOCATABLE, DIMENSION(:), INTENT(INOUT) :: tj, wj, tau_tj, tau_wj
+      REAL(dp), ALLOCATABLE, DIMENSION(:, :), &
+         INTENT(INOUT)                                   :: weights_cos_tf_t_to_w, &
                                                             weights_cos_tf_w_to_t
-      LOGICAL, INTENT(IN)                                :: do_laplace
+      LOGICAL, INTENT(IN)                                :: do_laplace, do_im_time
       INTEGER, INTENT(IN)                                :: num_integ_points, unit_nr
       TYPE(qs_environment_type), POINTER                 :: qs_env
 
       INTEGER                                            :: jquad
 
-      IF (.NOT. ASSOCIATED(qs_env%mp2_env%ri_rpa_im_time%tau_tj)) THEN
-         ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%tau_tj(0:num_integ_points))
-         ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%tau_wj(num_integ_points))
-         qs_env%mp2_env%ri_rpa_im_time%tau_tj(:) = tau_tj(:)
-         qs_env%mp2_env%ri_rpa_im_time%tau_wj(:) = tau_wj(:)
-      ELSE
-         !If weights already stored, we overwrite the new ones
-         tau_tj(:) = qs_env%mp2_env%ri_rpa_im_time%tau_tj(:)
-         tau_wj(:) = qs_env%mp2_env%ri_rpa_im_time%tau_wj(:)
+      IF (do_laplace .OR. do_im_time) THEN
+         IF (.NOT. ASSOCIATED(qs_env%mp2_env%ri_rpa_im_time%tau_tj)) THEN
+            ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%tau_tj(0:num_integ_points))
+            ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%tau_wj(num_integ_points))
+            qs_env%mp2_env%ri_rpa_im_time%tau_tj(:) = tau_tj(:)
+            qs_env%mp2_env%ri_rpa_im_time%tau_wj(:) = tau_wj(:)
+         ELSE
+            !If weights already stored, we overwrite the new ones
+            tau_tj(:) = qs_env%mp2_env%ri_rpa_im_time%tau_tj(:)
+            tau_wj(:) = qs_env%mp2_env%ri_rpa_im_time%tau_wj(:)
+         END IF
       END IF
       IF (.NOT. do_laplace) THEN
          IF (.NOT. ASSOCIATED(qs_env%mp2_env%ri_rpa_im_time%tj)) THEN
@@ -3837,15 +3859,19 @@ CONTAINS
             ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%wj(num_integ_points))
             qs_env%mp2_env%ri_rpa_im_time%tj(:) = tj(:)
             qs_env%mp2_env%ri_rpa_im_time%wj(:) = wj(:)
-            ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_t_to_w(num_integ_points, num_integ_points))
-            ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_w_to_t(num_integ_points, num_integ_points))
-            qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_t_to_w(:, :) = weights_cos_tf_t_to_w(:, :)
-            qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_w_to_t(:, :) = weights_cos_tf_w_to_t(:, :)
+            IF (do_im_time) THEN
+               ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_t_to_w(num_integ_points, num_integ_points))
+               ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_w_to_t(num_integ_points, num_integ_points))
+               qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_t_to_w(:, :) = weights_cos_tf_t_to_w(:, :)
+               qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_w_to_t(:, :) = weights_cos_tf_w_to_t(:, :)
+            END IF
          ELSE
             tj(:) = qs_env%mp2_env%ri_rpa_im_time%tj(:)
             wj(:) = qs_env%mp2_env%ri_rpa_im_time%wj(:)
-            weights_cos_tf_t_to_w(:, :) = qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_t_to_w(:, :)
-            weights_cos_tf_w_to_t(:, :) = qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_w_to_t(:, :)
+            IF (do_im_time) THEN
+               weights_cos_tf_t_to_w(:, :) = qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_t_to_w(:, :)
+               weights_cos_tf_w_to_t(:, :) = qs_env%mp2_env%ri_rpa_im_time%weights_cos_tf_w_to_t(:, :)
+            END IF
          END IF
       END IF
       IF (unit_nr > 0) THEN
@@ -3854,7 +3880,7 @@ CONTAINS
             WRITE (UNIT=unit_nr, FMT="(T3,A,T75,i6)") &
                "MINIMAX_INFO| Number of integration points:", num_integ_points
             WRITE (UNIT=unit_nr, FMT="(T3,A,T54,A,T72,A)") &
-               "MINIMAX_INFO| Minimax params (freq gird, scaled):", "Weights", "Abscissas"
+               "MINIMAX_INFO| Minimax params (freq grid, scaled):", "Weights", "Abscissas"
             DO jquad = 1, num_integ_points
                WRITE (UNIT=unit_nr, FMT="(T41,F20.10,F20.10)") wj(jquad), tj(jquad)
             END DO

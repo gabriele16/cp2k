@@ -1530,8 +1530,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(3, 3), INTENT(INOUT), &
          OPTIONAL                                        :: virial_xc
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'xc_calc_2nd_deriv', &
-                                     routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER :: routineN = 'xc_calc_2nd_deriv'
 
       INTEGER                                            :: handle, ispin, nspins
       INTEGER, DIMENSION(2, 3)                           :: bo
@@ -1665,8 +1664,7 @@ CONTAINS
          OPTIONAL                                        :: virial_xc
       TYPE(xc_derivative_set_type), OPTIONAL             :: deriv_set
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'xc_calc_2nd_deriv_numerical', &
-                                     routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER :: routineN = 'xc_calc_2nd_deriv_numerical'
       REAL(KIND=dp), DIMENSION(-4:4, 4), PARAMETER :: &
          weights = RESHAPE([0.0_dp, 0.0_dp, 0.0_dp, -0.5_dp, 0.0_dp, 0.5_dp, 0.0_dp, 0.0_dp, 0.0_dp, &
                            0.0_dp, 0.0_dp, 1.0_dp/12.0_dp, -2.0_dp/3.0_dp, 0.0_dp, 2.0_dp/3.0_dp, -1.0_dp/12.0_dp, 0.0_dp, 0.0_dp, &
@@ -2313,8 +2311,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:, :, :), POINTER, INTENT(IN) :: rhoa, rhob, tau_a, tau_b
       TYPE(pw_p_type), DIMENSION(:), POINTER, INTENT(IN) :: rho_g, rho_r, tau_r
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'calc_resp_potential_numer_ab', &
-                                     routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER :: routineN = 'calc_resp_potential_numer_ab'
 
       INTEGER                                            :: handle
       REAL(KIND=dp)                                      :: exc
@@ -2370,7 +2367,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:, :, :), INTENT(IN)      :: dr1dr
       REAL(KIND=dp), DIMENSION(:, :, :), INTENT(INOUT)   :: v_drho
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'apply_drho', routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER :: routineN = 'apply_drho'
 
       INTEGER                                            :: handle
       REAL(KIND=dp), DIMENSION(:, :, :), POINTER         :: deriv_data
@@ -2417,8 +2414,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(bo(1, 1):bo(2, 1), bo(1, &
                                                      2):bo(2, 2), bo(1, 3):bo(2, 3)), INTENT(INOUT)  :: v_drho
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'update_deriv_rho', &
-                                     routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER :: routineN = 'update_deriv_rho'
 
       INTEGER                                            :: handle, i, j, k
       REAL(KIND=dp)                                      :: de
@@ -2468,8 +2464,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(bo(1, 1):bo(2, 1), bo(1, &
                                                      2):bo(2, 2), bo(1, 3):bo(2, 3)), INTENT(INOUT)  :: v
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'update_deriv', &
-                                     routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER :: routineN = 'update_deriv'
 
       INTEGER                                            :: handle, i, j, k
       REAL(KIND=dp)                                      :: de
@@ -2527,8 +2522,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(bo(1, 1):bo(2, 1), bo(1, &
                                                      2):bo(2, 2), bo(1, 3):bo(2, 3)), INTENT(INOUT)  :: v_drhoa, v_drhob
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'update_deriv_drho_ab', &
-                                     routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER :: routineN = 'update_deriv_drho_ab'
 
       INTEGER                                            :: handle, i, j, k
       REAL(KIND=dp)                                      :: de
@@ -2577,7 +2571,7 @@ CONTAINS
       TYPE(xc_rho_set_type), INTENT(INOUT)               :: rho2_set
       TYPE(xc_derivative_set_type)                       :: deriv_set1
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'get_derivs_rho', routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER :: routineN = 'get_derivs_rho'
 
       INTEGER                                            :: handle
 
@@ -2845,26 +2839,26 @@ CONTAINS
                      DO idir = 1, 3
                         DO ispin = 1, nspins
                            vxg(idir, ia, ir, ispin) = &
-                              v_drhoa(ispin)%pw%cr3d(ia, ir, 1)*drhoa(idir)%array(ia, ir, 1) + &
-                              v_drhob(ispin)%pw%cr3d(ia, ir, 1)*drhob(idir)%array(ia, ir, 1) + &
-                              v_drho(ispin)%pw%cr3d(ia, ir, 1)*drho(idir)%array(ia, ir, 1)
+                              -(v_drhoa(ispin)%pw%cr3d(ia, ir, 1)*drhoa(idir)%array(ia, ir, 1) + &
+                                v_drhob(ispin)%pw%cr3d(ia, ir, 1)*drhob(idir)%array(ia, ir, 1) + &
+                                v_drho(ispin)%pw%cr3d(ia, ir, 1)*drho(idir)%array(ia, ir, 1))
                         END DO
                         IF (ASSOCIATED(e_drhoa)) THEN
-                           vxg(idir, ia, ir, 1) = vxg(idir, ia, ir, 1) - &
+                           vxg(idir, ia, ir, 1) = vxg(idir, ia, ir, 1) + &
                                                   e_drhoa(ia, ir, 1)*drho1a(idir)%array(ia, ir, 1)
                         END IF
                         IF (nspins /= 1 .AND. ASSOCIATED(e_drhob)) THEN
-                           vxg(idir, ia, ir, 2) = vxg(idir, ia, ir, 2) - &
+                           vxg(idir, ia, ir, 2) = vxg(idir, ia, ir, 2) + &
                                                   e_drhob(ia, ir, 1)*drho1b(idir)%array(ia, ir, 1)
                         END IF
                         IF (ASSOCIATED(e_drho)) THEN
                            IF (nspins /= 1) THEN
-                              vxg(idir, ia, ir, 1) = vxg(idir, ia, ir, 1) - &
+                              vxg(idir, ia, ir, 1) = vxg(idir, ia, ir, 1) + &
                                                      e_drho(ia, ir, 1)*drho1(idir)%array(ia, ir, 1)
-                              vxg(idir, ia, ir, 2) = vxg(idir, ia, ir, 2) - &
+                              vxg(idir, ia, ir, 2) = vxg(idir, ia, ir, 2) + &
                                                      e_drho(ia, ir, 1)*drho1(idir)%array(ia, ir, 1)
                            ELSE
-                              vxg(idir, ia, ir, 1) = vxg(idir, ia, ir, 1) - &
+                              vxg(idir, ia, ir, 1) = vxg(idir, ia, ir, 1) + &
                                                      e_drho(ia, ir, 1)*(drho1a(idir)%array(ia, ir, 1) + &
                                                                         fac*drho1b(idir)%array(ia, ir, 1))
                            END IF
@@ -2996,9 +2990,9 @@ CONTAINS
 !$OMP               SHARED(bo,vxg,drho,v_drho,e_drho,drho1,idir) COLLAPSE(2)
                   DO ia = bo(1, 1), bo(2, 1)
                      DO ir = bo(1, 2), bo(2, 2)
-                        vxg(idir, ia, ir, 1) = drho(idir)%array(ia, ir, 1)*v_drho(1)%pw%cr3d(ia, ir, 1)
+                        vxg(idir, ia, ir, 1) = -drho(idir)%array(ia, ir, 1)*v_drho(1)%pw%cr3d(ia, ir, 1)
                         IF (ASSOCIATED(e_drho)) THEN
-                           vxg(idir, ia, ir, 1) = vxg(idir, ia, ir, 1) - drho1(idir)%array(ia, ir, 1)*e_drho(ia, ir, 1)
+                           vxg(idir, ia, ir, 1) = vxg(idir, ia, ir, 1) + drho1(idir)%array(ia, ir, 1)*e_drho(ia, ir, 1)
                         END IF
                      END DO
                   END DO

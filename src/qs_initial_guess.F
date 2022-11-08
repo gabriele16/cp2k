@@ -142,15 +142,13 @@ CONTAINS
       INTEGER :: atom_a, blk, density_guess, group, handle, homo, i, iatom, ic, icol, id_nr, &
          ikind, irow, iseed(4), ispin, istart_col, istart_row, j, last_read, n, n_cols, n_rows, &
          nao, natom, natoms, natoms_tmp, nblocks, nelectron, nmo, nmo_tmp, not_read, nsgf, nspin, &
-         nvec, ounit, qs_env_id, safe_density_guess, size_atomic_kind_set, z
+         nvec, ounit, safe_density_guess, size_atomic_kind_set, z
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: first_sgf, kind_of, last_sgf
       INTEGER, DIMENSION(2)                              :: nelectron_spin
       INTEGER, DIMENSION(:), POINTER                     :: atom_list, elec_conf, nelec_kind, &
                                                             sort_kind
-      LOGICAL                                            :: did_guess, do_hfx_ri_mo, do_kpoints, &
-                                                            do_std_diag, exist, has_unit_metric, &
-                                                            natom_mismatch, need_mos, need_wm, &
-                                                            ofgpw
+      LOGICAL :: did_guess, do_hfx_ri_mo, do_kpoints, do_std_diag, exist, has_unit_metric, &
+         natom_mismatch, need_mos, need_wm, ofgpw, owns_ortho
       REAL(dp), ALLOCATABLE, DIMENSION(:, :)             :: buff, buff2
       REAL(dp), DIMENSION(:, :), POINTER                 :: pdata
       REAL(KIND=dp)                                      :: checksum, eps, length, maxocc, occ, &
@@ -207,7 +205,6 @@ CONTAINS
                       matrix_ks_kp=matrix_ks_kp, &
                       input=input, &
                       scf_control=scf_control, &
-                      id_nr=qs_env_id, &
                       dft_control=dft_control, &
                       has_unit_metric=has_unit_metric, &
                       do_kpoints=do_kpoints, &
@@ -534,6 +531,7 @@ CONTAINS
             CPABORT("calculate_first_density_matrix: core_guess not implemented for k-points")
          END IF
 
+         owns_ortho = .FALSE.
          IF (.NOT. ASSOCIATED(work1)) THEN
             need_wm = .TRUE.
             CPASSERT(.NOT. ASSOCIATED(work2))
@@ -541,6 +539,10 @@ CONTAINS
          ELSE
             need_wm = .FALSE.
             CPASSERT(ASSOCIATED(work2))
+            IF (.NOT. ASSOCIATED(ortho)) THEN
+               ALLOCATE (ortho)
+               owns_ortho = .TRUE.
+            END IF
          END IF
 
          IF (need_wm) THEN
@@ -585,7 +587,6 @@ CONTAINS
                              cholesky_method=scf_env%cholesky_method, &
                              do_level_shift=.FALSE., &
                              level_shift=0.0_dp, &
-                             matrix_u_fm=null(), &
                              use_jacobi=.FALSE.)
          END IF
 
@@ -611,6 +612,8 @@ CONTAINS
             DEALLOCATE (ortho, work2, work1(1)%matrix)
             DEALLOCATE (work1)
             NULLIFY (work1, work2, ortho)
+         ELSE IF (owns_ortho) THEN
+            DEALLOCATE (ortho)
          END IF
 
          did_guess = .TRUE.

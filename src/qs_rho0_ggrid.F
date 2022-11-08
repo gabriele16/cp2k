@@ -42,7 +42,6 @@ MODULE qs_rho0_ggrid
                                               REALDATA3D,&
                                               REALSPACE,&
                                               RECIPROCALSPACE,&
-                                              pw_p_type,&
                                               pw_release,&
                                               pw_type
    USE qs_environment_types,            ONLY: get_qs_env,&
@@ -61,9 +60,8 @@ MODULE qs_rho0_ggrid
                                               rho_atom_coeff,&
                                               rho_atom_type
    USE realspace_grid_types,            ONLY: &
-        pw2rs, realspace_grid_desc_p_type, realspace_grid_desc_type, realspace_grid_p_type, &
-        realspace_grid_type, rs2pw, rs_grid_create, rs_grid_release, rs_grid_retain, rs_grid_zero, &
-        rs_pw_transfer
+        pw2rs, realspace_grid_desc_p_type, realspace_grid_desc_type, realspace_grid_type, rs2pw, &
+        rs_grid_create, rs_grid_release, rs_grid_zero, rs_pw_transfer
    USE util,                            ONLY: get_limit
    USE virial_types,                    ONLY: virial_type
 #include "./base/base_uses.f90"
@@ -111,16 +109,15 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(pw_env_type), POINTER                         :: pw_env
-      TYPE(pw_p_type), POINTER                           :: coeff_gspace, coeff_rspace
       TYPE(pw_pool_p_type), DIMENSION(:), POINTER        :: pw_pools
       TYPE(pw_pool_type), POINTER                        :: pw_pool
-      TYPE(pw_type)                                      :: rho0_r_tmp
+      TYPE(pw_type)                                      :: coeff_gspace, coeff_rspace, rho0_r_tmp
       TYPE(pw_type), POINTER                             :: rho0_s_gs, rho0_s_rs
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(realspace_grid_desc_p_type), DIMENSION(:), &
          POINTER                                         :: descs
       TYPE(realspace_grid_desc_type), POINTER            :: desc
-      TYPE(realspace_grid_p_type), DIMENSION(:), POINTER :: grids
+      TYPE(realspace_grid_type), DIMENSION(:), POINTER   :: grids
       TYPE(realspace_grid_type), POINTER                 :: rs_grid
 
       CALL timeset(routineN, handle)
@@ -147,26 +144,21 @@ CONTAINS
                           rho0_s_rs=rho0_s_rs)
 
       ! *** set up the rs grid at level igrid
-      NULLIFY (rs_grid, desc, pw_pool, coeff_rspace, coeff_gspace)
+      NULLIFY (rs_grid, desc, pw_pool)
       desc => descs(igrid)%rs_desc
-      rs_grid => grids(igrid)%rs_grid
+      rs_grid => grids(igrid)
       pw_pool => pw_pools(igrid)%pool
 
       CPASSERT(ASSOCIATED(desc))
       CPASSERT(ASSOCIATED(pw_pool))
 
       IF (igrid /= auxbas_grid) THEN
-         ALLOCATE (coeff_rspace)
-         ALLOCATE (coeff_gspace)
-
-         ALLOCATE (coeff_rspace%pw, coeff_gspace%pw)
-         CALL pw_pool_create_pw(pw_pool, coeff_rspace%pw, use_data=REALDATA3D, &
+         CALL pw_pool_create_pw(pw_pool, coeff_rspace, use_data=REALDATA3D, &
                                 in_space=REALSPACE)
-         CALL pw_pool_create_pw(pw_pool, coeff_gspace%pw, &
+         CALL pw_pool_create_pw(pw_pool, coeff_gspace, &
                                 use_data=COMPLEXDATA1D, &
                                 in_space=RECIPROCALSPACE)
       END IF
-      CALL rs_grid_retain(rs_grid)
       CALL rs_grid_zero(rs_grid)
 
       nch_max = ncoset(lmax0)
@@ -234,27 +226,21 @@ CONTAINS
       DEALLOCATE (pab)
 
       IF (igrid /= auxbas_grid) THEN
-         CALL rs_pw_transfer(rs_grid, coeff_rspace%pw, rs2pw)
-         CALL rs_grid_release(rs_grid)
+         CALL rs_pw_transfer(rs_grid, coeff_rspace, rs2pw)
          CALL pw_zero(rho0_s_gs)
-         CALL pw_transfer(coeff_rspace%pw, coeff_gspace%pw)
-         CALL pw_axpy(coeff_gspace%pw, rho0_s_gs)
+         CALL pw_transfer(coeff_rspace, coeff_gspace)
+         CALL pw_axpy(coeff_gspace, rho0_s_gs)
 
-         tot_rs_int = pw_integrate_function(coeff_rspace%pw, isign=-1)
+         tot_rs_int = pw_integrate_function(coeff_rspace, isign=-1)
 
-         CALL pw_pool_give_back_pw(pw_pool, coeff_rspace%pw)
-         CALL pw_pool_give_back_pw(pw_pool, coeff_gspace%pw)
-         DEALLOCATE (coeff_rspace%pw, coeff_gspace%pw)
-
-         DEALLOCATE (coeff_rspace, coeff_gspace)
-
+         CALL pw_pool_give_back_pw(pw_pool, coeff_rspace)
+         CALL pw_pool_give_back_pw(pw_pool, coeff_gspace)
       ELSE
 
          CALL pw_pool_create_pw(pw_pool, rho0_r_tmp, &
                                 use_data=REALDATA3D, in_space=REALSPACE)
 
          CALL rs_pw_transfer(rs_grid, rho0_r_tmp, rs2pw)
-         CALL rs_grid_release(rs_grid)
 
          tot_rs_int = pw_integrate_function(rho0_r_tmp, isign=-1)
 
@@ -360,16 +346,16 @@ CONTAINS
       TYPE(harmonics_atom_type), POINTER                 :: harmonics
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(pw_env_type), POINTER                         :: pw_env
-      TYPE(pw_p_type), POINTER                           :: coeff_gaux, coeff_gspace, coeff_raux, &
-                                                            coeff_rspace
       TYPE(pw_pool_p_type), DIMENSION(:), POINTER        :: pw_pools
       TYPE(pw_pool_type), POINTER                        :: pw_aux, pw_pool
+      TYPE(pw_type)                                      :: coeff_gaux, coeff_gspace, coeff_raux, &
+                                                            coeff_rspace
       TYPE(qs_force_type), DIMENSION(:), POINTER         :: force
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(realspace_grid_desc_p_type), DIMENSION(:), &
          POINTER                                         :: rs_descs
       TYPE(realspace_grid_desc_type), POINTER            :: rs_desc
-      TYPE(realspace_grid_type), POINTER                 :: rs_v
+      TYPE(realspace_grid_type)                          :: rs_v
       TYPE(rho0_mpole_type), POINTER                     :: rho0_mpole
       TYPE(rho_atom_coeff), DIMENSION(:), POINTER        :: int_local_h, int_local_s
       TYPE(rho_atom_type), DIMENSION(:), POINTER         :: rho_atom_set
@@ -381,7 +367,11 @@ CONTAINS
       ! In case of the external density computed forces probably also
       ! need to be stored outside qs_env. We can then remove the
       ! attribute 'OPTIONAL' from the argument 'local_rho_set'.
-      CPASSERT(.NOT. (calculate_forces .AND. PRESENT(local_rho_set)))
+
+      ! CPASSERT(.NOT. (calculate_forces .AND. PRESENT(local_rho_set)))
+      IF (calculate_forces .AND. PRESENT(local_rho_set)) THEN
+         CPWARN("Forces and External Density")
+      END IF
 
       NULLIFY (atomic_kind_set, qs_kind_set, dft_control, particle_set)
       NULLIFY (cell, force, pw_env, rho0_mpole, rho_atom_set)
@@ -430,63 +420,48 @@ CONTAINS
       auxbas_grid = pw_env%auxbas_grid
 
       ! Get the potential on the right grid
-      NULLIFY (rs_v, rs_desc, pw_pool, pw_aux, coeff_rspace, coeff_gspace)
+      NULLIFY (rs_desc, pw_pool, pw_aux)
       rs_desc => rs_descs(igrid)%rs_desc
       pw_pool => pw_pools(igrid)%pool
 
-      ALLOCATE (coeff_gspace)
-      ALLOCATE (coeff_rspace)
-      ALLOCATE (coeff_gspace%pw, coeff_rspace%pw)
-      CALL pw_pool_create_pw(pw_pool, coeff_gspace%pw, &
+      CALL pw_pool_create_pw(pw_pool, coeff_gspace, &
                              use_data=COMPLEXDATA1D, &
                              in_space=RECIPROCALSPACE)
 
-      CALL pw_pool_create_pw(pw_pool, coeff_rspace%pw, use_data=REALDATA3D, &
+      CALL pw_pool_create_pw(pw_pool, coeff_rspace, use_data=REALDATA3D, &
                              in_space=REALSPACE)
 
       IF (igrid /= auxbas_grid) THEN
          pw_aux => pw_pools(auxbas_grid)%pool
-         ALLOCATE (coeff_gaux)
-         ALLOCATE (coeff_gaux%pw)
-         CALL pw_pool_create_pw(pw_aux, coeff_gaux%pw, &
+         CALL pw_pool_create_pw(pw_aux, coeff_gaux, &
                                 use_data=COMPLEXDATA1D, &
                                 in_space=RECIPROCALSPACE)
-         CALL pw_transfer(v_rspace, coeff_gaux%pw)
-         CALL pw_copy(coeff_gaux%pw, coeff_gspace%pw)
-         CALL pw_transfer(coeff_gspace%pw, coeff_rspace%pw)
-         CALL pw_pool_give_back_pw(pw_aux, coeff_gaux%pw)
-         DEALLOCATE (coeff_gaux%pw)
-         DEALLOCATE (coeff_gaux)
-         ALLOCATE (coeff_raux)
-         ALLOCATE (coeff_raux%pw)
-         CALL pw_pool_create_pw(pw_aux, coeff_raux%pw, use_data=REALDATA3D, &
+         CALL pw_transfer(v_rspace, coeff_gaux)
+         CALL pw_copy(coeff_gaux, coeff_gspace)
+         CALL pw_transfer(coeff_gspace, coeff_rspace)
+         CALL pw_pool_give_back_pw(pw_aux, coeff_gaux)
+         CALL pw_pool_create_pw(pw_aux, coeff_raux, use_data=REALDATA3D, &
                                 in_space=REALSPACE)
-         scale = coeff_rspace%pw%pw_grid%dvol/coeff_raux%pw%pw_grid%dvol
-         coeff_rspace%pw%cr3d = scale*coeff_rspace%pw%cr3d
-         CALL pw_pool_give_back_pw(pw_aux, coeff_raux%pw)
-         DEALLOCATE (coeff_raux%pw)
-         DEALLOCATE (coeff_raux)
+         scale = coeff_rspace%pw_grid%dvol/coeff_raux%pw_grid%dvol
+         coeff_rspace%cr3d = scale*coeff_rspace%cr3d
+         CALL pw_pool_give_back_pw(pw_aux, coeff_raux)
       ELSE
 
-         IF (coeff_gspace%pw%pw_grid%spherical) THEN
-            CALL pw_transfer(v_rspace, coeff_gspace%pw)
-            CALL pw_transfer(coeff_gspace%pw, coeff_rspace%pw)
+         IF (coeff_gspace%pw_grid%spherical) THEN
+            CALL pw_transfer(v_rspace, coeff_gspace)
+            CALL pw_transfer(coeff_gspace, coeff_rspace)
          ELSE
-            CALL pw_copy(v_rspace, coeff_rspace%pw)
+            CALL pw_copy(v_rspace, coeff_rspace)
          END IF
       END IF
-      CALL pw_pool_give_back_pw(pw_pool, coeff_gspace%pw)
-      DEALLOCATE (coeff_gspace%pw)
-      DEALLOCATE (coeff_gspace)
+      CALL pw_pool_give_back_pw(pw_pool, coeff_gspace)
 
       ! Setup the rs grid at level igrid
       CALL rs_grid_create(rs_v, rs_desc)
       CALL rs_grid_zero(rs_v)
-      CALL rs_pw_transfer(rs_v, coeff_rspace%pw, pw2rs)
+      CALL rs_pw_transfer(rs_v, coeff_rspace, pw2rs)
 
-      CALL pw_pool_give_back_pw(pw_pool, coeff_rspace%pw)
-      DEALLOCATE (coeff_rspace%pw)
-      DEALLOCATE (coeff_rspace)
+      CALL pw_pool_give_back_pw(pw_pool, coeff_rspace)
 
       ! Now the potential is on the right grid => integration
 

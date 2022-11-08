@@ -64,8 +64,8 @@ MODULE hfx_admm_utils
         do_admm_aux_exch_func_bee, do_admm_aux_exch_func_bee_libxc, do_admm_aux_exch_func_default, &
         do_admm_aux_exch_func_default_libxc, do_admm_aux_exch_func_none, &
         do_admm_aux_exch_func_opt, do_admm_aux_exch_func_opt_libxc, do_admm_aux_exch_func_pbex, &
-        do_admm_aux_exch_func_pbex_libxc, do_potential_coulomb, do_potential_long, &
-        do_potential_mix_cl, do_potential_mix_cl_trunc, do_potential_short, &
+        do_admm_aux_exch_func_pbex_libxc, do_admm_aux_exch_func_sx_libxc, do_potential_coulomb, &
+        do_potential_long, do_potential_mix_cl, do_potential_mix_cl_trunc, do_potential_short, &
         do_potential_truncated, xc_funct_no_shortcut, xc_none
    USE input_section_types,             ONLY: section_vals_duplicate,&
                                               section_vals_get,&
@@ -235,8 +235,7 @@ CONTAINS
             CALL get_mo_set(mos_aux_fit(ispin)%mo_set, mo_coeff=mo_coeff_aux_fit, mo_coeff_b=mo_coeff_b)
             IF (.NOT. ASSOCIATED(mo_coeff_aux_fit)) THEN
                CALL init_mo_set(mos_aux_fit(ispin)%mo_set, fm_struct=aux_fit_fm_struct, &
-                                name="qs_env"//TRIM(ADJUSTL(cp_to_string(qs_env%id_nr)))// &
-                                "%mo_aux_fit"//TRIM(ADJUSTL(cp_to_string(ispin))))
+                                name="qs_env%mo_aux_fit"//TRIM(ADJUSTL(cp_to_string(ispin))))
             END IF
             CALL cp_fm_struct_release(aux_fit_fm_struct)
 
@@ -738,7 +737,8 @@ CONTAINS
       TYPE(cp_para_env_type), POINTER                    :: para_env
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER :: matrix_ks_1d, matrix_ks_aux_fit, &
          matrix_ks_aux_fit_hfx, matrix_ks_aux_fit_im, matrix_ks_im, rho_ao_1d, rho_ao_resp
-      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_h, matrix_ks_orb, rho_ao_orb
+      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_h, matrix_h_im, matrix_ks_orb, &
+                                                            rho_ao_orb
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(hfx_type), DIMENSION(:, :), POINTER           :: x_data
       TYPE(mo_set_p_type), DIMENSION(:), POINTER         :: mo_array
@@ -755,13 +755,14 @@ CONTAINS
 
       NULLIFY (auxbas_pw_pool, dft_control, hfx_sections, input, &
                para_env, poisson_env, pw_env, virial, matrix_ks_im, &
-               matrix_ks_orb, rho_ao_orb, matrix_h, matrix_ks_aux_fit, &
+               matrix_ks_orb, rho_ao_orb, matrix_h, matrix_h_im, matrix_ks_aux_fit, &
                matrix_ks_aux_fit_im, matrix_ks_aux_fit_hfx)
 
       CALL get_qs_env(qs_env=qs_env, &
                       dft_control=dft_control, &
                       input=input, &
                       matrix_h_kp=matrix_h, &
+                      matrix_h_im_kp=matrix_h_im, &
                       para_env=para_env, &
                       pw_env=pw_env, &
                       virial=virial, &
@@ -953,6 +954,15 @@ CONTAINS
 
             !! If required, the calculation of the forces will be done later with adiabatic rescaling
             IF (do_adiabatic_rescaling) hf_energy(irep) = ehfx + ehfxrt
+
+            IF (dft_control%rtp_control%velocity_gauge) THEN
+               CPASSERT(ASSOCIATED(matrix_h_im))
+               DO ispin = 1, nspins
+                  CALL dbcsr_add(matrix_ks_im(ispin)%matrix, matrix_h_im(1, 1)%matrix, &
+                                 1.0_dp, 1.0_dp)
+               END DO
+            END IF
+
          END IF
 
          IF (.NOT. qs_env%run_rtp) THEN
@@ -1888,6 +1898,7 @@ CONTAINS
 
       ELSE IF (admm_env%aux_exch_func == do_admm_aux_exch_func_pbex_libxc .OR. &
                admm_env%aux_exch_func == do_admm_aux_exch_func_opt_libxc .OR. &
+               admm_env%aux_exch_func == do_admm_aux_exch_func_sx_libxc .OR. &
                admm_env%aux_exch_func == do_admm_aux_exch_func_bee_libxc) THEN
 #if defined(__LIBXC)
          IF (admm_env%aux_exch_func == do_admm_aux_exch_func_pbex_libxc) THEN
@@ -1896,6 +1907,8 @@ CONTAINS
             name_x_func = 'GGA_X_OPTX'
          ELSE IF (admm_env%aux_exch_func == do_admm_aux_exch_func_bee_libxc) THEN
             name_x_func = 'GGA_X_B88'
+         ELSE IF (admm_env%aux_exch_func == do_admm_aux_exch_func_sx_libxc) THEN
+            name_x_func = 'LDA_X'
          END IF
          !primary basis
          CALL section_vals_val_set(xc_fun_section, TRIM(name_x_func)//"%_SECTION_PARAMETERS_", &

@@ -51,7 +51,8 @@ MODULE qs_tddfpt2_types
                                               REALDATA3D,&
                                               REALSPACE,&
                                               RECIPROCALSPACE,&
-                                              pw_p_type
+                                              pw_p_type,&
+                                              pw_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_kind_types,                   ONLY: qs_kind_type
@@ -161,7 +162,7 @@ MODULE qs_tddfpt2_types
       !> electron density in terms of auxiliary basis set
       TYPE(qs_rho_type), POINTER                         :: rho_aux_fit_struct_sub
       !> group-specific copy of a Coulomb/xc-potential on a real-space grid
-      TYPE(pw_p_type), DIMENSION(:), POINTER             :: A_ia_rspace_sub
+      TYPE(pw_type), DIMENSION(:), POINTER             :: A_ia_rspace_sub
       !> group-specific copy of a reciprocal-space grid
       TYPE(pw_p_type), DIMENSION(:), POINTER             :: wpw_gspace_sub
       !> group-specific copy of a real-space grid
@@ -419,8 +420,7 @@ CONTAINS
       ALLOCATE (work_matrices%wpw_gspace_sub(nspins), work_matrices%wpw_rspace_sub(nspins), &
                 work_matrices%wpw_tau_rspace_sub(nspins))
       DO ispin = 1, nspins
-         ALLOCATE (work_matrices%A_ia_rspace_sub(ispin)%pw)
-         CALL pw_pool_create_pw(auxbas_pw_pool, work_matrices%A_ia_rspace_sub(ispin)%pw, &
+         CALL pw_pool_create_pw(auxbas_pw_pool, work_matrices%A_ia_rspace_sub(ispin), &
                                 use_data=REALDATA3D, in_space=REALSPACE)
 
          ALLOCATE (work_matrices%wpw_gspace_sub(ispin)%pw, work_matrices%wpw_rspace_sub(ispin)%pw, &
@@ -714,9 +714,9 @@ CONTAINS
             CALL pw_pool_give_back_pw(auxbas_pw_pool, work_matrices%wpw_rspace_sub(ispin)%pw)
             CALL pw_pool_give_back_pw(auxbas_pw_pool, work_matrices%wpw_tau_rspace_sub(ispin)%pw)
             CALL pw_pool_give_back_pw(auxbas_pw_pool, work_matrices%wpw_gspace_sub(ispin)%pw)
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, work_matrices%A_ia_rspace_sub(ispin)%pw)
+            CALL pw_pool_give_back_pw(auxbas_pw_pool, work_matrices%A_ia_rspace_sub(ispin))
             DEALLOCATE (work_matrices%wpw_rspace_sub(ispin)%pw, work_matrices%wpw_tau_rspace_sub(ispin)%pw, &
-                        work_matrices%wpw_gspace_sub(ispin)%pw, work_matrices%A_ia_rspace_sub(ispin)%pw)
+                        work_matrices%wpw_gspace_sub(ispin)%pw)
          END DO
          DEALLOCATE (work_matrices%A_ia_rspace_sub, work_matrices%wpw_gspace_sub, &
                      work_matrices%wpw_rspace_sub, work_matrices%wpw_tau_rspace_sub)
@@ -801,7 +801,10 @@ CONTAINS
          DEALLOCATE (work_matrices%S_eigenvalues)
       ! Ewald
       CALL ewald_env_release(work_matrices%ewald_env)
-      CALL ewald_pw_release(work_matrices%ewald_pw)
+      IF (ASSOCIATED(work_matrices%ewald_pw)) THEN
+         CALL ewald_pw_release(work_matrices%ewald_pw)
+         DEALLOCATE (work_matrices%ewald_pw)
+      END IF
       ! GAPW
       IF (ASSOCIATED(work_matrices%local_rho_set)) THEN
          CALL local_rho_set_release(work_matrices%local_rho_set)

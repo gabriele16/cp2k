@@ -119,8 +119,6 @@ MODULE mixed_cdft_methods
                                               set_mo_set
    USE realspace_grid_types,            ONLY: realspace_grid_type,&
                                               rs2pw,&
-                                              rs_grid_release,&
-                                              rs_grid_retain,&
                                               rs_grid_zero,&
                                               rs_pw_transfer
    USE util,                            ONLY: sort
@@ -661,15 +659,15 @@ CONTAINS
       END IF
       ! In principle, we could reduce the memory footprint of becke_pot by only transferring the nonzero portion
       ! of the potential, but this would require a custom integrate_v_rspace
-      ALLOCATE (cdft_control_target%group(1)%weight%pw)
-      CALL pw_pool_create_pw(auxbas_pw_pool, cdft_control_target%group(1)%weight%pw, &
+      ALLOCATE (cdft_control_target%group(1)%weight)
+      CALL pw_pool_create_pw(auxbas_pw_pool, cdft_control_target%group(1)%weight, &
                              use_data=REALDATA3D, in_space=REALSPACE)
-      cdft_control_target%group(1)%weight%pw%cr3d = 0.0_dp
+      cdft_control_target%group(1)%weight%cr3d = 0.0_dp
       ! Assemble the recved slices
       DO j = 1, SIZE(mixed_cdft%source_list)
-         cdft_control_target%group(1)%weight%pw%cr3d(recvbuffer(j)%imap(1):recvbuffer(j)%imap(2), &
-                                                     recvbuffer(j)%imap(3):recvbuffer(j)%imap(4), &
-                                                     recvbuffer(j)%imap(5):recvbuffer(j)%imap(6)) = recvbuffer(j)%r3
+         cdft_control_target%group(1)%weight%cr3d(recvbuffer(j)%imap(1):recvbuffer(j)%imap(2), &
+                                                  recvbuffer(j)%imap(3):recvbuffer(j)%imap(4), &
+                                                  recvbuffer(j)%imap(5):recvbuffer(j)%imap(6)) = recvbuffer(j)%r3
       END DO
       ! Do the same for slices sent during dlb
       IF (mixed_cdft%dlb) THEN
@@ -683,9 +681,9 @@ CONTAINS
                                UBOUND(mixed_cdft%dlb_control%recvbuff(j)%buffs(i)%weight, 2), &
                                LBOUND(mixed_cdft%dlb_control%recvbuff(j)%buffs(i)%weight, 3), &
                                UBOUND(mixed_cdft%dlb_control%recvbuff(j)%buffs(i)%weight, 3)/)
-                     cdft_control_target%group(1)%weight%pw%cr3d(INDEX(1):INDEX(2), &
-                                                                 INDEX(3):INDEX(4), &
-                                                                 INDEX(5):INDEX(6)) = &
+                     cdft_control_target%group(1)%weight%cr3d(INDEX(1):INDEX(2), &
+                                                              INDEX(3):INDEX(4), &
+                                                              INDEX(5):INDEX(6)) = &
                         mixed_cdft%dlb_control%recvbuff(j)%buffs(i)%weight
                      DEALLOCATE (mixed_cdft%dlb_control%recvbuff(j)%buffs(i)%weight)
                   END DO
@@ -849,8 +847,8 @@ CONTAINS
          cdft_control_target%becke_control%confine_bounds(2) = ub_max
          cdft_control_target%becke_control%confine_bounds(1) = lb_min
       END IF
-      CALL pw_scale(cdft_control_target%group(1)%weight%pw, &
-                    cdft_control_target%group(1)%weight%pw%pw_grid%dvol)
+      CALL pw_scale(cdft_control_target%group(1)%weight, &
+                    cdft_control_target%group(1)%weight%pw_grid%dvol)
       ! Set flags for ET coupling calculation
       IF (mixed_env%do_mixed_et) THEN
          IF (MODULO(mixed_cdft%sim_step, mixed_env%et_freq) == 0) THEN
@@ -957,14 +955,14 @@ CONTAINS
          IF (mixed_cdft%identical_constraints) THEN
             ! Weight function
             DO igroup = 1, SIZE(cdft_control_target%group)
-               ALLOCATE (cdft_control_target%group(igroup)%weight%pw)
+               ALLOCATE (cdft_control_target%group(igroup)%weight)
                CALL pw_pool_create_pw(auxbas_pw_pool_target, &
-                                      cdft_control_target%group(igroup)%weight%pw, &
+                                      cdft_control_target%group(igroup)%weight, &
                                       use_data=REALDATA3D, in_space=REALSPACE)
                ! We have ensured that the grids are consistent => no danger in using explicit copy
-               cdft_control_target%group(igroup)%weight%pw%cr3d = cdft_control_source%group(igroup)%weight%pw%cr3d
-               CALL pw_pool_give_back_pw(auxbas_pw_pool_source, cdft_control_source%group(igroup)%weight%pw)
-               DEALLOCATE (cdft_control_source%group(igroup)%weight%pw)
+               cdft_control_target%group(igroup)%weight%cr3d = cdft_control_source%group(igroup)%weight%cr3d
+               CALL pw_pool_give_back_pw(auxbas_pw_pool_source, cdft_control_source%group(igroup)%weight)
+               DEALLOCATE (cdft_control_source%group(igroup)%weight)
             END DO
             ! Cavity
             IF (cdft_control_source%type == outer_scf_becke_constraint) THEN
@@ -2557,7 +2555,6 @@ CONTAINS
          CALL pw_env_get(pw_env=mixed_cdft%pw_env, auxbas_rs_grid=rs_cavity, &
                          auxbas_pw_pool=auxbas_pw_pool)
          ! be careful in parallel nsmax is chosen with multigrid in mind!
-         CALL rs_grid_retain(rs_cavity)
          CALL rs_grid_zero(rs_cavity)
          ALLOCATE (pab(1, 1))
          nthread = 1
@@ -2616,7 +2613,6 @@ CONTAINS
          CALL pw_pool_create_pw(auxbas_pw_pool, cdft_control%becke_control%cavity%pw, &
                                 use_data=REALDATA3D, in_space=REALSPACE)
          CALL rs_pw_transfer(rs_cavity, cdft_control%becke_control%cavity%pw, rs2pw)
-         CALL rs_grid_release(rs_cavity)
          CALL hfun_zero(cdft_control%becke_control%cavity%pw%cr3d, &
                         cdft_control%becke_control%eps_cavity, &
                         just_zero=.FALSE., bounds=bounds, work=my_work)

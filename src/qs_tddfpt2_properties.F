@@ -22,14 +22,14 @@ MODULE qs_tddfpt2_properties
                                               tddfpt2_control_type
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr,&
-                                              cp_dbcsr_plus_fm_fm_t,&
                                               cp_dbcsr_sm_fm_multiply,&
                                               dbcsr_allocate_matrix_set,&
                                               dbcsr_deallocate_matrix_set
    USE cp_fm_basic_linalg,              ONLY: cp_fm_scale,&
                                               cp_fm_scale_and_add,&
                                               cp_fm_trace
-   USE cp_fm_diag,                      ONLY: choose_eigv_solver
+   USE cp_fm_diag,                      ONLY: choose_eigv_solver,&
+                                              cp_fm_geeig
    USE cp_fm_struct,                    ONLY: cp_fm_struct_create,&
                                               cp_fm_struct_release,&
                                               cp_fm_struct_type
@@ -51,14 +51,9 @@ MODULE qs_tddfpt2_properties
    USE cp_para_types,                   ONLY: cp_para_env_type
    USE cp_realspace_grid_cube,          ONLY: cp_pw_to_cube
    USE dbcsr_api,                       ONLY: &
-        dbcsr_add, dbcsr_add_on_diag, dbcsr_copy, dbcsr_create, dbcsr_filter, dbcsr_get_block_p, &
-        dbcsr_get_info, dbcsr_init_p, dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, &
-        dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_p_type, &
-        dbcsr_release, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry
-   USE dbcsr_vector,                    ONLY: create_col_vec_from_matrix,&
-                                              create_replicated_col_vec_from_matrix,&
-                                              create_replicated_row_vec_from_matrix,&
-                                              dbcsr_matrix_colvec_multiply
+        dbcsr_copy, dbcsr_get_block_p, dbcsr_get_info, dbcsr_init_p, dbcsr_iterator_blocks_left, &
+        dbcsr_iterator_next_block, dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, &
+        dbcsr_p_type, dbcsr_set, dbcsr_type
    USE input_constants,                 ONLY: tddfpt_dipole_berry,&
                                               tddfpt_dipole_length,&
                                               tddfpt_dipole_velocity
@@ -93,7 +88,7 @@ MODULE qs_tddfpt2_properties
                                               REALDATA3D,&
                                               REALSPACE,&
                                               RECIPROCALSPACE,&
-                                              pw_p_type
+                                              pw_type
    USE qs_collocate_density,            ONLY: calculate_wavefunction
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -547,6 +542,7 @@ CONTAINS
 !> \param evects             TDDFPT trial vectors (SIZE(evects,1) -- number of spins;
 !>                           SIZE(evects,2) -- number of excited states to print)
 !> \param evals              TDDFPT eigenvalues
+!> \param ostrength          TDDFPT oscillator strength
 !> \param mult               multiplicity
 !> \param dipole_op_mos_occ  action of the dipole operator on the ground state wave function
 !>                           [x,y,z ; spin]
@@ -564,10 +560,12 @@ CONTAINS
 !>       \f[ t_d(spin) = Tr[evects^T dipole\_op\_mos\_occ(d, spin)] .\f]
 !>       \endparblock
 ! **************************************************************************************************
-   SUBROUTINE tddfpt_print_summary(log_unit, evects, evals, mult, dipole_op_mos_occ, dipole_form)
+   SUBROUTINE tddfpt_print_summary(log_unit, evects, evals, ostrength, mult, &
+                                   dipole_op_mos_occ, dipole_form)
       INTEGER, INTENT(in)                                :: log_unit
       TYPE(cp_fm_p_type), DIMENSION(:, :), INTENT(in)    :: evects
       REAL(kind=dp), DIMENSION(:), INTENT(in)            :: evals
+      REAL(kind=dp), DIMENSION(:), INTENT(inout)         :: ostrength
       INTEGER, INTENT(in)                                :: mult
       TYPE(cp_fm_p_type), DIMENSION(:, :), INTENT(in)    :: dipole_op_mos_occ
       INTEGER, INTENT(in)                                :: dipole_form
@@ -636,10 +634,10 @@ CONTAINS
 
       ! *** summary information ***
       DO istate = 1, nstates
+         osc_strength = 2.0_dp/3.0_dp*evals(istate)* &
+                        accurate_dot_product(trans_dipoles(istate, :, 1), trans_dipoles(istate, :, 1))
+         ostrength(istate) = osc_strength
          IF (log_unit > 0) THEN
-            osc_strength = 2.0_dp/3.0_dp*evals(istate)* &
-                           accurate_dot_product(trans_dipoles(istate, :, 1), trans_dipoles(istate, :, 1))
-
             WRITE (log_unit, '(1X,A,T9,I7,T19,F11.5,T31,3(1X,ES11.4E2),T69,ES12.5E2)') &
                "TDDFPT|", istate, evals(istate)*evolt, trans_dipoles(istate, 1:nderivs, 1), osc_strength
          END IF
@@ -946,23 +944,21 @@ CONTAINS
 
       CHARACTER(LEN=20), DIMENSION(2)                    :: nto_name
       INTEGER                                            :: handle, i, ia, icg, iounit, ispin, &
-                                                            istate, nao, nmax, nmo, nnto, nspins, &
-                                                            nstates
+                                                            istate, j, nao, nmax, nmo, nnto, &
+                                                            nspins, nstates
       INTEGER, DIMENSION(2)                              :: iv
       INTEGER, DIMENSION(2, ntomax)                      :: ia_index
       INTEGER, DIMENSION(:), POINTER                     :: stride
       LOGICAL                                            :: append_cube, cube_file
-      REAL(KIND=dp)                                      :: alpha, beta, dkz, rkrk, rr, sume, &
-                                                            threshold
+      REAL(KIND=dp)                                      :: sume, threshold
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: eigvals
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :)        :: eigenvalues
       REAL(KIND=dp), DIMENSION(ntomax)                   :: ia_eval
       TYPE(cp_fm_p_type), DIMENSION(:), POINTER          :: teig
       TYPE(cp_fm_struct_type), POINTER                   :: fm_mo_struct, fm_struct
-      TYPE(cp_fm_type)                                   :: Sev, tmat, wvec
+      TYPE(cp_fm_type)                                   :: Sev, smat, tmat, wmat, work, wvec
       TYPE(cp_fm_type), POINTER                          :: ev
       TYPE(cp_logger_type), POINTER                      :: logger
-      TYPE(dbcsr_type)                                   :: dvec, pdens, rep_col_vec, rep_row_vec, &
-                                                            rvec, tvec, xvec, zvec
       TYPE(mo_set_p_type), DIMENSION(:), POINTER         :: nto_set
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
@@ -1025,6 +1021,7 @@ CONTAINS
                NULLIFY (teig(ispin)%matrix)
             END DO
             ! hole states
+            ! Diagonalize X(T)*S*X
             DO ispin = 1, nspins
                ev => evects(ispin, istate)%matrix
                CALL cp_fm_get_info(ev, matrix_struct=fm_struct, ncol_global=nmo)
@@ -1080,67 +1077,48 @@ CONTAINS
                CALL cp_fm_release(tmat)
             END DO
             ! particle states
+            ! Solve generalized eigenvalue equation:  (S*X)*(S*X)(T)*v = lambda*S*v
             CALL set_mo_set(nto_set(2)%mo_set, nmo=nnto)
-            DO i = 1, nnto
-               ispin = ia_index(2, i)
+            DO ispin = 1, nspins
                ev => evects(ispin, istate)%matrix
-               CALL cp_fm_get_info(ev, matrix_struct=fm_struct, ncol_global=nmo)
+               CALL cp_fm_get_info(ev, matrix_struct=fm_struct, nrow_global=nao, ncol_global=nmo)
+               ALLOCATE (eigvals(nao))
+               eigvals = 0.0_dp
                CALL cp_fm_create(Sev, fm_struct)
                CALL cp_dbcsr_sm_fm_multiply(matrix_s, ev, Sev, ncol=nmo, alpha=1.0_dp, beta=0.0_dp)
-               CALL dbcsr_create(pdens, template=matrix_s, matrix_type=dbcsr_type_no_symmetry)
-               ! P(nu,mu) = SUM_j XT(nu,j)*CT(mu,j)
-               CALL cp_dbcsr_plus_fm_fm_t(pdens, ev, Sev, nmo, 1.0_dp, keep_sparsity=.FALSE.)
-               CALL dbcsr_filter(pdens, 1.0e-6_dp)
-               CALL dbcsr_add_on_diag(pdens, -ia_eval(i))
-               ! Conjugate Gradient search for particle states
-               CALL create_col_vec_from_matrix(rvec, pdens, 1)
-               CALL create_col_vec_from_matrix(dvec, pdens, 1)
-               CALL create_col_vec_from_matrix(zvec, pdens, 1)
-               CALL create_col_vec_from_matrix(tvec, pdens, 1)
-               CALL create_col_vec_from_matrix(xvec, pdens, 1)
-               CALL create_replicated_col_vec_from_matrix(rep_col_vec, pdens, 1)
-               CALL create_replicated_row_vec_from_matrix(rep_row_vec, pdens, 1)
-               !
-               CALL dbcsr_set(rvec, 1.0_dp)
-               CALL project_vector(rvec, xvec, gs_mos(ispin)%mos_occ, matrix_s)
-               CALL dbcsr_matrix_colvec_multiply(pdens, xvec, rvec, -1.0_dp, &
-                                                 0.0_dp, rep_row_vec, rep_col_vec)
-               CALL dbcsr_copy(dvec, rvec)
-               CALL vec_product(rvec, rvec, rkrk)
-               DO icg = 1, 20
-                  CALL dbcsr_matrix_colvec_multiply(pdens, dvec, tvec, 1.0_dp, &
-                                                    0.0_dp, rep_row_vec, rep_col_vec)
-                  CALL project_vector(tvec, zvec, gs_mos(ispin)%mos_occ, matrix_s)
-                  CALL vec_product(dvec, zvec, dkz)
-                  alpha = rkrk/dkz
-                  CALL dbcsr_add(xvec, dvec, 1.0_dp, alpha)
-                  CALL dbcsr_add(rvec, zvec, 1.0_dp, -alpha)
-                  rr = rkrk
-                  CALL vec_product(rvec, rvec, rkrk)
-                  IF (rkrk < 1.E-8_dp) EXIT
-                  beta = rkrk/rr
-                  CALL dbcsr_add(dvec, rvec, beta, 1.0_dp)
-               END DO
-               !
-               CALL cp_fm_get_info(gs_mos(1)%mos_occ, matrix_struct=fm_struct)
                CALL cp_fm_struct_create(fmstruct=fm_mo_struct, template_fmstruct=fm_struct, &
-                                        nrow_global=nao, ncol_global=1)
-               CALL cp_fm_create(wvec, fm_mo_struct)
+                                        nrow_global=nao, ncol_global=nao)
+               CALL cp_fm_create(tmat, fm_mo_struct)
+               CALL cp_fm_create(smat, fm_mo_struct)
+               CALL cp_fm_create(wmat, fm_mo_struct)
+               CALL cp_fm_create(work, fm_mo_struct)
                CALL cp_fm_struct_release(fm_mo_struct)
-               CALL copy_dbcsr_to_fm(xvec, wvec)
-               CALL cp_fm_to_fm(wvec, nto_set(2)%mo_set%mo_coeff, 1, 1, i)
-               CALL cp_fm_release(wvec)
-               !
-               CALL dbcsr_release(rep_col_vec)
-               CALL dbcsr_release(rep_row_vec)
-               CALL dbcsr_release(rvec)
-               CALL dbcsr_release(dvec)
-               CALL dbcsr_release(zvec)
-               CALL dbcsr_release(tvec)
-               CALL dbcsr_release(xvec)
-
+               CALL copy_dbcsr_to_fm(matrix_s, smat)
+               CALL parallel_gemm('N', 'T', nao, nao, nmo, 1.0_dp, Sev, Sev, 0.0_dp, tmat)
+               CALL cp_fm_geeig(tmat, smat, wmat, eigvals, work)
+               DO i = 1, nnto
+                  IF (ispin == ia_index(2, i)) THEN
+                     icg = 0
+                     DO j = 1, nao
+                        IF (ABS(eigvals(j) - ia_eval(i)) < 1.E-6_dp) THEN
+                           icg = j
+                           EXIT
+                        END IF
+                     END DO
+                     IF (icg == 0) THEN
+                        CALL cp_warn(__LOCATION__, &
+                                     "Could not locate particle state associated with hole state.")
+                     ELSE
+                        CALL cp_fm_to_fm(wmat, nto_set(2)%mo_set%mo_coeff, 1, icg, i)
+                     END IF
+                  END IF
+               END DO
+               DEALLOCATE (eigvals)
                CALL cp_fm_release(Sev)
-               CALL dbcsr_release(pdens)
+               CALL cp_fm_release(tmat)
+               CALL cp_fm_release(smat)
+               CALL cp_fm_release(wmat)
+               CALL cp_fm_release(work)
             END DO
             ! print
             IF (iounit > 0) THEN
@@ -1303,9 +1281,9 @@ CONTAINS
       TYPE(particle_list_type), POINTER                  :: particles
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(pw_env_type), POINTER                         :: pw_env
-      TYPE(pw_p_type)                                    :: wf_g, wf_r
       TYPE(pw_pool_p_type), DIMENSION(:), POINTER        :: pw_pools
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
+      TYPE(pw_type)                                      :: wf_g, wf_r
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_subsys_type), POINTER                      :: subsys
 
@@ -1313,11 +1291,10 @@ CONTAINS
 
       CALL get_qs_env(qs_env=qs_env, dft_control=dft_control, pw_env=pw_env)
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, pw_pools=pw_pools)
-      ALLOCATE (wf_r%pw, wf_g%pw)
-      CALL pw_pool_create_pw(auxbas_pw_pool, wf_r%pw, &
+      CALL pw_pool_create_pw(auxbas_pw_pool, wf_r, &
                              use_data=REALDATA3D, &
                              in_space=REALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, wf_g%pw, &
+      CALL pw_pool_create_pw(auxbas_pw_pool, wf_g, &
                              use_data=COMPLEXDATA1D, &
                              in_space=RECIPROCALSPACE)
 
@@ -1338,7 +1315,7 @@ CONTAINS
       DO iset = 1, 2
          CALL get_mo_set(mo_set=mos(iset)%mo_set, mo_coeff=mo_coeff, nmo=nmo)
          DO i = 1, nmo
-            CALL calculate_wavefunction(mo_coeff, i, wf_r%pw, wf_g%pw, atomic_kind_set, qs_kind_set, &
+            CALL calculate_wavefunction(mo_coeff, i, wf_r, wf_g, atomic_kind_set, qs_kind_set, &
                                         cell, dft_control, particle_set, pw_env)
             IF (iset == 1) THEN
                WRITE (filename, '(a4,I3.3,I2.2,a11)') "NTO_STATE", istate, i, "_Hole_State"
@@ -1354,15 +1331,14 @@ CONTAINS
             ELSEIF (iset == 2) THEN
                WRITE (title, *) "Natural Transition Orbital Particle State", i
             END IF
-            CALL cp_pw_to_cube(wf_r%pw, unit_nr, title, particles=particles, stride=stride, mpi_io=mpi_io)
+            CALL cp_pw_to_cube(wf_r, unit_nr, title, particles=particles, stride=stride, mpi_io=mpi_io)
             CALL cp_print_key_finished_output(unit_nr, logger, print_section, '', &
                                               ignore_should_output=.TRUE., mpi_io=mpi_io)
          END DO
       END DO
 
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_g%pw)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_r%pw)
-      DEALLOCATE (wf_g%pw, wf_r%pw)
+      CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_g)
+      CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_r)
 
    END SUBROUTINE print_nto_cubes
 

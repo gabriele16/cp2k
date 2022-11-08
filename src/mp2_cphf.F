@@ -111,6 +111,7 @@ MODULE mp2_cphf
                                               integrate_v_rspace
    USE qs_kind_types,                   ONLY: qs_kind_type
    USE qs_kinetic,                      ONLY: build_kinetic_matrix
+   USE qs_ks_reference,                 ONLY: ks_ref_potential
    USE qs_ks_types,                     ONLY: qs_ks_env_type,&
                                               set_ks_env
    USE qs_linres_types,                 ONLY: linres_control_create,&
@@ -127,7 +128,6 @@ MODULE mp2_cphf
                                               qs_p_env_type
    USE qs_rho_types,                    ONLY: qs_rho_get,&
                                               qs_rho_type
-   USE response_solver,                 ONLY: ks_ref_potential
    USE rpa_hfx,                         ONLY: add_exx_to_rhs
    USE task_list_types,                 ONLY: task_list_type
    USE virial_types,                    ONLY: virial_type,&
@@ -1376,13 +1376,14 @@ CONTAINS
          POINTER                                         :: sab_orb, sac_ppl, sap_ppnl
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(pw_env_type), POINTER                         :: pw_env
-      TYPE(pw_p_type), DIMENSION(:), POINTER             :: dvg, rho_g, rho_mp2_g, rho_mp2_r, &
+      TYPE(pw_p_type), DIMENSION(:), POINTER             :: rho_g, rho_mp2_g, rho_mp2_r, &
                                                             rho_mp2_r_aux, rho_r, tau_mp2_r, &
                                                             vadmm_rspace, vtau_rspace, vxc_rspace
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
       TYPE(pw_type)                                      :: pot_g, pot_r, rho_tot_g, temp_pw_g, &
                                                             vh_rspace, vhxc_rspace
+      TYPE(pw_type), ALLOCATABLE, DIMENSION(:)           :: dvg
       TYPE(pw_type), POINTER                             :: rho_core
       TYPE(qs_dispersion_type), POINTER                  :: dispersion_env
       TYPE(qs_energy_type), POINTER                      :: energy
@@ -1489,7 +1490,7 @@ CONTAINS
          CALL build_core_ppl(scrm_kp, rho_ao_kp, force, &
                              virial, .TRUE., use_virial, 1, &
                              qs_kind_set, atomic_kind_set, particle_set, sab_orb, sac_ppl, &
-                             1, NULL(), "ORB")
+                             nimages=1, basis_type="ORB")
          IF (debug_forces) THEN
             deb(1:3) = force(1)%gth_ppl(1:3, 1) - deb(1:3)
             CALL mp_sum(deb, para_env%group)
@@ -1509,7 +1510,7 @@ CONTAINS
          CALL build_core_ppnl(scrm_kp, rho_ao_kp, force, &
                               virial, .TRUE., use_virial, 1, &
                               qs_kind_set, atomic_kind_set, particle_set, sab_orb, sap_ppnl, dft_control%qs_control%eps_ppnl, &
-                              1, NULL(), "ORB")
+                              nimages=1, basis_type="ORB")
          IF (debug_forces) THEN
             deb(1:3) = force(1)%gth_ppnl(1:3, 1) - deb(1:3)
             CALL mp_sum(deb, para_env%group)
@@ -1656,12 +1657,10 @@ CONTAINS
          CALL pw_axpy(rho_mp2_g(ispin)%pw, rho_tot_g)
       END DO
 
-      NULLIFY (dvg)
       IF (use_virial) THEN
          ALLOCATE (dvg(3))
          DO idir = 1, 3
-            ALLOCATE (dvg(idir)%pw)
-            CALL pw_pool_create_pw(auxbas_pw_pool, dvg(idir)%pw, &
+            CALL pw_pool_create_pw(auxbas_pw_pool, dvg(idir), &
                                    use_data=COMPLEXDATA1D, &
                                    in_space=RECIPROCALSPACE)
          END DO
@@ -1716,7 +1715,7 @@ CONTAINS
             h_stress(alpha, alpha) = -e_hartree
             DO beta = alpha, 3
                h_stress(alpha, beta) = h_stress(alpha, beta) &
-                                       - 2.0_dp*pw_integral_ab(rho_tot_g, dvg(beta)%pw)/fourpi
+                                       - 2.0_dp*pw_integral_ab(rho_tot_g, dvg(beta))/fourpi
                h_stress(beta, alpha) = h_stress(alpha, beta)
             END DO
          END DO
@@ -1725,8 +1724,7 @@ CONTAINS
          ! free stuff
          CALL pw_pool_give_back_pw(auxbas_pw_pool, temp_pw_g)
          DO idir = 1, 3
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, dvg(idir)%pw)
-            DEALLOCATE (dvg(idir)%pw)
+            CALL pw_pool_give_back_pw(auxbas_pw_pool, dvg(idir))
          END DO
          DEALLOCATE (dvg)
 

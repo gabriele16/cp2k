@@ -62,7 +62,7 @@ MODULE cp_fm_elpa
                              ELPA_2STAGE_REAL_AVX512_BLOCK6, &
                              ELPA_2STAGE_REAL_NVIDIA_GPU, &
                              ELPA_2STAGE_REAL_AMD_GPU, &
-                             ELPA_2STAGE_REAL_INTEL_GPU
+                             ELPA_2STAGE_REAL_INTEL_GPU_SYCL
 
    USE elpa, ONLY: elpa_t, elpa_solver_2stage, &
                    elpa_init, elpa_uninit, &
@@ -97,7 +97,7 @@ MODULE cp_fm_elpa
                                         ELPA_2STAGE_REAL_AVX512_BLOCK6, &
                                         ELPA_2STAGE_REAL_NVIDIA_GPU, &
                                         ELPA_2STAGE_REAL_AMD_GPU, &
-                                        ELPA_2STAGE_REAL_INTEL_GPU]
+                                        ELPA_2STAGE_REAL_INTEL_GPU_SYCL]
 
    CHARACTER(len=14), DIMENSION(SIZE(elpa_kernel_ids)), PARAMETER :: &
       elpa_kernel_names = [CHARACTER(len=14) :: &
@@ -153,7 +153,9 @@ MODULE cp_fm_elpa
    CHARACTER(len=44), DIMENSION(1), PARAMETER :: elpa_kernel_descriptions = ["Automatically selected kernel"]
 #endif
 
+#if defined(__ELPA)
    INTEGER, SAVE :: elpa_kernel = elpa_kernel_ids(1) ! auto
+#endif
    LOGICAL, SAVE :: elpa_qr = .FALSE., &
                     elpa_qr_unsafe = .FALSE., &
                     elpa_should_print = .FALSE.
@@ -229,7 +231,7 @@ CONTAINS
          elpa_kernel = ELPA_2STAGE_REAL_AMD_GPU
 #endif
 #if defined (__ELPA_INTEL_GPU)
-         elpa_kernel = ELPA_2STAGE_REAL_INTEL_GPU
+         elpa_kernel = ELPA_2STAGE_REAL_INTEL_GPU_SYCL
 #endif
 
          ! If we could not find a suitable kernel then use ELPA_2STAGE_REAL_DEFAULT.
@@ -278,9 +280,9 @@ CONTAINS
       TYPE(cp_fm_type), INTENT(IN)          :: matrix, eigenvectors
       REAL(KIND=dp), DIMENSION(:), INTENT(OUT) :: eigenvalues
 
+#if defined(__ELPA)
       CHARACTER(len=*), PARAMETER :: routineN = 'cp_fm_diag_elpa'
 
-#if defined(__ELPA)
       INTEGER                                  :: handle
       TYPE(cp_fm_type)                         :: eigenvectors_new, matrix_new
       TYPE(cp_fm_redistribute_info)            :: rdinfo
@@ -511,7 +513,7 @@ CONTAINS
          CALL elpa_obj%set("amd-gpu", 1, success)
          CPASSERT(success == elpa_ok)
       END IF
-      IF (elpa_kernel == ELPA_2STAGE_REAL_INTEL_GPU) THEN
+      IF (elpa_kernel == ELPA_2STAGE_REAL_INTEL_GPU_SYCL) THEN
          CALL elpa_obj%set("intel-gpu", 1, success)
          CPASSERT(success == elpa_ok)
       END IF

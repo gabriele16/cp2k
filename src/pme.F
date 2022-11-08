@@ -49,11 +49,10 @@ MODULE pme
                                               REALDATA3D,&
                                               REALSPACE,&
                                               RECIPROCALSPACE,&
-                                              pw_p_type,&
                                               pw_type
    USE realspace_grid_types,            ONLY: &
-        pw2rs, realspace_grid_desc_type, realspace_grid_p_type, realspace_grid_type, rs2pw, &
-        rs_grid_create, rs_grid_release, rs_grid_set_box, rs_grid_zero, rs_pw_transfer
+        pw2rs, realspace_grid_desc_type, realspace_grid_type, rs2pw, rs_grid_create, &
+        rs_grid_release, rs_grid_set_box, rs_grid_zero, rs_pw_transfer
    USE shell_potential_types,           ONLY: shell_kind_type
    USE structure_factor_types,          ONLY: structure_factor_type
    USE structure_factors,               ONLY: structure_factor_allocate,&
@@ -121,18 +120,18 @@ CONTAINS
       TYPE(dg_rho0_type), POINTER                        :: dg_rho0
       TYPE(dg_type), POINTER                             :: dg
       TYPE(pw_grid_type), POINTER                        :: grid_b, grid_s
-      TYPE(pw_p_type)                                    :: rhos1, rhos2
-      TYPE(pw_p_type), DIMENSION(3)                      :: dphi_g
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: pw_big_pool, pw_small_pool
-      TYPE(pw_type), POINTER                             :: phi_g, phi_r, rhob_g, rhob_r
+      TYPE(pw_type)                                      :: phi_g, phi_r, rhob_g, rhob_r, rhos1, &
+                                                            rhos2
+      TYPE(pw_type), DIMENSION(3)                        :: dphi_g
       TYPE(realspace_grid_desc_type), POINTER            :: rs_desc
-      TYPE(realspace_grid_p_type), DIMENSION(:), POINTER :: drpot
+      TYPE(realspace_grid_type), DIMENSION(3)            :: drpot
       TYPE(realspace_grid_type), POINTER                 :: rden, rpot
       TYPE(structure_factor_type)                        :: exp_igr
 
       CALL timeset(routineN, handle)
-      NULLIFY (poisson_env, rden, drpot)
+      NULLIFY (poisson_env, rden)
       CALL cite_reference(Darden1993)
       CALL ewald_env_get(ewald_env, alpha=alpha, group=group)
       CALL ewald_pw_get(ewald_pw, pw_big_pool=pw_big_pool, &
@@ -161,12 +160,12 @@ CONTAINS
                                         allocate_centre=.TRUE.)
       END IF
 
-      ALLOCATE (rhos1%pw, rhos2%pw)
-      CALL pw_pool_create_pw(pw_small_pool, rhos1%pw, &
+      CALL pw_pool_create_pw(pw_small_pool, rhos1, &
                              use_data=REALDATA3D)
-      CALL pw_pool_create_pw(pw_small_pool, rhos2%pw, &
+      CALL pw_pool_create_pw(pw_small_pool, rhos2, &
                              use_data=REALDATA3D)
 
+      ALLOCATE (rden)
       CALL rs_grid_create(rden, rs_desc)
       CALL rs_grid_set_box(grid_b, rs=rden)
       CALL rs_grid_zero(rden)
@@ -203,21 +202,21 @@ CONTAINS
 
             ! add boxes to real space grid (big box)
             IF (is1_core) THEN
-               CALL dg_sum_patch(rden, rhos1%pw, exp_igr%core_centre(:, particle_set(p1)%shell_index))
+               CALL dg_sum_patch(rden, rhos1, exp_igr%core_centre(:, particle_set(p1)%shell_index))
             ELSE
-               CALL dg_sum_patch(rden, rhos1%pw, exp_igr%centre(:, p1))
+               CALL dg_sum_patch(rden, rhos1, exp_igr%centre(:, p1))
             END IF
             IF (p2 /= 0 .AND. is2_core) THEN
-               CALL dg_sum_patch(rden, rhos2%pw, exp_igr%core_centre(:, particle_set(p2)%shell_index))
+               CALL dg_sum_patch(rden, rhos2, exp_igr%core_centre(:, particle_set(p2)%shell_index))
             ELSE IF (p2 /= 0) THEN
-               CALL dg_sum_patch(rden, rhos2%pw, exp_igr%centre(:, p2))
+               CALL dg_sum_patch(rden, rhos2, exp_igr%centre(:, p2))
             END IF
          ELSE
             CALL get_patch(dg, particle_set, exp_igr, box, p1, p2, grid_b, grid_s, &
                            rhos1, rhos2, charges=charges)
             ! add boxes to real space grid (big box)
-            CALL dg_sum_patch(rden, rhos1%pw, exp_igr%centre(:, p1))
-            IF (p2 /= 0) CALL dg_sum_patch(rden, rhos2%pw, exp_igr%centre(:, p2))
+            CALL dg_sum_patch(rden, rhos1, exp_igr%centre(:, p1))
+            IF (p2 /= 0) CALL dg_sum_patch(rden, rhos2, exp_igr%centre(:, p2))
          END IF
 
       END DO
@@ -231,12 +230,11 @@ CONTAINS
             CALL get_patch(dg, shell_particle_set, exp_igr, box, p1, p2, grid_b, grid_s, &
                            rhos1, rhos2, is1_shell=.TRUE., is2_shell=.TRUE., charges=charges)
             ! add boxes to real space grid (big box)
-            CALL dg_sum_patch(rpot, rhos1%pw, exp_igr%shell_centre(:, p1))
-            IF (p2 /= 0) CALL dg_sum_patch(rpot, rhos2%pw, exp_igr%shell_centre(:, p2))
+            CALL dg_sum_patch(rpot, rhos1, exp_igr%shell_centre(:, p1))
+            IF (p2 /= 0) CALL dg_sum_patch(rpot, rhos2, exp_igr%shell_centre(:, p2))
          END DO
       END IF
 
-      ALLOCATE (rhob_r)
       CALL pw_pool_create_pw(pw_big_pool, rhob_r, use_data=REALDATA3D, in_space=REALSPACE)
       CALL rs_pw_transfer(rden, rhob_r, rs2pw)
 
@@ -244,13 +242,10 @@ CONTAINS
 
       ! allocate intermediate arrays
       DO i = 1, 3
-         ALLOCATE (dphi_g(i)%pw)
-         CALL pw_pool_create_pw(pw_big_pool, dphi_g(i)%pw, &
+         CALL pw_pool_create_pw(pw_big_pool, dphi_g(i), &
                                 use_data=COMPLEXDATA1D, &
                                 in_space=RECIPROCALSPACE)
       END DO
-      NULLIFY (phi_r)
-      ALLOCATE (phi_r)
       CALL pw_pool_create_pw(pw_big_pool, phi_r, &
                              use_data=REALDATA3D, &
                              in_space=REALSPACE)
@@ -259,7 +254,8 @@ CONTAINS
 
       ! atomic energies
       IF (atprop%energy .OR. atprop%stress) THEN
-         dvols = rhos1%pw%pw_grid%dvol
+         dvols = rhos1%pw_grid%dvol
+         ALLOCATE (rpot)
          CALL rs_grid_create(rpot, rs_desc)
          CALL rs_pw_transfer(rpot, phi_r, pw2rs)
          ipart = 0
@@ -271,7 +267,7 @@ CONTAINS
             CALL get_patch(dg, particle_set, exp_igr, box, p1, p2, grid_b, grid_s, &
                            rhos1, rhos2, charges=charges)
             ! add boxes to real space grid (big box)
-            CALL dg_sum_patch_force_1d(rpot, rhos1%pw, exp_igr%centre(:, p1), fat1)
+            CALL dg_sum_patch_force_1d(rpot, rhos1, exp_igr%centre(:, p1), fat1)
             IF (atprop%energy) THEN
                atprop%atener(p1) = atprop%atener(p1) + 0.5_dp*fat1*dvols
             END IF
@@ -281,7 +277,7 @@ CONTAINS
                atprop%atstress(3, 3, p1) = atprop%atstress(3, 3, p1) + 0.5_dp*fat1*dvols
             END IF
             IF (p2 /= 0) THEN
-               CALL dg_sum_patch_force_1d(rpot, rhos2%pw, exp_igr%centre(:, p2), fat1)
+               CALL dg_sum_patch_force_1d(rpot, rhos2, exp_igr%centre(:, p2), fat1)
                IF (atprop%energy) THEN
                   atprop%atener(p2) = atprop%atener(p2) + 0.5_dp*fat1*dvols
                END IF
@@ -293,8 +289,6 @@ CONTAINS
             END IF
          END DO
          IF (atprop%stress) THEN
-            NULLIFY (phi_g, rhob_g)
-            ALLOCATE (phi_g, rhob_g)
             CALL pw_pool_create_pw(pw_big_pool, phi_g, &
                                    use_data=COMPLEXDATA1D, &
                                    in_space=RECIPROCALSPACE)
@@ -305,7 +299,7 @@ CONTAINS
             ffb = 1.0_dp/fourpi
             DO i = 1, 3
                DO ig = grid_b%first_gne0, grid_b%ngpts_cut_local
-                  phi_g%cc(ig) = ffb*dphi_g(i)%pw%cc(ig)*(ffa*grid_b%gsq(ig) + 1.0_dp)
+                  phi_g%cc(ig) = ffb*dphi_g(i)%cc(ig)*(ffa*grid_b%gsq(ig) + 1.0_dp)
                   phi_g%cc(ig) = phi_g%cc(ig)*poisson_env%green_fft%influence_fn%cc(ig)
                END DO
                IF (grid_b%have_g0) phi_g%cc(1) = 0.0_dp
@@ -326,11 +320,11 @@ CONTAINS
                      CALL get_patch(dg, particle_set, exp_igr, box, p1, p2, grid_b, grid_s, &
                                     rhos1, rhos2, charges=charges)
                      ! add boxes to real space grid (big box)
-                     CALL dg_sum_patch_force_1d(rpot, rhos1%pw, exp_igr%centre(:, p1), fat1)
+                     CALL dg_sum_patch_force_1d(rpot, rhos1, exp_igr%centre(:, p1), fat1)
                      atprop%atstress(i, j, p1) = atprop%atstress(i, j, p1) + fat1*dvols
                      IF (i /= j) atprop%atstress(j, i, p1) = atprop%atstress(j, i, p1) + fat1*dvols
                      IF (p2 /= 0) THEN
-                        CALL dg_sum_patch_force_1d(rpot, rhos2%pw, exp_igr%centre(:, p2), fat1)
+                        CALL dg_sum_patch_force_1d(rpot, rhos2, exp_igr%centre(:, p2), fat1)
                         atprop%atstress(i, j, p2) = atprop%atstress(i, j, p2) + fat1*dvols
                         IF (i /= j) atprop%atstress(j, i, p2) = atprop%atstress(j, i, p2) + fat1*dvols
                      END IF
@@ -339,13 +333,12 @@ CONTAINS
             END DO
             CALL pw_pool_give_back_pw(pw_big_pool, phi_g)
             CALL pw_pool_give_back_pw(pw_big_pool, rhob_g)
-            DEALLOCATE (phi_g, rhob_g)
          END IF
          CALL rs_grid_release(rpot)
+         DEALLOCATE (rpot)
       END IF
 
       CALL pw_pool_give_back_pw(pw_big_pool, phi_r)
-      DEALLOCATE (phi_r)
 
       !---------- END OF ELECTROSTATIC CALCULATION --------
 
@@ -354,7 +347,7 @@ CONTAINS
       IF ((use_virial) .AND. (PRESENT(pv_g))) THEN
          DO i = 1, 3
             DO j = i, 3
-               f_stress(i, j) = pw_integral_a2b(dphi_g(i)%pw, dphi_g(j)%pw)
+               f_stress(i, j) = pw_integral_a2b(dphi_g(i), dphi_g(j))
                f_stress(j, i) = f_stress(i, j)
             END DO
          END DO
@@ -365,25 +358,22 @@ CONTAINS
 
       !--------END OF STRESS TENSOR CALCULATION -----------
 
-      ALLOCATE (drpot(1:3))
       DO i = 1, 3
-         CALL rs_grid_create(drpot(i)%rs_grid, rs_desc)
-         CALL rs_grid_set_box(grid_b, rs=drpot(i)%rs_grid)
-         CALL pw_transfer(dphi_g(i)%pw, rhob_r)
-         CALL pw_pool_give_back_pw(pw_big_pool, dphi_g(i)%pw)
-         DEALLOCATE (dphi_g(i)%pw)
-         CALL rs_pw_transfer(drpot(i)%rs_grid, rhob_r, pw2rs)
+         CALL rs_grid_create(drpot(i), rs_desc)
+         CALL rs_grid_set_box(grid_b, rs=drpot(i))
+         CALL pw_transfer(dphi_g(i), rhob_r)
+         CALL pw_pool_give_back_pw(pw_big_pool, dphi_g(i))
+         CALL rs_pw_transfer(drpot(i), rhob_r, pw2rs)
       END DO
 
       CALL pw_pool_give_back_pw(pw_big_pool, rhob_r)
-      DEALLOCATE (rhob_r)
 
       !----------------- FORCE CALCULATION ----------------
 
       ! initialize the forces
       IF (PRESENT(fg_coulomb)) THEN
          fg_coulomb = 0.0_dp
-         dvols = rhos1%pw%pw_grid%dvol
+         dvols = rhos1%pw_grid%dvol
 
          ipart = 0
          DO
@@ -406,7 +396,7 @@ CONTAINS
 
             ! sum boxes on real space grids (big box)
             IF (is1_core) THEN
-               CALL dg_sum_patch_force_3d(drpot, rhos1%pw, &
+               CALL dg_sum_patch_force_3d(drpot, rhos1, &
                                           exp_igr%core_centre(:, particle_set(p1)%shell_index), fat)
                fgcore_coulomb(1, particle_set(p1)%shell_index) = &
                   fgcore_coulomb(1, particle_set(p1)%shell_index) - fat(1)*dvols
@@ -415,13 +405,13 @@ CONTAINS
                fgcore_coulomb(3, particle_set(p1)%shell_index) = &
                   fgcore_coulomb(3, particle_set(p1)%shell_index) - fat(3)*dvols
             ELSE
-               CALL dg_sum_patch_force_3d(drpot, rhos1%pw, exp_igr%centre(:, p1), fat)
+               CALL dg_sum_patch_force_3d(drpot, rhos1, exp_igr%centre(:, p1), fat)
                fg_coulomb(1, p1) = fg_coulomb(1, p1) - fat(1)*dvols
                fg_coulomb(2, p1) = fg_coulomb(2, p1) - fat(2)*dvols
                fg_coulomb(3, p1) = fg_coulomb(3, p1) - fat(3)*dvols
             END IF
             IF (p2 /= 0 .AND. is2_core) THEN
-               CALL dg_sum_patch_force_3d(drpot, rhos1%pw, &
+               CALL dg_sum_patch_force_3d(drpot, rhos1, &
                                           exp_igr%core_centre(:, particle_set(p2)%shell_index), fat)
                fgcore_coulomb(1, particle_set(p2)%shell_index) = &
                   fgcore_coulomb(1, particle_set(p2)%shell_index) - fat(1)*dvols
@@ -430,7 +420,7 @@ CONTAINS
                fgcore_coulomb(3, particle_set(p2)%shell_index) = &
                   fgcore_coulomb(3, particle_set(p2)%shell_index) - fat(3)*dvols
             ELSEIF (p2 /= 0) THEN
-               CALL dg_sum_patch_force_3d(drpot, rhos2%pw, exp_igr%centre(:, p2), fat)
+               CALL dg_sum_patch_force_3d(drpot, rhos2, exp_igr%centre(:, p2), fat)
                fg_coulomb(1, p2) = fg_coulomb(1, p2) - fat(1)*dvols
                fg_coulomb(2, p2) = fg_coulomb(2, p2) - fat(2)*dvols
                fg_coulomb(3, p2) = fg_coulomb(3, p2) - fat(3)*dvols
@@ -440,7 +430,7 @@ CONTAINS
       END IF
       IF (PRESENT(fgshell_coulomb)) THEN
          fgshell_coulomb = 0.0_dp
-         dvols = rhos1%pw%pw_grid%dvol
+         dvols = rhos1%pw_grid%dvol
 
          ipart = 0
          DO
@@ -453,12 +443,12 @@ CONTAINS
                                  is1_shell=.TRUE., is2_shell=.TRUE., charges=charges)
 
             ! sum boxes on real space grids (big box)
-            CALL dg_sum_patch_force_3d(drpot, rhos1%pw, exp_igr%shell_centre(:, p1), fat)
+            CALL dg_sum_patch_force_3d(drpot, rhos1, exp_igr%shell_centre(:, p1), fat)
             fgshell_coulomb(1, p1) = fgshell_coulomb(1, p1) - fat(1)*dvols
             fgshell_coulomb(2, p1) = fgshell_coulomb(2, p1) - fat(2)*dvols
             fgshell_coulomb(3, p1) = fgshell_coulomb(3, p1) - fat(3)*dvols
             IF (p2 /= 0) THEN
-               CALL dg_sum_patch_force_3d(drpot, rhos2%pw, exp_igr%shell_centre(:, p2), fat)
+               CALL dg_sum_patch_force_3d(drpot, rhos2, exp_igr%shell_centre(:, p2), fat)
                fgshell_coulomb(1, p2) = fgshell_coulomb(1, p2) - fat(1)*dvols
                fgshell_coulomb(2, p2) = fgshell_coulomb(2, p2) - fat(2)*dvols
                fgshell_coulomb(3, p2) = fgshell_coulomb(3, p2) - fat(3)*dvols
@@ -471,16 +461,13 @@ CONTAINS
       !------------------CLEANING UP ----------------------
 
       CALL rs_grid_release(rden)
-      IF (ASSOCIATED(drpot)) THEN
-         DO i = 1, 3
-            CALL rs_grid_release(drpot(i)%rs_grid)
-         END DO
-         DEALLOCATE (drpot)
-      END IF
+      DEALLOCATE (rden)
+      DO i = 1, 3
+         CALL rs_grid_release(drpot(i))
+      END DO
 
-      CALL pw_pool_give_back_pw(pw_small_pool, rhos1%pw)
-      CALL pw_pool_give_back_pw(pw_small_pool, rhos2%pw)
-      DEALLOCATE (rhos1%pw, rhos2%pw)
+      CALL pw_pool_give_back_pw(pw_small_pool, rhos1)
+      CALL pw_pool_give_back_pw(pw_small_pool, rhos2)
       CALL structure_factor_deallocate(exp_igr)
 
       CALL timestop(handle)
@@ -519,7 +506,7 @@ CONTAINS
       TYPE(cell_type), INTENT(IN)                        :: box
       INTEGER, INTENT(IN)                                :: p1, p2
       TYPE(pw_grid_type), INTENT(IN)                     :: grid_b, grid_s
-      TYPE(pw_p_type)                                    :: rhos1, rhos2
+      TYPE(pw_type), INTENT(INOUT)                       :: rhos1, rhos2
       LOGICAL, OPTIONAL                                  :: is1_core, is2_core, is1_shell, is2_shell
       TYPE(particle_type), DIMENSION(:), OPTIONAL, &
          POINTER                                         :: core_particle_set
@@ -533,7 +520,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(3)                        :: r1, r2
       TYPE(atomic_kind_type), POINTER                    :: atomic_kind
       TYPE(dg_rho0_type), POINTER                        :: dg_rho0
-      TYPE(pw_p_type), POINTER                           :: rho0
+      TYPE(pw_type), POINTER                             :: rho0
       TYPE(shell_kind_type), POINTER                     :: shell
 
       NULLIFY (shell)
@@ -633,9 +620,9 @@ CONTAINS
       END IF
 
       IF (p2 == 0) THEN
-         CALL dg_get_patch(rho0%pw, rhos1%pw, q1, ex1, ey1, ez1)
+         CALL dg_get_patch(rho0, rhos1, q1, ex1, ey1, ez1)
       ELSE
-         CALL dg_get_patch(rho0%pw, rhos1%pw, rhos2%pw, q1, q2, ex1, ey1, ez1, ex2, ey2, ez2)
+         CALL dg_get_patch(rho0, rhos1, rhos2, q1, q2, ex1, ey1, ez1, ex2, ey2, ez2)
       END IF
 
    END SUBROUTINE get_patch
@@ -662,7 +649,7 @@ CONTAINS
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(structure_factor_type)                        :: exp_igr
       INTEGER, INTENT(IN)                                :: p1, p2
-      TYPE(pw_p_type)                                    :: rhos1, rhos2
+      TYPE(pw_type), INTENT(INOUT)                       :: rhos1, rhos2
       LOGICAL, OPTIONAL                                  :: is1_core, is2_core, is1_shell, is2_shell
       REAL(KIND=dp), DIMENSION(:), OPTIONAL, POINTER     :: charges
 
@@ -672,7 +659,7 @@ CONTAINS
       REAL(KIND=dp)                                      :: q1, q2
       TYPE(atomic_kind_type), POINTER                    :: atomic_kind
       TYPE(dg_rho0_type), POINTER                        :: dg_rho0
-      TYPE(pw_p_type), POINTER                           :: rho0
+      TYPE(pw_type), POINTER                             :: rho0
       TYPE(shell_kind_type), POINTER                     :: shell
 
       NULLIFY (shell)
@@ -743,9 +730,9 @@ CONTAINS
       END IF
 
       IF (p2 == 0) THEN
-         CALL dg_get_patch(rho0%pw, rhos1%pw, q1, ex1, ey1, ez1)
+         CALL dg_get_patch(rho0, rhos1, q1, ex1, ey1, ez1)
       ELSE
-         CALL dg_get_patch(rho0%pw, rhos1%pw, rhos2%pw, q1, q2, &
+         CALL dg_get_patch(rho0, rhos1, rhos2, q1, q2, &
                            ex1, ey1, ez1, ex2, ey2, ez2)
       END IF
 

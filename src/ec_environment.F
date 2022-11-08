@@ -113,7 +113,7 @@ CONTAINS
       TYPE(section_vals_type), POINTER                   :: dft_section
       TYPE(section_vals_type), OPTIONAL, POINTER         :: ec_section
 
-      CHARACTER(LEN=*), PARAMETER :: routineN = 'init_ec_env', routineP = moduleN//':'//routineN
+      CHARACTER(LEN=*), PARAMETER                        :: routineN = 'init_ec_env'
 
       INTEGER                                            :: handle, ikind, maxlgto, nkind, unit_nr
       LOGICAL                                            :: explicit
@@ -147,7 +147,6 @@ CONTAINS
       NULLIFY (ec_env%matrix_wz)
       NULLIFY (ec_env%z_admm)
       NULLIFY (ec_env%p_env)
-      NULLIFY (ec_env%vh_rspace)
       NULLIFY (ec_env%vxc_rspace)
       NULLIFY (ec_env%vtau_rspace)
       NULLIFY (ec_env%vadmm_rspace)
@@ -346,7 +345,7 @@ CONTAINS
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(energy_correction_type), POINTER              :: ec_env
 
-      CHARACTER(LEN=*), PARAMETER :: routineN = 'ec_ls_create', routineP = moduleN//':'//routineN
+      CHARACTER(LEN=*), PARAMETER                        :: routineN = 'ec_ls_create'
 
       INTEGER                                            :: handle
       REAL(KIND=dp)                                      :: mu
@@ -462,7 +461,7 @@ CONTAINS
       TYPE(energy_correction_type), POINTER              :: ec_env
       INTEGER, INTENT(IN)                                :: unit_nr
 
-      CHARACTER(LEN=*), PARAMETER :: routineN = 'ec_write_input', routineP = moduleN//':'//routineN
+      CHARACTER(LEN=*), PARAMETER                        :: routineN = 'ec_write_input'
 
       INTEGER                                            :: handle
       TYPE(ls_scf_env_type), POINTER                     :: ls_env

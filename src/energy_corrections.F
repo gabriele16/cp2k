@@ -152,6 +152,7 @@ MODULE energy_corrections
                                               qs_kind_type
    USE qs_kinetic,                      ONLY: build_kinetic_matrix
    USE qs_ks_methods,                   ONLY: calc_rho_tot_gspace
+   USE qs_ks_reference,                 ONLY: ks_ref_potential
    USE qs_ks_types,                     ONLY: qs_ks_env_type
    USE qs_linres_kernel,                ONLY: hfx_matrix
    USE qs_mo_methods,                   ONLY: calculate_subspace_eigenvalues,&
@@ -171,8 +172,7 @@ MODULE energy_corrections
    USE qs_rho_types,                    ONLY: qs_rho_get,&
                                               qs_rho_type
    USE qs_vxc,                          ONLY: qs_vxc_create
-   USE response_solver,                 ONLY: ks_ref_potential,&
-                                              response_calculation,&
+   USE response_solver,                 ONLY: response_calculation,&
                                               response_force
    USE string_utilities,                ONLY: uppercase
    USE task_list_methods,               ONLY: generate_qs_task_list
@@ -183,9 +183,8 @@ MODULE energy_corrections
                                               write_stress_tensor_components
    USE virial_types,                    ONLY: cp_virial,&
                                               symmetrize_virial,&
-                                              virial_create,&
-                                              virial_release,&
-                                              virial_type
+                                              virial_type,&
+                                              zero_virial
    USE voronoi_interface,               ONLY: entry_voronoi_or_bqb
 #include "./base/base_uses.f90"
 
@@ -332,10 +331,8 @@ CONTAINS
 
       IF (ec_env%should_update) THEN
          CALL ec_build_neighborlist(qs_env, ec_env)
-         IF (.NOT. ASSOCIATED(ec_env%vh_rspace)) ALLOCATE (ec_env%vh_rspace)
-         IF (.NOT. ASSOCIATED(ec_env%vh_rspace%pw)) ALLOCATE (ec_env%vh_rspace%pw)
          CALL ks_ref_potential(qs_env, &
-                               ec_env%vh_rspace%pw, &
+                               ec_env%vh_rspace, &
                                ec_env%vxc_rspace, &
                                ec_env%vtau_rspace, &
                                ec_env%vadmm_rspace, &
@@ -427,7 +424,7 @@ CONTAINS
          END DO
 
          CALL response_force(qs_env, &
-                             vh_rspace=ec_env%vh_rspace%pw, &
+                             vh_rspace=ec_env%vh_rspace, &
                              vxc_rspace=ec_env%vxc_rspace, &
                              vtau_rspace=ec_env%vtau_rspace, &
                              vadmm_rspace=ec_env%vadmm_rspace, &
@@ -635,7 +632,7 @@ CONTAINS
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(section_vals_type), POINTER                   :: adiabatic_rescaling_section, &
                                                             hfx_sections, input
-      TYPE(virial_type), POINTER                         :: virdeb, virial
+      TYPE(virial_type), POINTER                         :: virial
 
       CALL timeset(routineN, handle)
 
@@ -782,7 +779,7 @@ CONTAINS
          ! v_xc[n_in]_GS
          CALL pw_transfer(ec_env%vxc_rspace(ispin)%pw, v_rspace_in(ispin)%pw)
          ! add v_H[n_in]
-         CALL pw_axpy(ec_env%vh_rspace%pw, v_rspace_in(ispin)%pw)
+         CALL pw_axpy(ec_env%vh_rspace, v_rspace_in(ispin)%pw)
       END DO
 
       ! initialize src matrix
@@ -1065,50 +1062,51 @@ CONTAINS
 
          ! For debugging, create a second virial environment,
          ! apply volume terms immediately
-         CALL virial_create(virdeb)
-         CALL cp_virial(virial, virdeb)
+         BLOCK
+            TYPE(virial_type) :: virdeb
+            CALL zero_virial(virdeb)
+            CALL cp_virial(virial, virdeb)
 
-         CALL mp_sum(virdeb%pv_overlap, para_env%group)
-         CALL mp_sum(virdeb%pv_ekinetic, para_env%group)
-         CALL mp_sum(virdeb%pv_ppl, para_env%group)
-         CALL mp_sum(virdeb%pv_ppnl, para_env%group)
-         CALL mp_sum(virdeb%pv_ecore_overlap, para_env%group)
-         CALL mp_sum(virdeb%pv_ehartree, para_env%group)
-         CALL mp_sum(virdeb%pv_exc, para_env%group)
-         CALL mp_sum(virdeb%pv_exx, para_env%group)
-         CALL mp_sum(virdeb%pv_vdw, para_env%group)
-         CALL mp_sum(virdeb%pv_mp2, para_env%group)
-         CALL mp_sum(virdeb%pv_nlcc, para_env%group)
-         CALL mp_sum(virdeb%pv_gapw, para_env%group)
-         CALL mp_sum(virdeb%pv_lrigpw, para_env%group)
-         CALL mp_sum(virdeb%pv_virial, para_env%group)
-         CALL symmetrize_virial(virdeb)
+            CALL mp_sum(virdeb%pv_overlap, para_env%group)
+            CALL mp_sum(virdeb%pv_ekinetic, para_env%group)
+            CALL mp_sum(virdeb%pv_ppl, para_env%group)
+            CALL mp_sum(virdeb%pv_ppnl, para_env%group)
+            CALL mp_sum(virdeb%pv_ecore_overlap, para_env%group)
+            CALL mp_sum(virdeb%pv_ehartree, para_env%group)
+            CALL mp_sum(virdeb%pv_exc, para_env%group)
+            CALL mp_sum(virdeb%pv_exx, para_env%group)
+            CALL mp_sum(virdeb%pv_vdw, para_env%group)
+            CALL mp_sum(virdeb%pv_mp2, para_env%group)
+            CALL mp_sum(virdeb%pv_nlcc, para_env%group)
+            CALL mp_sum(virdeb%pv_gapw, para_env%group)
+            CALL mp_sum(virdeb%pv_lrigpw, para_env%group)
+            CALL mp_sum(virdeb%pv_virial, para_env%group)
+            CALL symmetrize_virial(virdeb)
 
-         ! apply stress-tensor 1st terms
-         DO i = 1, 3
-            virdeb%pv_ehartree(i, i) = virdeb%pv_ehartree(i, i) - 2.0_dp*ehartree
-            virdeb%pv_virial(i, i) = virdeb%pv_virial(i, i) - exc &
-                                     - 2.0_dp*ehartree
-            virdeb%pv_exc(i, i) = virdeb%pv_exc(i, i) - exc
-            ! The factor 2 is a hack. It compensates the plus sign in h_stress/pw_poisson_solve.
-            ! The sign in pw_poisson_solve is correct for FIST, but not for QS.
-            ! There should be a more elegant solution to that ...
-         END DO
+            ! apply stress-tensor 1st terms
+            DO i = 1, 3
+               virdeb%pv_ehartree(i, i) = virdeb%pv_ehartree(i, i) - 2.0_dp*ehartree
+               virdeb%pv_virial(i, i) = virdeb%pv_virial(i, i) - exc &
+                                        - 2.0_dp*ehartree
+               virdeb%pv_exc(i, i) = virdeb%pv_exc(i, i) - exc
+               ! The factor 2 is a hack. It compensates the plus sign in h_stress/pw_poisson_solve.
+               ! The sign in pw_poisson_solve is correct for FIST, but not for QS.
+               ! There should be a more elegant solution to that ...
+            END DO
 
-         CALL mp_sum(sttot, para_env%group)
-         stdeb = fconv*(virdeb%pv_virial - sttot)
-         IF (iounit > 0) WRITE (UNIT=iounit, FMT="(T2,A,T41,2(1X,ES19.11))") &
-            'STRESS| Explicit electronic stress   ', one_third_sum_diag(stdeb), det_3x3(stdeb)
+            CALL mp_sum(sttot, para_env%group)
+            stdeb = fconv*(virdeb%pv_virial - sttot)
+            IF (iounit > 0) WRITE (UNIT=iounit, FMT="(T2,A,T41,2(1X,ES19.11))") &
+               'STRESS| Explicit electronic stress   ', one_third_sum_diag(stdeb), det_3x3(stdeb)
 
-         stdeb = fconv*(virdeb%pv_virial)
-         IF (iounit > 0) WRITE (UNIT=iounit, FMT="(T2,A,T41,2(1X,ES19.11))") &
-            'STRESS| Explicit total stress   ', one_third_sum_diag(stdeb), det_3x3(stdeb)
+            stdeb = fconv*(virdeb%pv_virial)
+            IF (iounit > 0) WRITE (UNIT=iounit, FMT="(T2,A,T41,2(1X,ES19.11))") &
+               'STRESS| Explicit total stress   ', one_third_sum_diag(stdeb), det_3x3(stdeb)
 
-         CALL write_stress_tensor_components(virdeb, iounit, cell)
-         CALL write_stress_tensor(virdeb%pv_virial, iounit, cell, .FALSE.)
+            CALL write_stress_tensor_components(virdeb, iounit, cell)
+            CALL write_stress_tensor(virdeb%pv_virial, iounit, cell, .FALSE.)
 
-         CALL virial_release(virdeb)
-
+         END BLOCK
       END IF
 
       CALL timestop(handle)
@@ -1317,7 +1315,7 @@ CONTAINS
       DO ispin = 1, nspins
          ! Add v_hartree + v_xc = v_rspace
          CALL pw_scale(v_rspace(ispin)%pw, v_rspace(ispin)%pw%pw_grid%dvol)
-         CALL pw_axpy(ec_env%vh_rspace%pw, v_rspace(ispin)%pw)
+         CALL pw_axpy(ec_env%vh_rspace, v_rspace(ispin)%pw)
          ! integrate over potential <a|V|b>
          CALL integrate_v_rspace(v_rspace=v_rspace(ispin)%pw, &
                                  hmat=ec_env%matrix_ks(ispin, 1), &
@@ -1633,7 +1631,7 @@ CONTAINS
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(section_vals_type), POINTER                   :: xc_section
-      TYPE(virial_type), POINTER                         :: virdeb, virial
+      TYPE(virial_type), POINTER                         :: virial
 
       CALL timeset(routineN, handle)
 
@@ -1683,7 +1681,7 @@ CONTAINS
       CALL pw_pool_create_pw(auxbas_pw_pool, v_hartree_rspace, &
                              use_data=REALDATA3D, in_space=REALSPACE)
 
-      CALL pw_transfer(ec_env%vh_rspace%pw, v_hartree_rspace)
+      CALL pw_transfer(ec_env%vh_rspace, v_hartree_rspace)
 
       ! calculate output density on grid
       ! rho_in(R):   CALL qs_rho_get(rho, rho_r=rho_r)
@@ -2172,50 +2170,51 @@ CONTAINS
 
          ! For debugging, create a second virial environment,
          ! apply volume terms immediately
-         CALL virial_create(virdeb)
-         CALL cp_virial(virial, virdeb)
+         BLOCK
+            TYPE(virial_type) :: virdeb
+            CALL zero_virial(virdeb)
+            CALL cp_virial(virial, virdeb)
 
-         CALL mp_sum(virdeb%pv_overlap, para_env%group)
-         CALL mp_sum(virdeb%pv_ekinetic, para_env%group)
-         CALL mp_sum(virdeb%pv_ppl, para_env%group)
-         CALL mp_sum(virdeb%pv_ppnl, para_env%group)
-         CALL mp_sum(virdeb%pv_ecore_overlap, para_env%group)
-         CALL mp_sum(virdeb%pv_ehartree, para_env%group)
-         CALL mp_sum(virdeb%pv_exc, para_env%group)
-         CALL mp_sum(virdeb%pv_exx, para_env%group)
-         CALL mp_sum(virdeb%pv_vdw, para_env%group)
-         CALL mp_sum(virdeb%pv_mp2, para_env%group)
-         CALL mp_sum(virdeb%pv_nlcc, para_env%group)
-         CALL mp_sum(virdeb%pv_gapw, para_env%group)
-         CALL mp_sum(virdeb%pv_lrigpw, para_env%group)
-         CALL mp_sum(virdeb%pv_virial, para_env%group)
-         CALL symmetrize_virial(virdeb)
+            CALL mp_sum(virdeb%pv_overlap, para_env%group)
+            CALL mp_sum(virdeb%pv_ekinetic, para_env%group)
+            CALL mp_sum(virdeb%pv_ppl, para_env%group)
+            CALL mp_sum(virdeb%pv_ppnl, para_env%group)
+            CALL mp_sum(virdeb%pv_ecore_overlap, para_env%group)
+            CALL mp_sum(virdeb%pv_ehartree, para_env%group)
+            CALL mp_sum(virdeb%pv_exc, para_env%group)
+            CALL mp_sum(virdeb%pv_exx, para_env%group)
+            CALL mp_sum(virdeb%pv_vdw, para_env%group)
+            CALL mp_sum(virdeb%pv_mp2, para_env%group)
+            CALL mp_sum(virdeb%pv_nlcc, para_env%group)
+            CALL mp_sum(virdeb%pv_gapw, para_env%group)
+            CALL mp_sum(virdeb%pv_lrigpw, para_env%group)
+            CALL mp_sum(virdeb%pv_virial, para_env%group)
+            CALL symmetrize_virial(virdeb)
 
-         ! apply stress-tensor 1st and 2nd volume terms
-         DO i = 1, 3
-            virdeb%pv_ehartree(i, i) = virdeb%pv_ehartree(i, i) - 2.0_dp*(ehartree + dehartree)
-            virdeb%pv_virial(i, i) = virdeb%pv_virial(i, i) - exc - eexc &
-                                     - 2.0_dp*(ehartree + dehartree)
-            virdeb%pv_exc(i, i) = virdeb%pv_exc(i, i) - exc - eexc
-            ! The factor 2 is a hack. It compensates the plus sign in h_stress/pw_poisson_solve.
-            ! The sign in pw_poisson_solve is correct for FIST, but not for QS.
-            ! There should be a more elegant solution to that ...
-         END DO
+            ! apply stress-tensor 1st and 2nd volume terms
+            DO i = 1, 3
+               virdeb%pv_ehartree(i, i) = virdeb%pv_ehartree(i, i) - 2.0_dp*(ehartree + dehartree)
+               virdeb%pv_virial(i, i) = virdeb%pv_virial(i, i) - exc - eexc &
+                                        - 2.0_dp*(ehartree + dehartree)
+               virdeb%pv_exc(i, i) = virdeb%pv_exc(i, i) - exc - eexc
+               ! The factor 2 is a hack. It compensates the plus sign in h_stress/pw_poisson_solve.
+               ! The sign in pw_poisson_solve is correct for FIST, but not for QS.
+               ! There should be a more elegant solution to that ...
+            END DO
 
-         CALL mp_sum(sttot, para_env%group)
-         stdeb = fconv*(virdeb%pv_virial - sttot)
-         IF (iounit > 0) WRITE (UNIT=iounit, FMT="(T2,A,T41,2(1X,ES19.11))") &
-            'STRESS| Explicit electronic stress   ', one_third_sum_diag(stdeb), det_3x3(stdeb)
+            CALL mp_sum(sttot, para_env%group)
+            stdeb = fconv*(virdeb%pv_virial - sttot)
+            IF (iounit > 0) WRITE (UNIT=iounit, FMT="(T2,A,T41,2(1X,ES19.11))") &
+               'STRESS| Explicit electronic stress   ', one_third_sum_diag(stdeb), det_3x3(stdeb)
 
-         stdeb = fconv*(virdeb%pv_virial)
-         IF (iounit > 0) WRITE (UNIT=iounit, FMT="(T2,A,T41,2(1X,ES19.11))") &
-            'STRESS| Explicit total stress   ', one_third_sum_diag(stdeb), det_3x3(stdeb)
+            stdeb = fconv*(virdeb%pv_virial)
+            IF (iounit > 0) WRITE (UNIT=iounit, FMT="(T2,A,T41,2(1X,ES19.11))") &
+               'STRESS| Explicit total stress   ', one_third_sum_diag(stdeb), det_3x3(stdeb)
 
-         CALL write_stress_tensor_components(virdeb, iounit, cell)
-         CALL write_stress_tensor(virdeb%pv_virial, iounit, cell, .FALSE.)
+            CALL write_stress_tensor_components(virdeb, iounit, cell)
+            CALL write_stress_tensor(virdeb%pv_virial, iounit, cell, .FALSE.)
 
-         CALL virial_release(virdeb)
-
+         END BLOCK
       END IF
 
       CALL timestop(handle)
@@ -3041,7 +3040,7 @@ CONTAINS
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_ks, matrix_s
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'ec_ls_init', routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER                        :: routineN = 'ec_ls_init'
 
       INTEGER                                            :: handle, ispin, nspins
       TYPE(dft_control_type), POINTER                    :: dft_control
@@ -3114,7 +3113,7 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_p, matrix_w
       INTEGER, INTENT(IN)                                :: ec_ls_method
 
-      CHARACTER(LEN=*), PARAMETER :: routineN = 'ec_ls_solver', routineP = moduleN//':'//routineN
+      CHARACTER(LEN=*), PARAMETER                        :: routineN = 'ec_ls_solver'
 
       INTEGER                                            :: handle, ispin, nelectron_spin_real, &
                                                             nspins
@@ -3287,8 +3286,7 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:, :), &
          INTENT(INOUT), POINTER                          :: matrix_p, matrix_w
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'ec_ot_diag_solver', &
-         routineP = moduleN//':'//routineN
+      CHARACTER(len=*), PARAMETER                        :: routineN = 'ec_ot_diag_solver'
 
       INTEGER                                            :: handle, homo, ikind, iounit, ispin, &
                                                             max_iter, nao, nkind, nmo, nspins

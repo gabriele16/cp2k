@@ -11,6 +11,7 @@
 MODULE xc_pot_saop
    USE atomic_kind_types,               ONLY: atomic_kind_type,&
                                               get_atomic_kind
+   USE basis_set_types,                 ONLY: gto_basis_set_type
    USE cp_array_utils,                  ONLY: cp_1d_r_p_type
    USE cp_control_types,                ONLY: dft_control_type
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_plus_fm_fm_t,&
@@ -148,11 +149,11 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: orbital_density_matrix, rho_struct_ao
       TYPE(mo_set_p_type), DIMENSION(:), POINTER         :: molecular_orbitals
       TYPE(pw_env_type), POINTER                         :: pw_env
-      TYPE(pw_p_type), DIMENSION(:), POINTER             :: rho_g, rho_r, rho_struct_r, tau, &
-                                                            vxc_GLLB, vxc_LB, vxc_SAOP, vxc_tau, &
-                                                            vxc_tmp
+      TYPE(pw_p_type), DIMENSION(:), POINTER             :: rho_g, rho_r, rho_struct_r, tau, vxc_LB, &
+                                                            vxc_tau, vxc_tmp
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
       TYPE(pw_type)                                      :: orbital, orbital_g
+      TYPE(pw_type), ALLOCATABLE, DIMENSION(:)           :: vxc_GLLB, vxc_SAOP
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho_struct
       TYPE(section_vals_type), POINTER                   :: input, xc_fun_section_orig, &
@@ -166,7 +167,7 @@ CONTAINS
 
       NULLIFY (ks_env, pw_env, auxbas_pw_pool, input)
       NULLIFY (rho_g, rho_r, tau, rho_struct, e_uniform)
-      NULLIFY (vxc_GLLB, vxc_LB, vxc_tmp, vxc_SAOP, vxc_tau)
+      NULLIFY (vxc_LB, vxc_tmp, vxc_tau)
       NULLIFY (mo_eigenvalues, deriv, rho_struct_r, rho_struct_ao)
       NULLIFY (orbital_density_matrix, dummy, xc_section_tmp, xc_fun_section_tmp)
 
@@ -295,14 +296,13 @@ CONTAINS
 
       ALLOCATE (vxc_GLLB(nspins))
       DO ispin = 1, nspins
-         ALLOCATE (vxc_GLLB(ispin)%pw)
-         CALL pw_pool_create_pw(auxbas_pw_pool, vxc_GLLB(ispin)%pw, &
+         CALL pw_pool_create_pw(auxbas_pw_pool, vxc_GLLB(ispin), &
                                 use_data=REALDATA3D, &
                                 in_space=REALSPACE)
       END DO
 
       DO ispin = 1, nspins
-         dummy => vxc_GLLB(ispin)%pw%cr3d
+         dummy => vxc_GLLB(ispin)%cr3d
          CALL calc_2excpbe(dummy, rho_set, e_uniform, lsd)
       END DO
       NULLIFY (dummy)
@@ -373,7 +373,7 @@ CONTAINS
             END DO
          END DO
 
-         vxc_GLLB(ispin)%pw%cr3d = vxc_GLLB(ispin)%pw%cr3d + vxc_tmp(ispin)%pw%cr3d
+         vxc_GLLB(ispin)%cr3d = vxc_GLLB(ispin)%cr3d + vxc_tmp(ispin)%pw%cr3d
 
       END DO
 
@@ -388,10 +388,9 @@ CONTAINS
                          mo_coeff=mo_coeff, &
                          eigenvalues=mo_eigenvalues, &
                          homo=homo)
-         ALLOCATE (vxc_SAOP(ispin)%pw)
-         CALL pw_pool_create_pw(auxbas_pw_pool, vxc_SAOP(ispin)%pw, &
+         CALL pw_pool_create_pw(auxbas_pw_pool, vxc_SAOP(ispin), &
                                 use_data=REALDATA3D, in_space=REALSPACE)
-         CALL pw_zero(vxc_SAOP(ispin)%pw)
+         CALL pw_zero(vxc_SAOP(ispin))
 
          ALLOCATE (coeff_col(nrow(ispin), 1))
 
@@ -405,7 +404,7 @@ CONTAINS
             END IF
 
             vxc_tmp(ispin)%pw%cr3d = we_LB*vxc_LB(ispin)%pw%cr3d + &
-                                     we_GLLB*vxc_GLLB(ispin)%pw%cr3d
+                                     we_GLLB*vxc_GLLB(ispin)%cr3d
 
             CALL cp_fm_set_all(single_mo_coeff(ispin), 0.0_dp)
             CALL cp_fm_get_submatrix(mo_coeff, coeff_col, &
@@ -424,8 +423,8 @@ CONTAINS
                                     rho=orbital, rho_gspace=orbital_g, &
                                     ks_env=ks_env)
 
-            vxc_SAOP(ispin)%pw%cr3d = vxc_SAOP(ispin)%pw%cr3d + &
-                                      orbital%cr3d*vxc_tmp(ispin)%pw%cr3d
+            vxc_SAOP(ispin)%cr3d = vxc_SAOP(ispin)%cr3d + &
+                                   orbital%cr3d*vxc_tmp(ispin)%pw%cr3d
 
          END DO
 
@@ -437,10 +436,10 @@ CONTAINS
             DO j = bo(1, 2), bo(2, 2)
                DO i = bo(1, 1), bo(2, 1)
                   IF (rho_r(ispin)%pw%cr3d(i, j, k) > density_cut) THEN
-                     vxc_SAOP(ispin)%pw%cr3d(i, j, k) = vxc_SAOP(ispin)%pw%cr3d(i, j, k)/ &
-                                                        rho_r(ispin)%pw%cr3d(i, j, k)
+                     vxc_SAOP(ispin)%cr3d(i, j, k) = vxc_SAOP(ispin)%cr3d(i, j, k)/ &
+                                                     rho_r(ispin)%pw%cr3d(i, j, k)
                   ELSE
-                     vxc_SAOP(ispin)%pw%cr3d(i, j, k) = 0.0_dp
+                     vxc_SAOP(ispin)%cr3d(i, j, k) = 0.0_dp
                   END IF
                END DO
             END DO
@@ -463,13 +462,13 @@ CONTAINS
       DO ispin = 1, nspins
 
          IF (oe_corr == oe_lb) THEN
-            vxc_SAOP(ispin)%pw%cr3d = vxc_LB(ispin)%pw%cr3d
+            vxc_SAOP(ispin)%cr3d = vxc_LB(ispin)%pw%cr3d
          ELSE IF (oe_corr == oe_gllb) THEN
-            vxc_SAOP(ispin)%pw%cr3d = vxc_GLLB(ispin)%pw%cr3d
+            vxc_SAOP(ispin)%cr3d = vxc_GLLB(ispin)%cr3d
          END IF
-         vxc_SAOP(ispin)%pw%cr3d = vxc_SAOP(ispin)%pw%cr3d*vxc_SAOP(ispin)%pw%pw_grid%dvol
+         vxc_SAOP(ispin)%cr3d = vxc_SAOP(ispin)%cr3d*vxc_SAOP(ispin)%pw_grid%dvol
 
-         CALL integrate_v_rspace(v_rspace=vxc_SAOP(ispin)%pw, pmat=rho_struct_ao(ispin), &
+         CALL integrate_v_rspace(v_rspace=vxc_SAOP(ispin), pmat=rho_struct_ao(ispin), &
                                  hmat=ks_matrix(ispin), qs_env=qs_env, &
                                  calculate_forces=.FALSE., &
                                  gapw=gapw)
@@ -477,9 +476,8 @@ CONTAINS
       END DO
 
       DO ispin = 1, nspins
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_SAOP(ispin)%pw)
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_GLLB(ispin)%pw)
-         DEALLOCATE (vxc_SAOP(ispin)%pw, vxc_GLLB(ispin)%pw)
+         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_SAOP(ispin))
+         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_GLLB(ispin))
          CALL pw_release(vxc_LB(ispin)%pw)
          CALL pw_release(vxc_tmp(ispin)%pw)
          DEALLOCATE (vxc_LB(ispin)%pw, vxc_tmp(ispin)%pw)
@@ -517,15 +515,13 @@ CONTAINS
       INTEGER, DIMENSION(2, 3)                           :: bounds
       INTEGER, DIMENSION(:), POINTER                     :: atom_list
       LOGICAL                                            :: lsd, paw_atom
-      REAL(dp), DIMENSION(:, :), POINTER                 :: tau
+      REAL(dp), DIMENSION(:, :, :), POINTER              :: tau
       REAL(KIND=dp)                                      :: density_cut, efac, exc, gradient_cut, &
                                                             tau_cut, we_GLLB, we_LB
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :)        :: coeff_col
-      REAL(KIND=dp), DIMENSION(:, :), POINTER            :: rho_h, rho_s, weight
-      REAL(KIND=dp), DIMENSION(:, :, :), POINTER         :: dummy, e_uniform, vtau, vxc_GLLB_h, &
-                                                            vxc_GLLB_s, vxc_LB_h, vxc_LB_s, &
-                                                            vxc_SAOP_h, vxc_SAOP_s, vxc_tmp_h, &
-                                                            vxc_tmp_s
+      REAL(KIND=dp), DIMENSION(:, :), POINTER            :: weight
+      REAL(KIND=dp), DIMENSION(:, :, :), POINTER :: dummy, e_uniform, rho_h, rho_s, vtau, &
+         vxc_GLLB_h, vxc_GLLB_s, vxc_LB_h, vxc_LB_s, vxc_SAOP_h, vxc_SAOP_s, vxc_tmp_h, vxc_tmp_s
       REAL(KIND=dp), DIMENSION(:, :, :, :), POINTER      :: drho_h, drho_s, vxg
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(cp_1d_r_p_type), DIMENSION(:), POINTER        :: mo_eigenvalues
@@ -536,7 +532,8 @@ CONTAINS
                                                             rho_struct_ao
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: ksmat, psmat
       TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(grid_atom_type), POINTER                      :: atomic_grid
+      TYPE(grid_atom_type), POINTER                      :: atomic_grid, grid_atom
+      TYPE(gto_basis_set_type), POINTER                  :: orb_basis
       TYPE(harmonics_atom_type), POINTER                 :: harmonics
       TYPE(local_rho_type), POINTER                      :: local_rho_set
       TYPE(mo_set_p_type), DIMENSION(:), POINTER         :: molecular_orbitals
@@ -545,7 +542,7 @@ CONTAINS
       TYPE(oce_matrix_type), POINTER                     :: oce
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_rho_type), POINTER                         :: rho_structure
-      TYPE(rho_atom_coeff), DIMENSION(:), POINTER        :: dr_h, dr_s, r_h, r_s
+      TYPE(rho_atom_coeff), DIMENSION(:), POINTER        :: dr_h, dr_s, int_hh, int_ss, r_h, r_s
       TYPE(rho_atom_coeff), DIMENSION(:, :), POINTER     :: r_h_d, r_s_d
       TYPE(rho_atom_type), DIMENSION(:), POINTER         :: rho_atom_set
       TYPE(rho_atom_type), POINTER                       :: rho_atom
@@ -674,7 +671,7 @@ CONTAINS
          CALL xc_rho_set_atom_update(orb_rho_set_h, needs, nspins, bounds)
          CALL xc_rho_set_atom_update(orb_rho_set_s, needs, nspins, bounds)
 
-         ALLOCATE (rho_h(1:na, 1:nspins), rho_s(1:na, 1:nspins))
+         ALLOCATE (rho_h(1:na, 1:nr, 1:nspins), rho_s(1:na, 1:nr, 1:nspins))
          ALLOCATE (weight(1:na, 1:nr))
          ALLOCATE (vxc_LB_h(1:na, 1:nr, 1:nspins), vxc_LB_s(1:na, 1:nr, 1:nspins))
          ALLOCATE (vxc_GLLB_h(1:na, 1:nr, 1:nspins), vxc_GLLB_s(1:na, 1:nr, 1:nspins))
@@ -682,7 +679,7 @@ CONTAINS
          ALLOCATE (vxc_SAOP_h(1:na, 1:nr, 1:nspins), vxc_SAOP_s(1:na, 1:nr, 1:nspins))
          ALLOCATE (drho_h(1:4, 1:na, 1:nr, 1:nspins), drho_s(1:4, 1:na, 1:nr, 1:nspins))
 
-!      Distribute the atoms of this kind
+         ! Distribute the atoms of this kind
          num_pe = para_env%num_pe
          mepos = para_env%mepos
          bo = get_limit(natom, num_pe, mepos)
@@ -696,15 +693,20 @@ CONTAINS
                               rho_rad_s=r_s, drho_rad_h=dr_h, &
                               drho_rad_s=dr_s, rho_rad_h_d=r_h_d, &
                               rho_rad_s_d=r_s_d)
+            rho_h = 0.0_dp
+            rho_s = 0.0_dp
             drho_h = 0.0_dp
             drho_s = 0.0_dp
-
             DO ir = 1, nr
                CALL calc_rho_angular(atomic_grid, harmonics, nspins, .TRUE., &
                                      ir, r_h, r_s, rho_h, rho_s, &
                                      dr_h, dr_s, r_h_d, r_s_d, drho_h, drho_s)
+            END DO
+            DO ir = 1, nr
                CALL fill_rho_set(rho_set_h, lsd, nspins, needs, rho_h, drho_h, tau, na, ir)
                CALL fill_rho_set(rho_set_s, lsd, nspins, needs, rho_s, drho_s, tau, na, ir)
+            END DO
+            DO ir = 1, nr
                DO ia = 1, na
                   weight(ia, ir) = atomic_grid%wr(ir)*atomic_grid%wa(ia)
                END DO
@@ -832,12 +834,17 @@ CONTAINS
 
                   rho_atom => local_rho_set%rho_atom_set(iatom)
                   NULLIFY (r_h, r_s, dr_h, dr_s, r_h_d, r_s_d)
-                  CALL get_rho_atom(rho_atom=rho_atom, &
-                                    rho_rad_h=r_h, rho_rad_s=r_s)
+                  CALL get_rho_atom(rho_atom=rho_atom, rho_rad_h=r_h, rho_rad_s=r_s)
+                  rho_h = 0.0_dp
+                  rho_s = 0.0_dp
+                  drho_h = 0.0_dp
+                  drho_s = 0.0_dp
                   DO ir = 1, nr
                      CALL calc_rho_angular(atomic_grid, harmonics, nspins, .FALSE., &
                                            ir, r_h, r_s, rho_h, rho_s, &
                                            dr_h, dr_s, r_h_d, r_s_d, drho_h, drho_s)
+                  END DO
+                  DO ir = 1, nr
                      CALL fill_rho_set(orb_rho_set_h, lsd, nspins, needs_orbs, rho_h, drho_h, tau, na, ir)
                      CALL fill_rho_set(orb_rho_set_s, lsd, nspins, needs_orbs, rho_s, drho_s, tau, na, ir)
                   END DO
@@ -935,12 +942,17 @@ CONTAINS
 
                   rho_atom => local_rho_set%rho_atom_set(iatom)
                   NULLIFY (r_h, r_s, dr_h, dr_s, r_h_d, r_s_d)
-                  CALL get_rho_atom(rho_atom=rho_atom, &
-                                    rho_rad_h=r_h, rho_rad_s=r_s)
+                  CALL get_rho_atom(rho_atom=rho_atom, rho_rad_h=r_h, rho_rad_s=r_s)
+                  rho_h = 0.0_dp
+                  rho_s = 0.0_dp
+                  drho_h = 0.0_dp
+                  drho_s = 0.0_dp
                   DO ir = 1, nr
                      CALL calc_rho_angular(atomic_grid, harmonics, nspins, .FALSE., &
                                            ir, r_h, r_s, rho_h, rho_s, &
                                            dr_h, dr_s, r_h_d, r_s_d, drho_h, drho_s)
+                  END DO
+                  DO ir = 1, nr
                      CALL fill_rho_set(orb_rho_set_h, lsd, nspins, needs_orbs, rho_h, drho_h, tau, na, ir)
                      CALL fill_rho_set(orb_rho_set_s, lsd, nspins, needs_orbs, rho_s, drho_s, tau, na, ir)
                   END DO
@@ -1005,13 +1017,16 @@ CONTAINS
             END IF
 
             rho_atom => rho_atom_set(iatom)
+            CALL get_rho_atom(rho_atom=rho_atom, ga_Vlocal_gb_h=int_hh, ga_Vlocal_gb_s=int_ss)
+            CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis, &
+                             harmonics=harmonics, grid_atom=grid_atom)
             SELECT CASE (oe_corr)
             CASE (oe_lb)
-               CALL gaVxcgb_noGC(vxc_LB_h, vxc_LB_s, qs_kind_set(ikind), rho_atom, nspins)
+               CALL gaVxcgb_noGC(vxc_LB_h, vxc_LB_s, int_hh, int_ss, grid_atom, orb_basis, harmonics, nspins)
             CASE (oe_gllb)
-               CALL gaVxcgb_noGC(vxc_GLLB_h, vxc_GLLB_s, qs_kind_set(ikind), rho_atom, nspins)
+               CALL gaVxcgb_noGC(vxc_GLLB_h, vxc_GLLB_s, int_hh, int_ss, grid_atom, orb_basis, harmonics, nspins)
             CASE (oe_saop)
-               CALL gaVxcgb_noGC(vxc_SAOP_h, vxc_SAOP_s, qs_kind_set(ikind), rho_atom, nspins)
+               CALL gaVxcgb_noGC(vxc_SAOP_h, vxc_SAOP_s, int_hh, int_ss, grid_atom, orb_basis, harmonics, nspins)
             CASE default
                CPABORT("Unknown correction!")
             END SELECT
