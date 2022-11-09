@@ -306,4 +306,12 @@ tags
 [._]*.un~
 
 
+CMakeFiles
+CMakeCache.txt
+Makefile
+run_toolchain.sh
+cmake_install_cp2k.sh
+cmake_install.cmake
+
+
 # End of https://www.gitignore.io/api/python,fortran,c,c++,cuda,emacs,vim
