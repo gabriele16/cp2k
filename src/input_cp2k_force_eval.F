@@ -20,7 +20,7 @@ MODULE input_cp2k_force_eval
                                               medium_print_level
    USE cp_units,                        ONLY: cp_unit_to_cp2k
    USE input_constants,                 ONLY: &
-        do_eip, do_embed, do_fist, do_mixed, do_nnp, do_qmmm, do_qs, do_sirius, &
+        do_eip, do_embed, do_fist, do_mixed, do_nnp, do_nequip, do_qmmm, do_qs, do_sirius, &
         do_stress_analytical, do_stress_diagonal_anal, do_stress_diagonal_numer, do_stress_none, &
         do_stress_numerical, numerical
    USE input_cp2k_dft,                  ONLY: create_bsse_section,&
@@ -30,6 +30,7 @@ MODULE input_cp2k_force_eval
    USE input_cp2k_mixed,                ONLY: create_mix_section
    USE input_cp2k_mm,                   ONLY: create_mm_section
    USE input_cp2k_nnp,                  ONLY: create_nnp_section
+   USE input_cp2k_nequip,               ONLY: create_nequip_section
    USE input_cp2k_properties_dft,       ONLY: create_properties_section
    USE input_cp2k_pwdft,                ONLY: create_pwdft_section
    USE input_cp2k_qmmm,                 ONLY: create_qmmm_section
@@ -151,6 +152,10 @@ CONTAINS
       CALL section_release(subsection)
 
       CALL create_nnp_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      CALL create_nequip_section(subsection)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
