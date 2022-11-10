@@ -1170,6 +1170,10 @@ CONTAINS
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
+      CALL create_NEQUIP_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
       CALL create_Goodwin_section(subsection)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
@@ -1450,6 +1454,50 @@ CONTAINS
       CALL keyword_release(keyword)
 
    END SUBROUTINE create_QUIP_section
+
+! **************************************************************************************************
+!> \brief This section specifies the input parameters for NEQUIP potential type
+!> \param section the section to create
+!> \author teo
+! **************************************************************************************************
+   SUBROUTINE create_NEQUIP_section(section)
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(keyword_type), POINTER                        :: keyword
+
+      CPASSERT(.NOT. ASSOCIATED(section))
+      CALL section_create(section, __LOCATION__, name="NEQUIP", &
+                          description="This section specifies the input parameters for the NequIP potential type, "// &
+                          "which is based on graph equivariant neural networks"// &
+                          "to achieve correlated-wavefunction-like accuracy. "// &
+                          "Requires linking with the PyTorch/LibTorch library" // &
+                          "from <a href=""https://pytorch.org/tutorials/advanced/cpp_frontend.html"" "// &
+                          "target=""_blank"">https://pytorch.org/tutorials/advanced/cpp_frontend.html</a> .", &
+                          n_keywords=1, n_subsections=0, repeats=.TRUE.)
+      NULLIFY (keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="ATOMS", &
+                          description="Defines the atomic kinds involved in the NequIP potential. "// &
+                          "For more than 2 elements, &NEQUIP section must be repeated until each element "// &
+                          "has been mentioned at least once. Set IGNORE_MISSING_CRITICAL_PARAMS to T "// &
+                          "in enclosing &FORCEFIELD section to avoid having to list every pair of elements separately.", &
+                          usage="ATOMS {KIND1} {KIND2}", type_of_var=char_t, &
+                          n_var=2)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="POT_FILE_NAME", &
+                          variants=(/"PARMFILE"/), &
+                          description="Specifies the filename that contains the NequIP potential model.", &
+                          usage="POT_FILE_NAME {FILENAME}", default_lc_val="model.pth")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="ATOM_NEQUIP_TYPE", &
+                          description="Specifies the atomic TYPE for the NequIP potential.", &
+                          usage="ATOM_NEQUIP_TYPE {TYPE INTEGER}", &
+                          n_var=1, type_of_var=integer_t)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+   END SUBROUTINE create_NEQUIP_section
+
 
 ! **************************************************************************************************
 !> \brief This section specifies the input parameters for Lennard-Jones potential type
