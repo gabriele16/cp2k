@@ -38,6 +38,8 @@ MODULE manybody_potential
                                               setup_gal21_arrays
    USE manybody_quip,                   ONLY: quip_add_force_virial,&
                                               quip_energy_store_force_virial
+   USE manybody_nequip,                 ONLY: nequip_add_force_virial,&
+                                              nequip_energy_store_force_virial                                            
    USE manybody_siepmann,               ONLY: destroy_siepmann_arrays,&
                                               print_nr_ions_siepmann,&
                                               setup_siepmann_arrays,&
@@ -51,7 +53,7 @@ MODULE manybody_potential
    USE message_passing,                 ONLY: mp_sum
    USE pair_potential_types,            ONLY: &
         ea_type, eam_pot_type, gal21_pot_type, gal21_type, gal_pot_type, gal_type, &
-        pair_potential_pp_type, pair_potential_single_type, quip_type, siepmann_pot_type, &
+        pair_potential_pp_type, pair_potential_single_type, quip_type, nequip_type, siepmann_pot_type, &
         siepmann_type, tersoff_pot_type, tersoff_type
    USE particle_types,                  ONLY: particle_type
    USE util,                            ONLY: sort
@@ -99,9 +101,9 @@ CONTAINS
          nloc_size, npairs, nparticle, nparticle_local, nr_h3O, nr_o, nr_oh, nunique
       INTEGER, DIMENSION(:), POINTER                     :: glob_loc_list_a, work_list
       INTEGER, DIMENSION(:, :), POINTER                  :: glob_loc_list, list, sort_list
-      LOGICAL                                            :: any_gal, any_gal21, any_quip, &
+      LOGICAL                                            :: any_gal, any_gal21, any_quip, any_nequip, &
                                                             any_siepmann, any_tersoff
-      REAL(KIND=dp)                                      :: drij, embed, pot_loc, pot_quip, qr, &
+      REAL(KIND=dp)                                      :: drij, embed, pot_loc, pot_quip, pot_nequip, qr, &
                                                             rab2_max, rij(3)
       REAL(KIND=dp), DIMENSION(3)                        :: cell_v, cvi
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: glob_cell_v
@@ -124,6 +126,7 @@ CONTAINS
       any_gal = .FALSE.
       any_gal21 = .FALSE.
       any_quip = .FALSE.
+      any_nequip = .FALSE.
       CALL timeset(routineN, handle)
       CALL fist_nonbond_env_get(fist_nonbond_env, r_last_update_pbc=r_last_update_pbc, &
                                 potparm=potparm, eam_data=eam_data)
@@ -167,6 +170,7 @@ CONTAINS
             pot => potparm%pot(ikind, jkind)%pot
             any_tersoff = any_tersoff .OR. ANY(pot%type == tersoff_type)
             any_quip = any_quip .OR. ANY(pot%type == quip_type)
+            any_nequip = any_nequip .OR. ANY(pot%type == nequip_type)
             any_siepmann = any_siepmann .OR. ANY(pot%type == siepmann_type)
             any_gal = any_gal .OR. ANY(pot%type == gal_type)
             any_gal21 = any_gal21 .OR. ANY(pot%type == gal21_type)
@@ -179,6 +183,13 @@ CONTAINS
                                              fist_nonbond_env, pot_quip, para_env)
          pot_manybody = pot_manybody + pot_quip
       END IF
+
+      IF (any_nequip) THEN
+         CALL nequip_energy_store_force_virial(particle_set, cell, atomic_kind_set, potparm, &
+                                               fist_nonbond_env, pot_nequip, para_env)
+         pot_manybody = pot_manybody + pot_nequip
+      END IF      
+
       ! TERSOFF
       IF (any_tersoff) THEN
          NULLIFY (glob_loc_list, glob_cell_v, glob_loc_list_a)
@@ -539,7 +550,7 @@ CONTAINS
       INTEGER, ALLOCATABLE, DIMENSION(:, :)              :: eam_kinds_index
       INTEGER, DIMENSION(:), POINTER                     :: glob_loc_list_a, work_list
       INTEGER, DIMENSION(:, :), POINTER                  :: glob_loc_list, list, sort_list
-      LOGICAL                                            :: any_gal, any_gal21, any_quip, &
+      LOGICAL                                            :: any_gal, any_gal21, any_quip, any_nequip, &
                                                             any_siepmann, any_tersoff
       REAL(KIND=dp) :: f_eam, fac, fr(3), ptens11, ptens12, ptens13, ptens21, ptens22, ptens23, &
          ptens31, ptens32, ptens33, rab(3), rab2, rab2_max, rtmp(3)
@@ -559,6 +570,7 @@ CONTAINS
 
       any_tersoff = .FALSE.
       any_quip = .FALSE.
+      any_nequip = .FALSE.
       any_siepmann = .FALSE.
       any_gal = .FALSE.
       any_gal21 = .FALSE.
@@ -596,6 +608,10 @@ CONTAINS
       IF (use_virial) &
          CALL quip_add_force_virial(fist_nonbond_env, f_nonbond, pv_nonbond)
 
+      ! NEQUIP
+      IF (any_nequip) &
+         CALL deepmd_add_force_virial(fist_nonbond_env, f_nonbond, pv_nonbond)
+
       ! starting the force loop
       DO ilist = 1, nonbonded%nlists
          neighbor_kind_pair => nonbonded%neighbor_kind_pairs(ilist)
@@ -614,6 +630,7 @@ CONTAINS
             cell_v = MATMUL(cell%hmat, cvi)
             any_tersoff = any_tersoff .OR. ANY(pot%type == tersoff_type)
             any_siepmann = any_siepmann .OR. ANY(pot%type == siepmann_type)
+            any_nequip = any_nequip .OR. ANY(pot%type == nequip_type)
             any_gal = any_gal .OR. ANY(pot%type == gal_type)
             any_gal21 = any_gal21 .OR. ANY(pot%type == gal21_type)
             i = eam_kinds_index(ikind, jkind)
