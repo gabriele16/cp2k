@@ -102,6 +102,7 @@ MODULE pair_potential_types
              ipbv_pot_type, &
              eam_pot_type, &
              quip_pot_type, &
+             nequip_pot_type, &
              tersoff_pot_type, &
              siepmann_pot_type, &
              gal_pot_type, &
@@ -172,6 +173,12 @@ MODULE pair_potential_types
       CHARACTER(LEN=1024)                    :: init_args
       CHARACTER(LEN=1024)                    :: calc_args
    END TYPE quip_pot_type
+
+! **************************************************************************************************
+   TYPE nequip_pot_type
+      CHARACTER(LEN=default_path_length)     :: nequip_file_name
+      INTEGER                                :: atom_nequip_type
+   END TYPE nequip_pot_type
 
 ! **************************************************************************************************
    TYPE buck4ran_pot_type
@@ -615,6 +622,7 @@ CONTAINS
          CALL pair_potential_goodwin_clean(potparm%set(i)%goodwin)
          CALL pair_potential_eam_clean(potparm%set(i)%eam)
          CALL pair_potential_quip_clean(potparm%set(i)%quip)
+         CALL pair_potential_nequip_clean(potparm%set(i)%nequip)
          CALL pair_potential_buck4r_clean(potparm%set(i)%buck4r)
          CALL pair_potential_buckmo_clean(potparm%set(i)%buckmo)
          CALL pair_potential_bmhft_clean(potparm%set(i)%ft)
@@ -1605,6 +1613,75 @@ CONTAINS
       END IF
    END SUBROUTINE pair_potential_eam_release
 
+! **************************************************************************************************
+!> \brief Creates the NequIP potential type
+!> \param nequip ...
+!> \author Yongbin Zhuang 07.2019, Gabriele Tocci 11.2022
+! **************************************************************************************************
+   SUBROUTINE pair_potential_nequip_create(nequip)
+      TYPE(nequip_pot_type), POINTER                     :: nequip
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'pair_potential_nequip_create', &
+         routineP = moduleN//':'//routineN
+
+      CPASSERT(.NOT. ASSOCIATED(nequip))
+      ALLOCATE (nequip)
+      nequip%nequip_file_name = ""
+      nequip%atom_nequip_type = 0
+      CALL pair_potential_nequip_clean(nequip)
+   END SUBROUTINE pair_potential_nequip_create
+
+! **************************************************************************************************
+!> \brief Copy two NequIP potential type
+!> \param nequip_source ...
+!> \param nequip_dest ...
+!> \author Yongbin Zhuang 07.2019, Gabriele Tocci 11.2022
+! **************************************************************************************************
+   SUBROUTINE pair_potential_nequip_copy(nequip_source, nequip_dest)
+      TYPE(nequip_pot_type), POINTER                     :: nequip_source, nequip_dest
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'pair_potential_nequip_copy', &
+         routineP = moduleN//':'//routineN
+
+      IF (.NOT. ASSOCIATED(nequip_source)) RETURN
+      IF (ASSOCIATED(nequip_dest)) CALL pair_potential_nequip_release(nequip_dest)
+      CALL pair_potential_nequip_create(nequip_dest)
+      nequip_dest%nequip_file_name = nequip_source%nequip_file_name
+      nequip_dest%atom_nequip_type = nequip_source%atom_nequip_type
+   END SUBROUTINE pair_potential_nequip_copy
+
+! **************************************************************************************************
+!> \brief CLEAN the nequip potential type
+!> \param nequip ...
+!> \author Yongbin Zhuang 07.2019
+! **************************************************************************************************
+   SUBROUTINE pair_potential_nequip_clean(nequip)
+      TYPE(nequip_pot_type), POINTER                     :: nequip
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'pair_potential_nequip_clean', &
+         routineP = moduleN//':'//routineN
+
+      IF (.NOT. ASSOCIATED(nequip)) RETURN
+      nequip%nequip_file_name = 'NULL'
+      nequip%atom_nequip_type = 0
+   END SUBROUTINE pair_potential_nequip_clean
+
+! **************************************************************************************************
+!> \brief Destroys the nequip potential type
+!> \param nequip ...
+!> \author Yongbin Zhuang 07.2019, Gabriele Tocci 11.2022
+! **************************************************************************************************
+   SUBROUTINE pair_potential_nequip_release(nequip)
+      TYPE(nequip_pot_type), POINTER                     :: nequip
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'pair_potential_nequip_release', &
+         routineP = moduleN//':'//routineN
+
+      IF (ASSOCIATED(nequip)) THEN
+         DEALLOCATE (nequip)
+      END IF
+   END SUBROUTINE pair_potential_nequip_release
+   
 ! **************************************************************************************************
 !> \brief Creates the QUIP potential type
 !> \param quip ...

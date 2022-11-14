@@ -25,17 +25,17 @@ MODULE manybody_nequip
    USE physcon, ONLY: angstrom, &
                       evolt
 #ifdef __NEQUIP
-   USE nequip_wrapper, ONLY: nnp, &
-                             create_nnp, &
-                             delete_nnp_c, &
-                             compute_nnp
+   USE nequip_wrapper, ONLY: nequip_nnp, &
+                             create_nequip, &
+                             delete_nequip_c, &
+                             compute_nequip
 #endif
 
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
 
-   PUBLIC nequip_energy_store_force, nequip_add_force
+   PUBLIC nequip_energy_store_force_virial, nequip_add_force
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'manybody_nequip'
 
@@ -180,10 +180,10 @@ CONTAINS
 ! initial the two different potential if needed
       IF (nequip_data%do_count == 0) THEN
          IF (nequip_data%do_create(1)) THEN
-            nequip_data%nequip_tmp_pot1 = create_nnp(TRIM(nequip%nequip_file_name))
+            nequip_data%nequip_tmp_pot1 = create_nequip(TRIM(nequip%nequip_file_name))
             nequip_data%do_create(1) = .FALSE.
          END IF
-         CALL compute_nnp( &
+         CALL compute_nequip( &
             pot=nequip_data%nequip_tmp_pot1%ptr, &
             vecsize=vecsize, &
             dener=dener, &
@@ -195,10 +195,10 @@ CONTAINS
         nequip_data%do_count = 1
       ELSE IF (nequip_data%do_count == 1) THEN
          IF (nequip_data%do_create(1)) THEN
-            nequip_data%nequip_tmp_pot2 = create_nnp(TRIM(nequip%nequip_file_name))
+            nequip_data%nequip_tmp_pot2 = create_nequip(TRIM(nequip%nequip_file_name))
             nequip_data%do_create(2) = .FALSE.
          END IF
-         CALL compute_nnp( &
+         CALL compute_nequip( &
             pot=nequip_data%nequip_tmp_pot2%ptr, &
             vecsize=vecsize, &
             dener=dener, &
