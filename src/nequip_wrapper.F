@@ -26,26 +26,26 @@ MODULE nequip_wrapper
 
    IMPLICIT NONE
    PRIVATE
-   PUBLIC :: nnp, create_nnp, delete_nnp_c, compute_nnp
+   PUBLIC :: nequip_nnp, create_nequip, delete_nequip_c, compute_nequip
 
 #if(__NEQUIP)
    INTERFACE
       FUNCTION create_nequip_c(model) BIND(C, name="create_nequip")
          USE ISO_C_BINDING
       CHARACTER(LEN=1, KIND=C_CHAR)                      :: model(*)
-      TYPE(C_PTR)                                        :: create_nnp_c
+      TYPE(C_PTR)                                        :: create_nequip_c
 
       END FUNCTION
-      SUBROUTINE delete_nequip_c(nnp) BIND(C, name="delete_nequip")
+      SUBROUTINE delete_nequip_c(nequip_nnp) BIND(C, name="delete_nequip")
          USE ISO_C_BINDING
-      TYPE(C_PTR), INTENT(IN), VALUE                     :: nnp
+      TYPE(C_PTR), INTENT(IN), VALUE                     :: nequip_nnp
 
       END SUBROUTINE
-      SUBROUTINE compute_nequip_c(nequip, vecsize, &
+      SUBROUTINE compute_nequip_c(nequip_nnp, vecsize, &
                                dener, dforce, datom_ener, &
                                dcoord, datype, dbox) BIND(C, name="compute_nequip")
          USE ISO_C_BINDING
-      TYPE(C_PTR), INTENT(IN), VALUE                     :: nequip, vecsize, dener, dforce, &
+      TYPE(C_PTR), INTENT(IN), VALUE                     :: nequip_nnp, vecsize, dener, dforce, &
                                                             datom_ener, dcoord, &
                                                             datype, dbox
 
@@ -53,7 +53,7 @@ MODULE nequip_wrapper
    END INTERFACE
 #endif
 
-   TYPE nequipwrap
+   TYPE nequip_nnp
       TYPE(C_PTR) :: ptr
    END TYPE
 
@@ -66,7 +66,7 @@ CONTAINS
 ! **************************************************************************************************
    FUNCTION create_nequip(model)
       CHARACTER(len=*), INTENT(IN), TARGET               :: model
-      TYPE(nequipwrap)                                   :: create_nequip
+      TYPE(nequip_nnp)                                       :: create_nequip
 #if(__NEQUIP)
       create_nequip%ptr = create_nequip_c(TRIM(model)//C_NULL_CHAR)
 #endif
@@ -94,7 +94,7 @@ CONTAINS
       INTEGER(C_INT), POINTER :: datype(:)
       REAL(C_DOUBLE), POINTER :: dbox(:)
 #if(__NEQUIP)
-      CALL compute_nnp_c(pot, C_LOC(vecsize), C_LOC(dener), C_LOC(dforce(1)), &
+      CALL compute_nequip_c(pot, C_LOC(vecsize), C_LOC(dener), C_LOC(dforce(1)), &
                          C_LOC(datom_ener(1)), C_LOC(dcoord(1)), C_LOC(datype(1)), &
                          C_LOC(dbox(1)))
                          
