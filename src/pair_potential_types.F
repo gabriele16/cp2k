@@ -1631,9 +1631,9 @@ CONTAINS
    END SUBROUTINE pair_potential_eam_release
 
 ! **************************************************************************************************
-!> \brief Creates the NequIP potential type
+!> \brief Creates the NN potential type
 !> \param nequip ...
-!> \author Yongbin Zhuang 07.2019, Gabriele Tocci 11.2022
+!> \author Zhuang 07.2019 (DeepMD), Gabriele Tocci 11.2022 (NequIP)
 ! **************************************************************************************************
    SUBROUTINE pair_potential_nequip_create(nequip)
       TYPE(nequip_pot_type), POINTER                     :: nequip
@@ -1649,10 +1649,10 @@ CONTAINS
    END SUBROUTINE pair_potential_nequip_create
 
 ! **************************************************************************************************
-!> \brief Copy two NequIP potential type
+!> \brief Copy two NN potential type
 !> \param nequip_source ...
 !> \param nequip_dest ...
-!> \author Yongbin Zhuang 07.2019, Gabriele Tocci 11.2022
+!> \author Zhuang 07.2019 (DeepMD), Gabriele Tocci 11.2022 (NequIP)
 ! **************************************************************************************************
    SUBROUTINE pair_potential_nequip_copy(nequip_source, nequip_dest)
       TYPE(nequip_pot_type), POINTER                     :: nequip_source, nequip_dest
@@ -1668,9 +1668,9 @@ CONTAINS
    END SUBROUTINE pair_potential_nequip_copy
 
 ! **************************************************************************************************
-!> \brief CLEAN the nequip potential type
+!> \brief CLEAN the NN potential type
 !> \param nequip ...
-!> \author Yongbin Zhuang 07.2019
+!> \author Yongbin Zhuang 07.2019 (DeepMD), Gabriele Tocci 11.2022 (NequIP)
 ! **************************************************************************************************
    SUBROUTINE pair_potential_nequip_clean(nequip)
       TYPE(nequip_pot_type), POINTER                     :: nequip
@@ -1684,9 +1684,9 @@ CONTAINS
    END SUBROUTINE pair_potential_nequip_clean
 
 ! **************************************************************************************************
-!> \brief Destroys the nequip potential type
+!> \brief Destroys the NN potential type
 !> \param nequip ...
-!> \author Yongbin Zhuang 07.2019, Gabriele Tocci 11.2022
+!> \author Yongbin Zhuang 07.2019 (DeepMD), Gabriele Tocci 11.2022 (NequIP)
 ! **************************************************************************************************
    SUBROUTINE pair_potential_nequip_release(nequip)
       TYPE(nequip_pot_type), POINTER                     :: nequip
