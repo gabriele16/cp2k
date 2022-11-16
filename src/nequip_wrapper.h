@@ -9,7 +9,7 @@
  * \brief A minimal wrapper for DeepMD-kit C++ interface.
  * \author Yongbin Zhuang and Yunpei Liu, modified by Gabriele Tocci
  ******************************************************************************/
-
+#ifdef __NEQUIP
 #ifdef __cplusplus
 extern "C"
 {
@@ -33,4 +33,5 @@ extern "C"
 
 #ifdef __cplusplus
 }
+#endif
 #endif
