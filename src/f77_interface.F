@@ -106,10 +106,6 @@ MODULE f77_interface
    USE nnp_environment,                 ONLY: nnp_init
    USE nnp_environment_types,           ONLY: nnp_env_create,&
                                               nnp_type
-   USE nequip_environment,              ONLY: nequip_init
-   USE nequip_environment_types,        ONLY: nequip_env_create,&
-                                              nequip_env_release,&
-                                              nequip_type
    USE offload_api,                     ONLY: offload_get_chosen_device,&
                                               offload_get_device_count,&
                                               offload_set_chosen_device
@@ -588,7 +584,6 @@ CONTAINS
       TYPE(mixed_environment_type), POINTER              :: mixed_env
       TYPE(mp_perf_env_type), POINTER                    :: mp_perf_env
       TYPE(nnp_type), POINTER                            :: nnp_env
-      TYPE(nequip_type), POINTER                         :: nequip_env
       TYPE(pwdft_environment_type), POINTER              :: pwdft_env
       TYPE(qmmm_env_type), POINTER                       :: qmmm_env
       TYPE(qmmmx_env_type), POINTER                      :: qmmmx_env
@@ -857,14 +852,6 @@ CONTAINS
                           subsys_section=subsys_section, use_motion_section=use_motion_section)
             CALL force_env_create(my_force_env, root_section, nnp_env=nnp_env, para_env=my_para_env, &
                                   globenv=globenv, force_env_section=force_env_section)
-
-         CASE (do_nequip)
-            CALL nequip_env_create(nequip_env)
-            CALL nequip_init(nequip_env, root_section, my_para_env, force_env_section=force_env_section, &
-                          subsys_section=subsys_section, use_motion_section=use_motion_section)
-            CALL force_env_create(my_force_env, root_section, nequip_env=nequip_env, para_env=my_para_env, &
-                                  globenv=globenv, force_env_section=force_env_section)
-            CALL nequip_env_release(nequip_env)
 
          CASE default
             CALL create_force_eval_section(section)

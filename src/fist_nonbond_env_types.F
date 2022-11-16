@@ -55,8 +55,8 @@ MODULE fist_nonbond_env_types
    TYPE nequip_data_type
       LOGICAL :: do_create(2) = .TRUE.
       INTEGER :: do_count = 0
-      TYPE(nnp) :: nequip_tmp_pot1
-      TYPE(nnp) :: nequip_tmp_pot2
+      TYPE(nequip_nnp) :: nequip_tmp_pot1
+      TYPE(nequip_nnp) :: nequip_tmp_pot2
       INTEGER, POINTER :: use_indices(:)
       REAL(KIND=dp), POINTER :: force(:, :)
       REAL(KIND=dp) :: virial(3, 3)
@@ -141,7 +141,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:, :), OPTIONAL, POINTER  :: ij_kind_full_fac
       TYPE(eam_type), DIMENSION(:), OPTIONAL, POINTER    :: eam_data
       TYPE(quip_data_type), OPTIONAL, POINTER            :: quip_data
-      TYPE(nequip_data_type), OPTIONAL, POINTER            :: nequip_data
+      TYPE(nequip_data_type), OPTIONAL, POINTER          :: nequip_data
       REAL(KIND=dp), DIMENSION(:), OPTIONAL, POINTER     :: charges
 
       IF (PRESENT(charges)) charges => fist_nonbond_env%charges
@@ -213,7 +213,7 @@ CONTAINS
                                    rlist_cut, rlist_lowsq, nonbonded, aup, lup, ei_scale14, vdw_scale14, &
                                    shift_cutoff, r_last_update, r_last_update_pbc, rshell_last_update_pbc, &
                                    rcore_last_update_pbc, cell_last_update, num_update, last_update, &
-                                   counter, natom_types, long_range_correction, eam_data, quip_data, charges)
+                                   counter, natom_types, long_range_correction, eam_data, quip_data, nequip_data, charges)
 
       TYPE(fist_nonbond_env_type), INTENT(INOUT)         :: fist_nonbond_env
       TYPE(pair_potential_pp_type), OPTIONAL, POINTER    :: potparm14, potparm
@@ -230,7 +230,7 @@ CONTAINS
       REAL(KIND=dp), OPTIONAL                            :: long_range_correction
       TYPE(eam_type), DIMENSION(:), OPTIONAL, POINTER    :: eam_data
       TYPE(quip_data_type), OPTIONAL, POINTER            :: quip_data
-      TYPE(nequip_data_type), OPTIONAL, POINTER            :: nequip_data
+      TYPE(nequip_data_type), OPTIONAL, POINTER          :: nequip_data
       REAL(KIND=dp), DIMENSION(:), OPTIONAL, POINTER     :: charges
 
       IF (PRESENT(potparm14)) fist_nonbond_env%potparm14 => potparm14

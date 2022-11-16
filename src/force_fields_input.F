@@ -289,7 +289,8 @@ CONTAINS
 
          tmp_section2 => section_vals_get_subs_vals(tmp_section, "TABPOT")
          CALL section_vals_get(tmp_section2, explicit=explicit, n_repetition=ntab)
-         ntot = nlj + nwl + neam + ngd + nipbv + nbmhft + nbmhftd + nb4 + nbm + ngp + ntersoff + ngal + ngal21 + nsiepmann + nquip + nnequip
+         ntot = nlj + nwl + neam + ngd + nipbv + nbmhft + nbmhftd + nb4 + nbm + ngp + ntersoff + ngal + ngal21 + nsiepmann + nquip &
+               + nnequip
          IF (explicit) THEN
             CALL pair_potential_reallocate(inp_info%nonbonded, 1, ntot + ntab, tab=.TRUE.)
             CALL read_tabpot_section(inp_info%nonbonded, tmp_section2, ntot, para_env, mm_section)

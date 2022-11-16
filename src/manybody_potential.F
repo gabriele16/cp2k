@@ -38,8 +38,8 @@ MODULE manybody_potential
                                               setup_gal21_arrays
    USE manybody_quip,                   ONLY: quip_add_force_virial,&
                                               quip_energy_store_force_virial
-   USE manybody_nequip,                 ONLY: nequip_add_force_virial,&
-                                              nequip_energy_store_force_virial                                            
+   USE manybody_nequip,                 ONLY: nequip_add_force,&
+                                              nequip_energy_store_force                                         
    USE manybody_siepmann,               ONLY: destroy_siepmann_arrays,&
                                               print_nr_ions_siepmann,&
                                               setup_siepmann_arrays,&
@@ -185,7 +185,7 @@ CONTAINS
       END IF
 
       IF (any_nequip) THEN
-         CALL nequip_energy_store_force_virial(particle_set, cell, atomic_kind_set, potparm, &
+         CALL nequip_energy_store_force(particle_set, cell, atomic_kind_set, potparm, &
                                                fist_nonbond_env, pot_nequip, para_env)
          pot_manybody = pot_manybody + pot_nequip
       END IF      
