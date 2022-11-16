@@ -31,21 +31,21 @@ MODULE nequip_wrapper
 #if(__NEQUIP)
    INTERFACE
       FUNCTION create_nequip_c(model) BIND(C, name="create_nequip")
-         USE ISO_C_BINDING
-      CHARACTER(LEN=1, KIND=C_CHAR)                      :: model(*)
-      TYPE(C_PTR)                                        :: create_nequip_c
+         USE ISO_C_BINDING, ONLY: C_CHAR, C_PTR 
+      CHARACTER(KIND=C_CHAR)                      :: model(*)
+      TYPE(C_PTR)                                 :: create_nequip_c
 
       END FUNCTION
       SUBROUTINE delete_nequip_c(nequip_nnp) BIND(C, name="delete_nequip")
-         USE ISO_C_BINDING
+         USE ISO_C_BINDING, ONLY: C_PTR
       TYPE(C_PTR), INTENT(IN), VALUE                     :: nequip_nnp
 
       END SUBROUTINE
       SUBROUTINE compute_nequip_c(nequip_nnp, vecsize, &
                                dener, dforce, datom_ener, &
                                dcoord, datype, dbox) BIND(C, name="compute_nequip")
-         USE ISO_C_BINDING
-      TYPE(C_PTR), INTENT(IN), VALUE                     :: nequip_nnp, vecsize, dener, dforce, &
+         USE ISO_C_BINDING, ONLY : C_PTR
+      TYPE(C_PTR), VALUE                     :: nequip_nnp, vecsize, dener, dforce, &
                                                             datom_ener, dcoord, &
                                                             datype, dbox
 
@@ -66,7 +66,7 @@ CONTAINS
 ! **************************************************************************************************
    FUNCTION create_nequip(model)
       CHARACTER(len=*), INTENT(IN), TARGET               :: model
-      TYPE(nequip_nnp)                                       :: create_nequip
+      TYPE(nequip_nnp)                                   :: create_nequip
 #if(__NEQUIP)
       create_nequip%ptr = create_nequip_c(TRIM(model)//C_NULL_CHAR)
 #endif
