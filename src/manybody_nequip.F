@@ -35,7 +35,7 @@ MODULE manybody_nequip
 
    IMPLICIT NONE
 
-   PUBLIC nequip_energy_store_force_virial, nequip_add_force
+   PUBLIC nequip_energy_store_force, nequip_add_force
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'manybody_nequip'
 
@@ -143,7 +143,7 @@ CONTAINS
          dpmd_coord((iat_use - 1)*3 + 1:(iat_use - 1)*3 + 3) = particle_set(iat)%r*angstrom
          dpmd_atype(iat_use) = use_atom_type(iat)
       END DO
-      IF (iat_use > 0) 
+!      IF (iat_use > 0)  CALL cite_reference(NequIP2022)
       output_unit = cp_logger_get_default_io_unit()
       lattice = cell%hmat*angstrom
 ! change matrix to one d array
@@ -263,4 +263,4 @@ CONTAINS
 #endif
    END SUBROUTINE nequip_add_force
 
-END MODULE nequip_force
+END MODULE manybody_nequip

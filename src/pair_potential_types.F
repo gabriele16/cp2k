@@ -49,10 +49,11 @@ MODULE pair_potential_types
                                  siepmann_type = 13, &
                                  gal_type = 14, &
                                  quip_type = 15, &
-                                 gal21_type = 16, &
-                                 tab_type = 17
+                                 nequip_type = 16, &
+                                 gal21_type = 17, &
+                                 tab_type = 18
 
-   INTEGER, PUBLIC, PARAMETER, DIMENSION(18) :: list_pot = (/nn_type, &
+   INTEGER, PUBLIC, PARAMETER, DIMENSION(19) :: list_pot = (/nn_type, &
                                                              lj_type, &
                                                              lj_charmm_type, &
                                                              ft_type, &
@@ -68,6 +69,7 @@ MODULE pair_potential_types
                                                              siepmann_type, &
                                                              gal_type, &
                                                              quip_type, &
+                                                             nequip_type, &
                                                              gal21_type, &
                                                              tab_type/)
 
@@ -332,6 +334,7 @@ MODULE pair_potential_types
       TYPE(goodwin_pot_type), POINTER :: goodwin
       TYPE(eam_pot_type), POINTER :: eam
       TYPE(quip_pot_type), POINTER :: quip
+      TYPE(nequip_pot_type), POINTER :: nequip
       TYPE(buck4ran_pot_type), POINTER :: buck4r
       TYPE(buckmorse_pot_type), POINTER :: buckmo
       TYPE(tersoff_pot_type), POINTER :: tersoff
@@ -1085,104 +1088,121 @@ CONTAINS
       END IF
       IF (llj_charmm) THEN
          ipot = lj_charmm_type
-         check = .NOT. (llj .OR. lwilliams .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lbmhft .OR. lbmhftd .OR. lipbv &
-                        .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. lwilliams .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lbmhft &
+                        .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lwilliams) THEN
          ipot = wl_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lbmhft .OR. lbmhftd .OR. lipbv &
-                        .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lbmhft &
+                        .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lgoodwin) THEN
          ipot = gw_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip .OR. lbmhft .OR. lbmhftd .OR. lipbv &
-                        .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip .OR. lbmhft &
+                        .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (leam) THEN
          ipot = ea_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. lquip .OR. lnequip .OR. lbmhft .OR. lbmhftd .OR. lipbv &
-                        .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. lquip .OR. lnequip .OR. lbmhft &
+                        .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lquip) THEN
          ipot = quip_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lnequip .OR. lbmhft .OR. lbmhftd .OR. lipbv &
-                        .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lnequip .OR. lbmhft &
+                        .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lnequip) THEN
          ipot = nequip_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lbmhft .OR. lbmhftd .OR. lipbv &
-                        .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lquip .OR. lgal .OR. lgal21)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lbmhft &
+                        .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF      
       IF (lbmhft) THEN
          ipot = ft_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lwilliams .OR. lbmhftd .OR. lipbv &
-                        .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lbmhftd) THEN
          ipot = ftd_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lwilliams .OR. lbmhft .OR. lipbv &
-                        .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lipbv) THEN
          ipot = ip_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lwilliams .OR. lbmhft .OR. lbmhftd &
-                        .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lbmhftd .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lbuck4r) THEN
          ipot = b4_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lwilliams .OR. lbmhft .OR. lbmhftd &
-                        .OR. lipbv .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lbmhftd .OR. lipbv .OR. lbuckmo .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lbuckmo) THEN
          ipot = bm_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lwilliams .OR. lbmhft .OR. lbmhftd &
-                        .OR. lipbv .OR. lbuck4r .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lgp .OR. ltersoff &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (ltersoff) THEN
          ipot = tersoff_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lwilliams .OR. lbmhft .OR. lbmhftd &
-                        .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lgp .OR. lbuckmo &
+                        .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lsiepmann) THEN
          ipot = siepmann_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lwilliams .OR. lbmhft .OR. lbmhftd &
-                        .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lgp .OR. lbuckmo &
+                        .OR. ltersoff .OR. lgal .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lgal) THEN
          ipot = gal_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lwilliams .OR. lbmhft .OR. lbmhftd &
-                        .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lgp .OR. lbuckmo &
+                        .OR. ltersoff .OR. lsiepmann .OR. lgal21 .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lgal21) THEN
          ipot = gal21_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lquip .OR. lnequip .OR. lwilliams .OR. lbmhft .OR. lbmhftd &
-                        .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lgp .OR. lbuckmo &
+                        .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. ltab)
          CPASSERT(check)
       END IF
       IF (lgp) THEN
          ipot = gp_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lnequip .OR. lwilliams .OR. lbmhft .OR. lbmhftd &
-                        .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21 .OR. ltab)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lgal21 .OR. lbuckmo &
+                        .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. ltab)
          CPASSERT(check)
       END IF
       IF (ltab) THEN
          ipot = tab_type
-         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. leam .OR. lnequip  .OR. lwilliams .OR. lbmhft .OR. lbmhftd &
-                        .OR. lipbv .OR. lbuck4r .OR. lbuckmo .OR. lgp .OR. ltersoff .OR. lsiepmann .OR. lgal .OR. lgal21)
+         check = .NOT. (llj .OR. llj_charmm .OR. lgoodwin .OR. lwilliams .OR. leam .OR. lquip .OR. lnequip &
+                        .OR. lbmhft .OR. lbmhftd .OR. lipbv .OR. lbuck4r .OR. lgp .OR. lgal21 .OR. lbuckmo &
+                        .OR. ltersoff .OR. lsiepmann .OR. lgal)
          CPASSERT(check)
       END IF
 
@@ -1225,7 +1245,7 @@ CONTAINS
          CASE (quip_type)
             CALL pair_potential_quip_create(p%pot(i)%pot%set(std_dim)%quip)
          CASE (nequip_type)
-            CALL pair_potential_quip_create(p%pot(i)%pot%set(std_dim)%nequip)
+            CALL pair_potential_nequip_create(p%pot(i)%pot%set(std_dim)%nequip)
          CASE (ft_type)
             CALL pair_potential_bmhft_create(p%pot(i)%pot%set(std_dim)%ft)
          CASE (ftd_type)
