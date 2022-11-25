@@ -31,6 +31,7 @@ extern "C"
     void compute_nequip(nequip_nnp *neq, int *vecsize, double *dener, double *dforce,
                         double *datom_ener, double *dcoord_, int *datype_, double *dbox);
 
+
 #ifdef __cplusplus
 }
 #endif
