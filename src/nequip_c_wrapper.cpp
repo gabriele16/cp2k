@@ -1,7 +1,7 @@
 
 #include <iostream>
 #include "nequip.h"
-#include "nequip_wrapper.h"
+#include "nequip_c_wrapper.h"
 
 // create wrapper function for constructor in NEQUIP
 nequip_nnp *create_nequip(char *model)

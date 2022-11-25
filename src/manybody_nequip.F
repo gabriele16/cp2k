@@ -27,7 +27,7 @@ MODULE manybody_nequip
 #ifdef __NEQUIP
    USE nequip_wrapper, ONLY: nequip_nnp, &
                              create_nequip, &
-                             delete_nequip_c, &
+!                             delete_nequip_c, &
                              compute_nequip
 #endif
 

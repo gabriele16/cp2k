@@ -26,21 +26,25 @@ MODULE nequip_wrapper
 
    IMPLICIT NONE
    PRIVATE
-   PUBLIC :: nequip_nnp, create_nequip, delete_nequip_c, compute_nequip
+!   PUBLIC :: nequip_nnp, create_nequip, delete_nequip_c, compute_nequip
+   PUBLIC :: nequip_nnp, create_nequip, compute_nequip
+
 
 #if(__NEQUIP)
    INTERFACE
+   
       FUNCTION create_nequip_c(model) BIND(C, name="create_nequip")
          USE ISO_C_BINDING, ONLY: C_CHAR, C_PTR 
       CHARACTER(KIND=C_CHAR)                      :: model(*)
       TYPE(C_PTR)                                 :: create_nequip_c
-
       END FUNCTION
-      SUBROUTINE delete_nequip_c(nequip_nnp) BIND(C, name="delete_nequip")
-         USE ISO_C_BINDING, ONLY: C_PTR
-      TYPE(C_PTR), INTENT(IN), VALUE                     :: nequip_nnp
 
-      END SUBROUTINE
+!      SUBROUTINE delete_nequip_c(nequip_nnp) BIND(C, name="delete_nequip")
+!         USE ISO_C_BINDING, ONLY: C_PTR
+!      TYPE(C_PTR), INTENT(IN), VALUE                     :: nequip_nnp
+!      TYPE(C_PTR)                                         :: nequip_nnp
+!      END SUBROUTINE
+
       SUBROUTINE compute_nequip_c(nequip_nnp, vecsize, &
                                dener, dforce, datom_ener, &
                                dcoord, datype, dbox) BIND(C, name="compute_nequip")
@@ -48,8 +52,8 @@ MODULE nequip_wrapper
       TYPE(C_PTR), VALUE                     :: nequip_nnp, vecsize, dener, dforce, &
                                                             datom_ener, dcoord, &
                                                             datype, dbox
-
       END SUBROUTINE
+
    END INTERFACE
 #endif
 
