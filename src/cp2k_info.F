@@ -219,6 +219,9 @@ CONTAINS
 #if defined(__LIBMAXWELL)
       flags = TRIM(flags)//" libmaxwell"
 #endif
+#if defined(__LIBTORCH)
+      flags = TRIM(flags)//" libtorch"
+#endif
 #if defined(__OFFLOAD_CUDA)
       flags = TRIM(flags)//" offload_cuda"
 #endif
