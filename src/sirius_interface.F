@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -168,7 +168,7 @@ CONTAINS
 
       ! create context of simulation
       CALL pwdft_env_get(pwdft_env, para_env=para_env)
-      sirius_mpi_comm = para_env%group
+      sirius_mpi_comm = para_env%group%get_handle()
       CALL sirius_create_context(sirius_mpi_comm, sctx)
 
 !     the "fun" starts.

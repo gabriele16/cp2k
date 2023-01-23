@@ -101,7 +101,7 @@ undefined references during linking, respectively errors while printing the stat
 
 ### 2e. MPI and SCALAPACK (optional, required for MPI parallel builds)
 
-MPI (version 2) and SCALAPACK are needed for parallel code.
+MPI (version 3) and SCALAPACK are needed for parallel code.
 (Use the latest versions available and download all patches!).
 
 :warning: Note that your MPI installation must match the used Fortran compiler.
@@ -119,9 +119,10 @@ there are several freely available alternatives:
   - Recently a [ScaLAPACK installer](http://www.netlib.org/scalapack/scalapack_installer.tgz)
     has been added that simplifies the installation.
 
-CP2K assumes that the MPI library implements MPI version 3. If you have an older
-version of MPI (e.g., MPI 2.0) available you must define `-D__MPI_VERSION=2` in
-the arch file.
+CP2K assumes that the MPI library implements MPI version 3. Older
+versions of MPI (e.g., MPI 2.0) are not supported and the old flag `-D__MPI_VERSION` in
+the arch file will be ignored. CP2K can make use of the mpi_f08 module. If its use is requested,
+set the flag `-D__MPI_F08`.
 
 ### 2f. FFTW (optional, improved performance of FFTs)
 
@@ -179,7 +180,7 @@ the FFTW3 threading library libfftw3_threads (or libfftw3_omp) is required.
   accelerator support for matrix multiplications.
 - Add `-lstdc++ -lcudart -lnvrtc -lcuda -lcublas` to LIBS.
 - Specify the GPU type (e.g., `GPUVER = P100`),
-  possible values are K20X, K40, K80, P100, V100.
+  possible values are K20X, K40, K80, P100, V100, A100.
 - Specify the C++ compiler (e.g., `CXX = g++`) and the CXXFLAGS to support
   the C++11 standard.
 - CUFFT 7.0 has a known bug and is therefore disabled by default.

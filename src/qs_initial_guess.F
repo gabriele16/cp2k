@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -28,8 +28,8 @@ MODULE qs_initial_guess
                                               cp_fm_struct_release,&
                                               cp_fm_struct_type
    USE cp_fm_types,                     ONLY: &
-        cp_fm_create, cp_fm_get_info, cp_fm_get_submatrix, cp_fm_init_random, cp_fm_p_type, &
-        cp_fm_release, cp_fm_set_all, cp_fm_set_submatrix, cp_fm_to_fm, cp_fm_type
+        cp_fm_create, cp_fm_get_info, cp_fm_get_submatrix, cp_fm_init_random, cp_fm_release, &
+        cp_fm_set_all, cp_fm_set_submatrix, cp_fm_to_fm, cp_fm_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_io_unit,&
                                               cp_logger_type,&
@@ -63,6 +63,7 @@ MODULE qs_initial_guess
    USE kpoint_io,                       ONLY: read_kpoints_restart
    USE kpoint_types,                    ONLY: kpoint_type
    USE message_passing,                 ONLY: mp_bcast,&
+                                              mp_comm_type,&
                                               mp_sum
    USE particle_methods,                ONLY: get_particle_set
    USE particle_types,                  ONLY: particle_type
@@ -139,10 +140,10 @@ CONTAINS
       CHARACTER(LEN=*), PARAMETER :: routineN = 'calculate_first_density_matrix'
 
       CHARACTER(LEN=default_path_length)                 :: file_name, filename
-      INTEGER :: atom_a, blk, density_guess, group, handle, homo, i, iatom, ic, icol, id_nr, &
-         ikind, irow, iseed(4), ispin, istart_col, istart_row, j, last_read, n, n_cols, n_rows, &
-         nao, natom, natoms, natoms_tmp, nblocks, nelectron, nmo, nmo_tmp, not_read, nsgf, nspin, &
-         nvec, ounit, safe_density_guess, size_atomic_kind_set, z
+      INTEGER :: atom_a, blk, density_guess, handle, homo, i, iatom, ic, icol, id_nr, ikind, irow, &
+         iseed(4), ispin, istart_col, istart_row, j, last_read, n, n_cols, n_rows, nao, natom, &
+         natoms, natoms_tmp, nblocks, nelectron, nmo, nmo_tmp, not_read, nsgf, nspin, nvec, ounit, &
+         safe_density_guess, size_atomic_kind_set, z
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: first_sgf, kind_of, last_sgf
       INTEGER, DIMENSION(2)                              :: nelectron_spin
       INTEGER, DIMENSION(:), POINTER                     :: atom_list, elec_conf, nelec_kind, &
@@ -157,9 +158,9 @@ CONTAINS
       TYPE(atom_matrix_type), DIMENSION(:), POINTER      :: pmat
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(atomic_kind_type), POINTER                    :: atomic_kind
-      TYPE(cp_fm_p_type), DIMENSION(:), POINTER          :: work1
       TYPE(cp_fm_struct_type), POINTER                   :: ao_ao_struct, ao_mo_struct
       TYPE(cp_fm_type)                                   :: sv
+      TYPE(cp_fm_type), DIMENSION(:), POINTER            :: work1
       TYPE(cp_fm_type), POINTER                          :: mo_coeff, moa, mob, ortho, work2
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(cp_para_env_type), POINTER                    :: para_env
@@ -174,6 +175,7 @@ CONTAINS
       TYPE(hfx_type), DIMENSION(:, :), POINTER           :: x_data
       TYPE(kpoint_type), POINTER                         :: kpoints
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mo_array, mos_last_converged
+      TYPE(mp_comm_type)                                 :: group
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_kind_type), POINTER                        :: qs_kind
@@ -556,9 +558,8 @@ CONTAINS
                                      ncol_global=nao, &
                                      template_fmstruct=ao_mo_struct)
             ALLOCATE (work1(1))
-            NULLIFY (work1(1)%matrix)
-            ALLOCATE (work1(1)%matrix, work2, ortho)
-            CALL cp_fm_create(work1(1)%matrix, ao_ao_struct)
+            ALLOCATE (work2, ortho)
+            CALL cp_fm_create(work1(1), ao_ao_struct)
             CALL cp_fm_create(work2, ao_ao_struct)
             CALL cp_fm_create(ortho, ao_ao_struct)
             CALL copy_dbcsr_to_fm(matrix_s_kp(1, 1)%matrix, ortho)
@@ -568,19 +569,19 @@ CONTAINS
 
          ispin = 1
          ! Load core Hamiltonian into work matrix
-         CALL copy_dbcsr_to_fm(h_core_sparse(1)%matrix, work1(ispin)%matrix)
+         CALL copy_dbcsr_to_fm(h_core_sparse(1)%matrix, work1(ispin))
 
          ! Diagonalize the core Hamiltonian matrix and retrieve a first set of
          ! molecular orbitals (MOs)
          IF (has_unit_metric) THEN
-            CALL eigensolver_simple(matrix_ks=work1(ispin)%matrix, &
+            CALL eigensolver_simple(matrix_ks=work1(ispin), &
                                     mo_set=mo_array(ispin), &
                                     work=work2, &
                                     do_level_shift=.FALSE., &
                                     level_shift=0.0_dp, &
                                     use_jacobi=.FALSE., jacobi_threshold=0._dp)
          ELSE
-            CALL eigensolver(matrix_ks_fm=work1(ispin)%matrix, &
+            CALL eigensolver(matrix_ks_fm=work1(ispin), &
                              mo_set=mo_array(ispin), &
                              ortho=ortho, &
                              work=work2, &
@@ -608,8 +609,8 @@ CONTAINS
          IF (need_wm) THEN
             CALL cp_fm_release(ortho)
             CALL cp_fm_release(work2)
-            CALL cp_fm_release(work1(1)%matrix)
-            DEALLOCATE (ortho, work2, work1(1)%matrix)
+            CALL cp_fm_release(work1(1))
+            DEALLOCATE (ortho, work2)
             DEALLOCATE (work1)
             NULLIFY (work1, work2, ortho)
          ELSE IF (owns_ortho) THEN
@@ -1171,10 +1172,10 @@ CONTAINS
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'calculate_mopac_dm'
 
-      INTEGER                                            :: atom_a, group, handle, iatom, ikind, &
-                                                            iset, isgf, isgfa, ishell, ispin, la, &
-                                                            maxl, maxll, na, nao, natom, ncount, &
-                                                            nset, nsgf, z
+      INTEGER                                            :: atom_a, handle, iatom, ikind, iset, &
+                                                            isgf, isgfa, ishell, ispin, la, maxl, &
+                                                            maxll, na, nao, natom, ncount, nset, &
+                                                            nsgf, z
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: first_sgf
       INTEGER, DIMENSION(25)                             :: laox, naox
       INTEGER, DIMENSION(5)                              :: occupation
@@ -1189,6 +1190,7 @@ CONTAINS
       TYPE(dbcsr_type), POINTER                          :: matrix_p
       TYPE(gth_potential_type), POINTER                  :: gth_potential
       TYPE(gto_basis_set_type), POINTER                  :: orb_basis_set
+      TYPE(mp_comm_type)                                 :: group
       TYPE(sgp_potential_type), POINTER                  :: sgp_potential
       TYPE(xtb_atom_type), POINTER                       :: xtb_kind
 

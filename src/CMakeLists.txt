@@ -1,6 +1,6 @@
 #!-------------------------------------------------------------------------------------------------!
 #!   CP2K: A general program to perform molecular dynamics simulations                             !
-#!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                  !
+#!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                  !
 #!                                                                                                 !
 #!   SPDX-License-Identifier: GPL-2.0-or-later                                                     !
 #!-------------------------------------------------------------------------------------------------!
@@ -198,6 +198,7 @@ list(
   grid/grid_api.F
   group_dist_types.F
   grrm_utils.F
+  gapw_1c_basis_set.F
   hartree_local_methods.F
   hartree_local_types.F
   header.F
@@ -384,6 +385,7 @@ list(
   optimize_embedding_potential.F
   optimize_input.F
   outer_scf_control_types.F
+  paw_proj_set_types.F
   pair_potential_coulomb.F
   pair_potential.F
   pair_potential_types.F
@@ -401,9 +403,11 @@ list(
   pao_optimizer.F
   pao_param_exp.F
   pao_param.F
+  pao_param_equi.F
   pao_param_fock.F
   pao_param_gth.F
   pao_param_linpot.F
+  pao_param_methods.F
   pao_potentials.F
   pao_types.F
   particle_methods.F
@@ -808,6 +812,7 @@ list(
   aobasis/orbital_pointers.F
   aobasis/orbital_symbols.F
   aobasis/orbital_transformation_matrices.F
+  aobasis/paw_basis_types.F
   aobasis/soft_basis_set.F
   aobasis/sto_ng.F)
 
@@ -1303,6 +1308,10 @@ list(APPEND OFFLOAD_SRCS_C offload/offload_buffer.c offload/offload_library.c)
 
 list(APPEND CP2K_SRCS_C pw/fpga/fft_fpga.c pw/fpga/opencl_utils.c)
 
+if(CP2K_USE_LIBTORCH)
+  list(APPEND CP2K_SRCS_CPP torch_c_api.cpp)
+endif()
+
 if(CP2K_USE_CUDA OR CP2K_USE_HIP)
   if(NOT CP2K_DISABLE_PW_GPU)
     list(APPEND PW_SRCS_GPU pw/gpu/pw_gpu_kernels.cu)
@@ -1352,6 +1361,9 @@ target_compile_features(cp2k PUBLIC cxx_std_11)
 target_compile_features(cp2k PUBLIC c_std_99)
 target_compile_features(cp2k PUBLIC cuda_std_11)
 
+set_target_properties(cp2k PROPERTIES CXX_STANDARD 11)
+set_target_properties(cp2k PROPERTIES IMPORTED_LINK_INTERFACE_LANGUAGES "CXX")
+
 # =================================================================================================
 # main CP2K OBJECT LIBRARY
 if(CP2K_USE_ACCEL MATCHES "CUDA")
@@ -1384,6 +1396,7 @@ target_link_libraries(
     $<$<BOOL:${CP2K_USE_COSMA}>:cosma::cosma>
     $<$<BOOL:${CP2K_USE_COSMA}>:costa::costa>
     DBCSR::dbcsr
+    $<$<BOOL:${CP2K_USE_TORCH}>:${TORCH_LIBRARIES}>
     $<$<BOOL:${CP2K_USE_CUDA}>:CUDA::cufft>
     $<$<BOOL:${CP2K_USE_CUDA}>:CUDA::cufftw>
     $<$<BOOL:${CP2K_USE_CUDA}>:CUDA::cublas>
@@ -1428,7 +1441,6 @@ target_link_libraries(cp2k PUBLIC cp2k_link_libs)
 target_compile_definitions(
   cp2k
   PUBLIC __parallel
-         __MPI_VERSION=${MPI_Fortran_VERSION_MAJOR}
          __SCALAPACK
          __COMPILE_DATE=\"${CP2K_TIMESTAMP}\"
          __COMPILE_HOST=\"${CP2K_HOST_NAME}\"
@@ -1445,12 +1457,13 @@ target_compile_definitions(
          $<$<BOOL:${CP2K_USE_SIRIUS}>:__SIRIUS>
          $<$<BOOL:${CP2K_USE_SPLA}>:__SPLA>
          $<$<BOOL:${CP2K_USE_SpFFT}>:__SPFFT>
-         $<$<BOOL:${CP2K_USE_GEMM_OFFLOADING}>:__OFFLOAD_GEMM>
+         $<$<BOOL:${CP2K_USE_SPLA_GEMM_OFFLOADING}>:__OFFLOAD_GEMM>
          $<$<BOOL:${CP2K_USE_ELPA}>:__ELPA>
          $<$<BOOL:${CP2K_USE_LIBXC}>:__LIBXC>
          $<$<BOOL:${CP2K_USE_FFTW3}>:__FFTW3>
          $<$<BOOL:${CP2K_USE_LIBINT2}>:__LIBINT>
          $<$<BOOL:${CP2K_USE_PEXSI}>:__LIBPEXSI>
+         $<$<BOOL:${CP2K_USE_LIBTORCH}>:__LIBTORCH>
          $<$<BOOL:${CP2K_USE_COSMA}>:__COSMA>
          $<$<BOOL:${CP2K_USE_LIBXSMM}>:__LIBXSMM>
          $<$<STREQUAL:${CP2K_BLAS_VENDOR},MKL>:__MKL>
@@ -1517,12 +1530,12 @@ add_executable(libcp2k_unittest start/libcp2k_unittest.c)
 set_target_properties(cp2k-bin PROPERTIES CXX_STANDARD 11)
 set_target_properties(cp2k-bin PROPERTIES IMPORTED_LINK_INTERFACE_LANGUAGES
                                           "CXX")
-set_target_properties(cp2k-bin PROPERTIES LINKER_LANGUAGE Fortran)
+set_target_properties(cp2k-bin PROPERTIES LINKER_LANGUAGE "CXX")
 set_target_properties(cp2k-bin PROPERTIES OUTPUT_NAME cp2k)
 target_link_libraries(cp2k-bin PUBLIC cp2k)
 
 foreach(_app ${__CP2K_APPS})
-  set_target_properties(${_app} PROPERTIES LINKER_LANGUAGE Fortran)
+  set_target_properties(${_app} PROPERTIES LINKER_LANGUAGE "CXX")
   set_target_properties(${_app} PROPERTIES CXX_STANDARD 11)
   set_target_properties(${_app} PROPERTIES IMPORTED_LINK_INTERFACE_LANGUAGES
                                            "CXX")

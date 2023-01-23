@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -219,7 +219,7 @@ CONTAINS
             WRITE (*, *) "TMC|message: ID: ", para_env%mepos, &
             " send element info to   ", dest, " of stat ", m_send%info(1), &
             " with size int/real/char", m_send%info(2:), " with comm ", &
-            para_env%group, " and tag ", message_tag
+            para_env%group%get_handle(), " and tag ", message_tag
          IF (m_send%info(2) .GT. 0) DEALLOCATE (m_send%task_int)
          IF (m_send%info(3) .GT. 0) DEALLOCATE (m_send%task_real)
          IF (m_send%info(4) .GT. 0) DEALLOCATE (m_send%task_char)

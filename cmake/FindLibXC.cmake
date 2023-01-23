@@ -1,6 +1,6 @@
 #!-------------------------------------------------------------------------------------------------!
 #!   CP2K: A general program to perform molecular dynamics simulations                             !
-#!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                  !
+#!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                  !
 #!                                                                                                 !
 #!   SPDX-License-Identifier: GPL-2.0-or-later                                                     !
 #!-------------------------------------------------------------------------------------------------!
@@ -12,21 +12,25 @@ include(cp2k_utils)
 cp2k_set_default_paths(LIBXC "LibXC")
 
 if(PKG_CONFIG_FOUND)
-  pkg_check_modules(
-    CP2K_LIBXC
-    REQUIRED
-    IMPORTED_TARGET
-    GLOBAL
-    libxcf90
-    libxcf03
-    libxc>=${LibXC_FIND_VERSION})
+  pkg_check_modules(CP2K_LIBXC IMPORTED_TARGET GLOBAL libxcf90 libxcf03
+                    libxc>=${LibXC_FIND_VERSION})
 endif()
 
 if(NOT CP2K_LIBXC_FOUND)
+  # Revert pkg_check_modules side effects
+  cp2k_set_default_paths(LIBXC "LibXC")
   foreach(_var xc xcf03 xcf90)
     string(TOUPPER LIB${_var} _var_up)
     cp2k_find_libraries(${_var_up} ${_var})
   endforeach()
+endif()
+
+if(CP2K_LIBXC_FOUND
+   AND CP2K_LIBXCF90_FOUND
+   AND CP2K_LIBXCF03_FOUND)
+  set(CP2K_LIBXC_LINK_LIBRARIES
+      "${CP2K_LIBXCF03_LIBRARIES};${CP2K_LIBXCF90_LIBRARIES};${CP2K_LIBXC_LIBRARIES}"
+  )
 endif()
 
 if(NOT CP2K_LIBXC_INCLUDE_DIRS)

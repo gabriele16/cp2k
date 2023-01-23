@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -178,7 +178,7 @@ CONTAINS
       END IF
 
       CALL parallel_gemm('N', 'T', dcdr_env%nao, dcdr_env%nao, dcdr_env%nmo, &
-                         1.0_dp, dcdr_env%mo_coeff(1)%matrix, dcdr_env%mo_coeff(1)%matrix, &
+                         1.0_dp, dcdr_env%mo_coeff(1), dcdr_env%mo_coeff(1), &
                          0.0_dp, rho_ao_fm)
 
       CALL parallel_gemm('N', 'N', dcdr_env%nao, dcdr_env%nao, dcdr_env%nao, &

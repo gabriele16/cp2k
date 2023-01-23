@@ -42,16 +42,18 @@ case "${with_openmpi}" in
       [ -d openmpi-${openmpi_ver} ] && rm -rf openmpi-${openmpi_ver}
       tar -xzf ${openmpi_pkg}
       cd openmpi-${openmpi_ver}
-      # can have issue with older glibc libraries, in which case
-      # we need to add the -fgnu89-inline to CFLAGS. We can check
-      # the version of glibc using ldd --version, as ldd is part of
-      # glibc package
-      glibc_version=$(ldd --version | awk '/ldd/{print $NF}')
-      glibc_major_ver=${glibc_version%%.*}
-      glibc_minor_ver=${glibc_version##*.}
-      if [ $glibc_major_ver -lt 2 ] ||
-        [ $glibc_major_ver -eq 2 -a $glibc_minor_ver -lt 12 ]; then
-        CFLAGS="${CFLAGS} -fgnu89-inline"
+      if [ "${OPENBLAS_ARCH}" = "x86_64" ]; then
+        # can have issue with older glibc libraries, in which case
+        # we need to add the -fgnu89-inline to CFLAGS. We can check
+        # the version of glibc using ldd --version, as ldd is part of
+        # glibc package
+        glibc_version=$(ldd --version | awk '/ldd/{print $NF}')
+        glibc_major_ver=${glibc_version%%.*}
+        glibc_minor_ver=${glibc_version##*.}
+        if [ $glibc_major_ver -lt 2 ] ||
+          [ $glibc_major_ver -eq 2 -a $glibc_minor_ver -lt 12 ]; then
+          CFLAGS="${CFLAGS} -fgnu89-inline"
+        fi
       fi
       if [ $(command -v srun) ]; then
         echo "Slurm installation found. OpenMPI will be configured with --with-pmi."
@@ -59,6 +61,7 @@ case "${with_openmpi}" in
       else
         EXTRA_CONFIGURE_FLAGS=""
       fi
+      # We still require MPI-1.0-compatability for PTSCOTCH
       ./configure CFLAGS="${CFLAGS}" \
         --prefix=${pkg_install_dir} \
         --libdir="${pkg_install_dir}/lib" \
@@ -134,13 +137,6 @@ if [ "${with_openmpi}" != "__DONTUSE__" ]; then
     OPENMPI_LIBS+=" -l${lib}"
     OPENMPI_LDFLAGS="${OPENMPI_LDFLAGS//-l${lib}/}"
   done
-  # old versions didn't support MPI 3, so adjust __MPI_VERSION accordingly (needed e.g. for pexsi)
-  if [[ "$major_version" =~ ^[0-9]+$ ]] && ([ $major_version -lt 1 ] ||
-    [ $major_version -eq 1 -a ${minor_version} -lt 7 ]); then
-    mpi2_dflags="-D__MPI_VERSION=2"
-  else
-    mpi2_dflags=""
-  fi
   cat << EOF > "${BUILDDIR}/setup_openmpi"
 export MPI_MODE="${MPI_MODE}"
 export MPIRUN="${MPIRUN}"
@@ -155,7 +151,12 @@ export OPENMPI_LIBS="${OPENMPI_LIBS}"
 export MPI_CFLAGS="${OPENMPI_CFLAGS}"
 export MPI_LDFLAGS="${OPENMPI_LDFLAGS}"
 export MPI_LIBS="${OPENMPI_LIBS}"
-export CP_DFLAGS="\${CP_DFLAGS} IF_MPI(-D__parallel ${mpi2_dflags}|)"
+export CP_DFLAGS="\${CP_DFLAGS} IF_MPI(-D__parallel|)"
+# For proper mpi_f08 support, we need at least GCC version 9 (asynchronous keyword)
+# Other compilers should work
+  if ! [ "$(gfortran -dumpversion | cut -d. -f1)" -lt 9 ]; then
+    export CP_DFLAGS="\${CP_DFLAGS} IF_MPI(-D__MPI_F08|)"
+  fi
 export CP_CFLAGS="\${CP_CFLAGS} IF_MPI(${OPENMPI_CFLAGS}|)"
 export CP_LDFLAGS="\${CP_LDFLAGS} IF_MPI(${OPENMPI_LDFLAGS}|)"
 export CP_LIBS="\${CP_LIBS} IF_MPI(${OPENMPI_LIBS}|)"

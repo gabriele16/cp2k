@@ -23,7 +23,7 @@ source "${INSTALLDIR}"/toolchain.env
 ! [ -d "${BUILDDIR}" ] && mkdir -p "${BUILDDIR}"
 cd "${BUILDDIR}"
 
-case "${with_libtorch:=__INSTALL__}" in
+case "${with_libtorch}" in
   __INSTALL__)
     echo "==================== Installing libtorch ===================="
     pkg_install_dir="${INSTALLDIR}/libtorch-${libtorch_ver}"
@@ -78,6 +78,8 @@ if [ "$with_libtorch" != "__DONTUSE__" ]; then
 prepend_path LD_LIBRARY_PATH "${pkg_install_dir}/lib"
 prepend_path LD_RUN_PATH "${pkg_install_dir}/lib"
 prepend_path LIBRARY_PATH "${pkg_install_dir}/lib"
+prepend_path PKG_CONFIG_PATH "$pkg_install_dir/lib/pkgconfig"
+prepend_path CMAKE_PREFIX_PATH "$pkg_install_dir"
 EOF
   fi
   cat << EOF >> "${BUILDDIR}/setup_libtorch"

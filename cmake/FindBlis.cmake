@@ -1,6 +1,6 @@
 #!-------------------------------------------------------------------------------------------------!
 #!   CP2K: A general program to perform molecular dynamics simulations                             !
-#!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                  !
+#!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                  !
 #!                                                                                                 !
 #!   SPDX-License-Identifier: GPL-2.0-or-later                                                     !
 #!-------------------------------------------------------------------------------------------------!
@@ -16,7 +16,7 @@ include(FindPackageHandleStandardArgs)
 cp2k_set_default_paths(BLIS "BLIS")
 
 if(DEFINED AOCL_ROOT)
-  list(CP2K_BLIS_PREFIX "${AOCL_ROOT}" "$ENV{AOCL_ROOT}")
+  list(CP2K_BLIS_ROOT "${AOCL_ROOT}" "$ENV{AOCL_ROOT}")
 endif()
 
 # one day blis will have a pkg-config file

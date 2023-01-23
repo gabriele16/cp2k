@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -67,6 +67,7 @@ MODULE mp2_integrals
                                               libint_potential_type
    USE machine,                         ONLY: m_flush
    USE message_passing,                 ONLY: mp_cart_create,&
+                                              mp_comm_type,&
                                               mp_environ,&
                                               mp_max,&
                                               mp_sendrecv,&
@@ -144,8 +145,10 @@ CONTAINS
 !> \param qs_kind_set ...
 !> \param mo_coeff ...
 !> \param fm_matrix_PQ ...
-!> \param fm_matrix_L_RI_metric ...
-!> \param fm_matrix_Sinv_Vtrunc_Sinv ...
+!> \param fm_matrix_L_kpoints ...
+!> \param fm_matrix_Minv_L_kpoints ...
+!> \param fm_matrix_Minv ...
+!> \param fm_matrix_Minv_Vtrunc_Minv ...
 !> \param nmo ...
 !> \param homo ...
 !> \param mat_munu ...
@@ -184,7 +187,8 @@ CONTAINS
    SUBROUTINE mp2_ri_gpw_compute_in(BIb_C, BIb_C_gw, BIb_C_bse_ij, BIb_C_bse_ab, gd_array, gd_B_virtual, &
                                     dimen_RI, dimen_RI_red, qs_env, para_env, para_env_sub, color_sub, &
                                     cell, particle_set, atomic_kind_set, qs_kind_set, mo_coeff, &
-                                    fm_matrix_PQ, fm_matrix_L_RI_metric, fm_matrix_Sinv_Vtrunc_Sinv, &
+                                    fm_matrix_PQ, fm_matrix_L_kpoints, fm_matrix_Minv_L_kpoints, &
+                                    fm_matrix_Minv, fm_matrix_Minv_Vtrunc_Minv, &
                                     nmo, homo, mat_munu, &
                                     sab_orb_sub, mo_coeff_o, mo_coeff_v, mo_coeff_all, &
                                     mo_coeff_gw, eps_filter, unit_nr, &
@@ -213,8 +217,10 @@ CONTAINS
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(cp_fm_type), DIMENSION(:), INTENT(IN)         :: mo_coeff
       TYPE(cp_fm_type), INTENT(OUT)                      :: fm_matrix_PQ
-      TYPE(cp_fm_type), ALLOCATABLE, DIMENSION(:, :)     :: fm_matrix_L_RI_metric, &
-                                                            fm_matrix_Sinv_Vtrunc_Sinv
+      TYPE(cp_fm_type), ALLOCATABLE, DIMENSION(:, :)     :: fm_matrix_L_kpoints, &
+                                                            fm_matrix_Minv_L_kpoints, &
+                                                            fm_matrix_Minv, &
+                                                            fm_matrix_Minv_Vtrunc_Minv
       INTEGER, INTENT(IN)                                :: nmo
       INTEGER, DIMENSION(:), INTENT(IN)                  :: homo
       TYPE(dbcsr_p_type), INTENT(INOUT)                  :: mat_munu
@@ -249,10 +255,10 @@ CONTAINS
 
       INTEGER :: cm, cut_memory, cut_memory_int, eri_method, gw_corr_lev_total, handle, handle2, &
          handle4, i, i_counter, i_mem, ibasis, ispin, itmp(2), j, jcell, kcell, LLL, min_bsize, &
-         mp_comm_t3c_2, my_B_all_end, my_B_all_size, my_B_all_start, my_B_occ_bse_end, &
-         my_B_occ_bse_size, my_B_occ_bse_start, my_B_virt_bse_end, my_B_virt_bse_size, &
-         my_B_virt_bse_start, my_group_L_end, my_group_L_size, my_group_L_start, n_rep, natom, &
-         ngroup, nimg, nkind, nspins, potential_type, ri_metric_type
+         my_B_all_end, my_B_all_size, my_B_all_start, my_B_occ_bse_end, my_B_occ_bse_size, &
+         my_B_occ_bse_start, my_B_virt_bse_end, my_B_virt_bse_size, my_B_virt_bse_start, &
+         my_group_L_end, my_group_L_size, my_group_L_start, n_rep, natom, ngroup, nimg, nkind, &
+         nspins, potential_type, ri_metric_type
       INTEGER(int_8)                                     :: nze
       INTEGER, ALLOCATABLE, DIMENSION(:) :: dist_AO_1, dist_AO_2, dist_RI, &
          ends_array_mc_block_int, ends_array_mc_int, my_B_size, my_B_virtual_end, &
@@ -279,6 +285,7 @@ CONTAINS
       TYPE(intermediate_matrix_type)                     :: intermed_mat_bse_ab, intermed_mat_bse_ij
       TYPE(intermediate_matrix_type), ALLOCATABLE, &
          DIMENSION(:)                                    :: intermed_mat, intermed_mat_gw
+      TYPE(mp_comm_type)                                 :: mp_comm_t3c_2
       TYPE(neighbor_list_3c_type)                        :: nl_3c
       TYPE(pw_env_type), POINTER                         :: pw_env_sub
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
@@ -353,7 +360,7 @@ CONTAINS
                             kpoints, my_group_L_size, my_group_L_start, my_group_L_end, &
                             gd_array, calc_PQ_cond_num .AND. .NOT. do_svd, do_svd, &
                             qs_env%mp2_env%potential_parameter, ri_metric, &
-                            fm_matrix_L_RI_metric, fm_matrix_Sinv_Vtrunc_Sinv, &
+                            fm_matrix_L_kpoints, fm_matrix_Minv_L_kpoints, fm_matrix_Minv, fm_matrix_Minv_Vtrunc_Minv, &
                             do_im_time, do_kpoints_from_Gamma .OR. do_kpoints_cubic_RPA, qs_env%mp2_env%mp2_gpw%eps_pgf_orb_S, &
                             qs_kind_set, sab_orb_sub, calc_forces, unit_nr)
 
@@ -380,7 +387,7 @@ CONTAINS
                WRITE (unit_nr, FMT="(T3,A,T73,A)") &
                   "RI_INFO| RI metric: ", "OVERLAP"
             CASE (do_potential_truncated)
-               WRITE (unit_nr, FMT="(T3,A,T72,A)") &
+               WRITE (unit_nr, FMT="(T3,A,T64,A)") &
                   "RI_INFO| RI metric: ", "TRUNCATED COULOMB"
                rc_ang = cp_unit_from_cp2k(ri_metric%cutoff_radius, "angstrom")
                WRITE (unit_nr, '(T3,A,T61,F20.2)') &
@@ -900,7 +907,8 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:, :), INTENT(IN)         :: my_Lrows
       INTEGER, DIMENSION(:), INTENT(IN)                  :: sizes_B, sizes_L
       INTEGER, DIMENSION(2), INTENT(IN)                  :: blk_size
-      INTEGER, INTENT(IN)                                :: ngroup, igroup, mp_comm
+      INTEGER, INTENT(IN)                                :: ngroup, igroup
+      TYPE(mp_comm_type)                                 :: mp_comm
       TYPE(cp_para_env_type), INTENT(IN)                 :: para_env_sub
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'contract_B_L'

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -28,7 +28,6 @@ MODULE matrix_exp
                                               cp_fm_struct_type
    USE cp_fm_types,                     ONLY: cp_fm_create,&
                                               cp_fm_get_info,&
-                                              cp_fm_p_type,&
                                               cp_fm_release,&
                                               cp_fm_set_all,&
                                               cp_fm_to_fm,&
@@ -40,6 +39,7 @@ MODULE matrix_exp
                                               z_one,&
                                               z_zero
    USE message_passing,                 ONLY: mp_comm_free,&
+                                              mp_comm_type,&
                                               mp_max,&
                                               mp_reordering,&
                                               mp_sum
@@ -71,7 +71,7 @@ CONTAINS
 ! **************************************************************************************************
 
    SUBROUTINE taylor_only_imaginary(exp_H, im_matrix, nsquare, ntaylor)
-      TYPE(cp_fm_p_type), DIMENSION(2)                   :: exp_H
+      TYPE(cp_fm_type), DIMENSION(2)                     :: exp_H
       TYPE(cp_fm_type), INTENT(IN)                       :: im_matrix
       INTEGER, INTENT(in)                                :: nsquare, ntaylor
 
@@ -134,14 +134,14 @@ CONTAINS
       IF (nsquare .GT. 0) THEN
          DO i = 1, nsquare
             CALL cp_complex_fm_gemm("N", "N", ndim, ndim, ndim, one, Tres_re, Tres_im, &
-                                    Tres_re, Tres_im, zero, exp_H(1)%matrix, exp_H(2)%matrix)
+                                    Tres_re, Tres_im, zero, exp_H(1), exp_H(2))
 
-            CALL cp_fm_to_fm(exp_H(1)%matrix, Tres_re)
-            CALL cp_fm_to_fm(exp_H(2)%matrix, Tres_im)
+            CALL cp_fm_to_fm(exp_H(1), Tres_re)
+            CALL cp_fm_to_fm(exp_H(2), Tres_im)
          END DO
       ELSE
-         CALL cp_fm_to_fm(Tres_re, exp_H(1)%matrix)
-         CALL cp_fm_to_fm(Tres_im, exp_H(2)%matrix)
+         CALL cp_fm_to_fm(Tres_re, exp_H(1))
+         CALL cp_fm_to_fm(Tres_im, exp_H(2))
       END IF
 
       CALL cp_fm_release(T1)
@@ -156,7 +156,7 @@ CONTAINS
 ! **************************************************************************************************
 !> \brief subroutine for general complex matrix exponentials
 !>        on input a separate cp_fm_type for real and complex part
-!>        on output a size 2 cp_fm_p_type, first element is the real part of
+!>        on output a size 2 cp_fm_type, first element is the real part of
 !>        the exponential second the imaginary
 !> \param exp_H ...
 !> \param re_part ...
@@ -167,7 +167,7 @@ CONTAINS
 ! **************************************************************************************************
 
    SUBROUTINE taylor_full_complex(exp_H, re_part, im_part, nsquare, ntaylor)
-      TYPE(cp_fm_p_type), DIMENSION(2)                   :: exp_H
+      TYPE(cp_fm_type), DIMENSION(2)                     :: exp_H
       TYPE(cp_fm_type), INTENT(IN)                       :: re_part, im_part
       INTEGER, INTENT(in)                                :: nsquare, ntaylor
 
@@ -224,8 +224,8 @@ CONTAINS
          END DO
       END IF
 
-      exp_H(1)%matrix%local_data = REAL(Tres%local_data, KIND=dp)
-      exp_H(2)%matrix%local_data = AIMAG(Tres%local_data)
+      exp_H(1)%local_data = REAL(Tres%local_data, KIND=dp)
+      exp_H(2)%local_data = AIMAG(Tres%local_data)
 
       CALL cp_cfm_release(T1)
       CALL cp_cfm_release(T2)
@@ -344,7 +344,7 @@ CONTAINS
 ! **************************************************************************************************
 
    SUBROUTINE exp_pade_full_complex(exp_H, re_part, im_part, nsquare, npade)
-      TYPE(cp_fm_p_type), DIMENSION(2)                   :: exp_H
+      TYPE(cp_fm_type), DIMENSION(2)                     :: exp_H
       TYPE(cp_fm_type), INTENT(IN)                       :: re_part, im_part
       INTEGER, INTENT(in)                                :: nsquare, npade
 
@@ -428,8 +428,8 @@ CONTAINS
          fin_p => Npq
       END IF
       DO i = 1, ldim
-         exp_H(1)%matrix%local_data(:, i) = REAL(fin_p%local_data(:, i), KIND=dp)
-         exp_H(2)%matrix%local_data(:, i) = AIMAG(fin_p%local_data(:, i))
+         exp_H(1)%local_data(:, i) = REAL(fin_p%local_data(:, i), KIND=dp)
+         exp_H(2)%local_data(:, i) = AIMAG(fin_p%local_data(:, i))
       END DO
 
       CALL cp_cfm_release(Npq)
@@ -453,7 +453,7 @@ CONTAINS
 ! **************************************************************************************************
 
    SUBROUTINE exp_pade_only_imaginary(exp_H, im_part, nsquare, npade)
-      TYPE(cp_fm_p_type), DIMENSION(2)                   :: exp_H
+      TYPE(cp_fm_type), DIMENSION(2)                     :: exp_H
       TYPE(cp_fm_type), INTENT(IN)                       :: im_part
       INTEGER, INTENT(in)                                :: nsquare, npade
 
@@ -555,8 +555,8 @@ CONTAINS
       END IF
 
       DO k = 1, ldim
-         exp_H(1)%matrix%local_data(:, k) = REAL(fin_p%local_data(:, k), KIND=dp)
-         exp_H(2)%matrix%local_data(:, k) = AIMAG(fin_p%local_data(:, k))
+         exp_H(1)%local_data(:, k) = REAL(fin_p%local_data(:, k), KIND=dp)
+         exp_H(2)%local_data(:, k) = AIMAG(fin_p%local_data(:, k))
       END DO
 
       CALL cp_cfm_release(Npq)
@@ -568,7 +568,7 @@ CONTAINS
       CALL timestop(handle)
    END SUBROUTINE exp_pade_only_imaginary
 
-   ! **************************************************************************************************
+! **************************************************************************************************
 !> \brief exponential of a real matrix,
 !>        calculated using pade approximation together with scaling and squaring
 !> \param exp_H ...
@@ -589,9 +589,8 @@ CONTAINS
       REAL(KIND=dp)                                      :: my_fac, scaleD, scaleN, square_fac
       REAL(KIND=dp), CONTIGUOUS, DIMENSION(:, :), &
          POINTER                                         :: local_data
-      TYPE(cp_fm_p_type), DIMENSION(:), POINTER          :: mult_p
-      TYPE(cp_fm_type)                                   :: Dpq
-      TYPE(cp_fm_type), POINTER                          :: fin_p
+      TYPE(cp_fm_type)                                   :: Dpq, fin_p
+      TYPE(cp_fm_type), DIMENSION(2)                     :: mult_p
       TYPE(cp_fm_type), TARGET                           :: Npq, T1, T2, Tres
 
       CALL timeset(routineN, handle)
@@ -600,7 +599,6 @@ CONTAINS
 
       CALL cp_fm_get_info(matrix, local_data=local_data, ncol_local=ldim, nrow_global=ndim)
       square_fac = 2.0_dp**REAL(nsquare, dp)
-      ALLOCATE (mult_p(2))
 
       CALL cp_fm_create(Dpq, &
                         matrix_struct=matrix%matrix_struct, &
@@ -635,36 +633,36 @@ CONTAINS
          Dpq%local_data(:, i) = Dpq%local_data(:, i) - 0.5_dp*local_data(:, i)
       END DO
 
-      mult_p(1)%matrix => T2
-      mult_p(2)%matrix => Tres
+      mult_p(1) = T2
+      mult_p(2) = Tres
 
       IF (npade .GE. 2) THEN
          DO j = 2, npade
             my_fac = (-1.0_dp)**j
             scaleN = fac(p + q - j)*fac(p)/(fac(p + q)*fac(j)*fac(p - j))
             scaleD = my_fac*fac(p + q - j)*fac(q)/(fac(p + q)*fac(j)*fac(q - j))
-            CALL parallel_gemm("N", "N", ndim, ndim, ndim, one, mult_p(MOD(j, 2) + 1)%matrix, T1, &
-                               zero, mult_p(MOD(j + 1, 2) + 1)%matrix)
+            CALL parallel_gemm("N", "N", ndim, ndim, ndim, one, mult_p(MOD(j, 2) + 1), T1, &
+                               zero, mult_p(MOD(j + 1, 2) + 1))
 
             DO k = 1, ldim
-               Npq%local_data(:, k) = Npq%local_data(:, k) + scaleN*mult_p(MOD(j + 1, 2) + 1)%matrix%local_data(:, k)
-               Dpq%local_data(:, k) = Dpq%local_data(:, k) + scaleD*mult_p(MOD(j + 1, 2) + 1)%matrix%local_data(:, k)
+               Npq%local_data(:, k) = Npq%local_data(:, k) + scaleN*mult_p(MOD(j + 1, 2) + 1)%local_data(:, k)
+               Dpq%local_data(:, k) = Dpq%local_data(:, k) + scaleD*mult_p(MOD(j + 1, 2) + 1)%local_data(:, k)
             END DO
          END DO
       END IF
 
       CALL cp_fm_solve(Dpq, Npq)
 
-      mult_p(2)%matrix => Npq
-      mult_p(1)%matrix => T1
+      mult_p(2) = Npq
+      mult_p(1) = T1
       IF (nsquare .GT. 0) THEN
          DO i = 1, nsquare
-            CALL parallel_gemm("N", "N", ndim, ndim, ndim, one, mult_p(MOD(i, 2) + 1)%matrix, mult_p(MOD(i, 2) + 1)%matrix, zero, &
-                               mult_p(MOD(i + 1, 2) + 1)%matrix)
+            CALL parallel_gemm("N", "N", ndim, ndim, ndim, one, mult_p(MOD(i, 2) + 1), mult_p(MOD(i, 2) + 1), zero, &
+                               mult_p(MOD(i + 1, 2) + 1))
          END DO
-         fin_p => mult_p(MOD(nsquare + 1, 2) + 1)%matrix
+         fin_p = mult_p(MOD(nsquare + 1, 2) + 1)
       ELSE
-         fin_p => Npq
+         fin_p = Npq
       END IF
 
       DO k = 1, ldim
@@ -676,7 +674,6 @@ CONTAINS
       CALL cp_fm_release(T1)
       CALL cp_fm_release(T2)
       CALL cp_fm_release(Tres)
-      DEALLOCATE (mult_p)
       CALL timestop(handle)
 
    END SUBROUTINE exp_pade_real
@@ -696,20 +693,19 @@ CONTAINS
 
    SUBROUTINE arnoldi(mos_old, mos_new, eps_exp, Hre, Him, mos_next, narn_old)
 
-      TYPE(cp_fm_p_type), DIMENSION(2)                   :: mos_old, mos_new
+      TYPE(cp_fm_type), DIMENSION(2)                     :: mos_old, mos_new
       REAL(KIND=dp), INTENT(in)                          :: eps_exp
       TYPE(cp_fm_type), INTENT(IN), OPTIONAL             :: Hre
       TYPE(cp_fm_type), INTENT(IN)                       :: Him
-      TYPE(cp_fm_p_type), DIMENSION(2), OPTIONAL         :: mos_next
+      TYPE(cp_fm_type), DIMENSION(2), OPTIONAL           :: mos_next
       INTEGER, INTENT(inout)                             :: narn_old
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'arnoldi'
       REAL(KIND=dp), PARAMETER                           :: rone = 1.0_dp, rzero = 0.0_dp
 
-      INTEGER                                            :: col_group, handle, i, icol_local, idim, &
-                                                            info, j, l, mydim, nao, narnoldi, &
-                                                            ncol_local, newdim, nmo, npade, &
-                                                            pade_step
+      INTEGER                                            :: handle, i, icol_local, idim, info, j, l, &
+                                                            mydim, nao, narnoldi, ncol_local, &
+                                                            newdim, nmo, npade, pade_step
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: ipivot
       INTEGER, DIMENSION(:), POINTER                     :: col_indices, col_procs
       LOGICAL                                            :: convergence, double_col, double_row
@@ -717,14 +713,15 @@ CONTAINS
       REAL(dp), ALLOCATABLE, DIMENSION(:, :)             :: D, mat1, mat2, mat3, N
       REAL(dp), ALLOCATABLE, DIMENSION(:, :, :)          :: H_approx, H_approx_save
       REAL(KIND=dp)                                      :: conv_norm, prefac, scaleD, scaleN
-      TYPE(cp_fm_p_type), ALLOCATABLE, DIMENSION(:)      :: V_mats
       TYPE(cp_fm_struct_type), POINTER                   :: mo_struct, newstruct
+      TYPE(cp_fm_type), ALLOCATABLE, DIMENSION(:)        :: V_mats
       TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(mp_comm_type)                                 :: col_group
 
       CALL timeset(routineN, handle)
-      para_env => mos_new(1)%matrix%matrix_struct%para_env
+      para_env => mos_new(1)%matrix_struct%para_env
 
-      CALL cp_fm_get_info(mos_old(1)%matrix, ncol_local=ncol_local, col_indices=col_indices, &
+      CALL cp_fm_get_info(mos_old(1), ncol_local=ncol_local, col_indices=col_indices, &
                           nrow_global=nao, ncol_global=nmo, matrix_struct=mo_struct)
       narnoldi = MIN(18, nao)
 
@@ -743,19 +740,18 @@ CONTAINS
       H_approx_save = rzero
 
       DO i = 1, narnoldi + 1
-         ALLOCATE (V_mats(i)%matrix)
-         CALL cp_fm_create(V_mats(i)%matrix, matrix_struct=newstruct, &
+         CALL cp_fm_create(V_mats(i), matrix_struct=newstruct, &
                            name="V_mat"//cp_to_string(i))
       END DO
-      CALL cp_fm_get_info(V_mats(1)%matrix, ncol_global=newdim)
+      CALL cp_fm_get_info(V_mats(1), ncol_global=newdim)
 
       norm1 = 0.0_dp
 !$OMP PARALLEL DO PRIVATE(icol_local) DEFAULT(NONE) SHARED(V_mats,norm1,mos_old,ncol_local)
       DO icol_local = 1, ncol_local
-         V_mats(1)%matrix%local_data(:, icol_local) = mos_old(1)%matrix%local_data(:, icol_local)
-         V_mats(1)%matrix%local_data(:, icol_local + ncol_local) = mos_old(2)%matrix%local_data(:, icol_local)
-         norm1(icol_local) = SUM(V_mats(1)%matrix%local_data(:, icol_local)**2) &
-                             + SUM(V_mats(1)%matrix%local_data(:, icol_local + ncol_local)**2)
+         V_mats(1)%local_data(:, icol_local) = mos_old(1)%local_data(:, icol_local)
+         V_mats(1)%local_data(:, icol_local + ncol_local) = mos_old(2)%local_data(:, icol_local)
+         norm1(icol_local) = SUM(V_mats(1)%local_data(:, icol_local)**2) &
+                             + SUM(V_mats(1)%local_data(:, icol_local + ncol_local)**2)
       END DO
 
       CALL mp_sum(norm1, col_group)
@@ -764,33 +760,33 @@ CONTAINS
 
 !$OMP PARALLEL DO PRIVATE(icol_local) DEFAULT(NONE) SHARED(V_mats,norm1,ncol_local)
       DO icol_local = 1, ncol_local
-         V_mats(1)%matrix%local_data(:, icol_local) = V_mats(1)%matrix%local_data(:, icol_local)/norm1(icol_local)
-         V_mats(1)%matrix%local_data(:, icol_local + ncol_local) = &
-            V_mats(1)%matrix%local_data(:, icol_local + ncol_local)/norm1(icol_local)
+         V_mats(1)%local_data(:, icol_local) = V_mats(1)%local_data(:, icol_local)/norm1(icol_local)
+         V_mats(1)%local_data(:, icol_local + ncol_local) = &
+            V_mats(1)%local_data(:, icol_local + ncol_local)/norm1(icol_local)
       END DO
 
       ! arnoldi subspace procedure to get H_approx
       DO i = 2, narnoldi + 1
          !Be careful, imaginary matrix multiplied with complex. Unfortunately requires a swap of arrays afterwards
-         CALL parallel_gemm("N", "N", nao, newdim, nao, 1.0_dp, Him, V_mats(i - 1)%matrix, 0.0_dp, V_mats(i)%matrix)
+         CALL parallel_gemm("N", "N", nao, newdim, nao, 1.0_dp, Him, V_mats(i - 1), 0.0_dp, V_mats(i))
 
 !$OMP PARALLEL DO PRIVATE(icol_local) DEFAULT(NONE) SHARED(mos_new,V_mats,ncol_local,i)
          DO icol_local = 1, ncol_local
-            mos_new(1)%matrix%local_data(:, icol_local) = V_mats(i)%matrix%local_data(:, icol_local)
-            V_mats(i)%matrix%local_data(:, icol_local) = -V_mats(i)%matrix%local_data(:, icol_local + ncol_local)
-            V_mats(i)%matrix%local_data(:, icol_local + ncol_local) = mos_new(1)%matrix%local_data(:, icol_local)
+            mos_new(1)%local_data(:, icol_local) = V_mats(i)%local_data(:, icol_local)
+            V_mats(i)%local_data(:, icol_local) = -V_mats(i)%local_data(:, icol_local + ncol_local)
+            V_mats(i)%local_data(:, icol_local + ncol_local) = mos_new(1)%local_data(:, icol_local)
          END DO
 
          IF (PRESENT(Hre)) THEN
-            CALL parallel_gemm("N", "N", nao, newdim, nao, 1.0_dp, Hre, V_mats(i - 1)%matrix, 1.0_dp, V_mats(i)%matrix)
+            CALL parallel_gemm("N", "N", nao, newdim, nao, 1.0_dp, Hre, V_mats(i - 1), 1.0_dp, V_mats(i))
          END IF
 
          DO l = 1, i - 1
 !$OMP PARALLEL DO DEFAULT(NONE) SHARED(results,V_mats,ncol_local,l,i)
             DO icol_local = 1, ncol_local
-               results(icol_local) = SUM(V_mats(l)%matrix%local_data(:, icol_local)*V_mats(i)%matrix%local_data(:, icol_local)) + &
-                                     SUM(V_mats(l)%matrix%local_data(:, icol_local + ncol_local)* &
-                                         V_mats(i)%matrix%local_data(:, icol_local + ncol_local))
+               results(icol_local) = SUM(V_mats(l)%local_data(:, icol_local)*V_mats(i)%local_data(:, icol_local)) + &
+                                     SUM(V_mats(l)%local_data(:, icol_local + ncol_local)* &
+                                         V_mats(i)%local_data(:, icol_local + ncol_local))
             END DO
 
             CALL mp_sum(results, col_group)
@@ -798,18 +794,18 @@ CONTAINS
 !$OMP PARALLEL DO DEFAULT(NONE) SHARED(H_approx_save,V_mats,ncol_local,l,i,results)
             DO icol_local = 1, ncol_local
                H_approx_save(l, i - 1, icol_local) = results(icol_local)
-               V_mats(i)%matrix%local_data(:, icol_local) = V_mats(i)%matrix%local_data(:, icol_local) - &
-                                                            results(icol_local)*V_mats(l)%matrix%local_data(:, icol_local)
-               V_mats(i)%matrix%local_data(:, icol_local + ncol_local) = &
-                  V_mats(i)%matrix%local_data(:, icol_local + ncol_local) - &
-                  results(icol_local)*V_mats(l)%matrix%local_data(:, icol_local + ncol_local)
+               V_mats(i)%local_data(:, icol_local) = V_mats(i)%local_data(:, icol_local) - &
+                                                     results(icol_local)*V_mats(l)%local_data(:, icol_local)
+               V_mats(i)%local_data(:, icol_local + ncol_local) = &
+                  V_mats(i)%local_data(:, icol_local + ncol_local) - &
+                  results(icol_local)*V_mats(l)%local_data(:, icol_local + ncol_local)
             END DO
          END DO
 
 !$OMP PARALLEL DO DEFAULT(NONE) SHARED(ncol_local,V_mats,results,i)
          DO icol_local = 1, ncol_local
-            results(icol_local) = SUM(V_mats(i)%matrix%local_data(:, icol_local)**2) + &
-                                  SUM(V_mats(i)%matrix%local_data(:, icol_local + ncol_local)**2)
+            results(icol_local) = SUM(V_mats(i)%local_data(:, icol_local)**2) + &
+                                  SUM(V_mats(i)%local_data(:, icol_local + ncol_local)**2)
          END DO
 
          CALL mp_sum(results, col_group)
@@ -820,9 +816,9 @@ CONTAINS
             DO icol_local = 1, ncol_local
                H_approx_save(i, i - 1, icol_local) = SQRT(results(icol_local))
                last_norm(icol_local) = SQRT(results(icol_local))
-               V_mats(i)%matrix%local_data(:, icol_local) = V_mats(i)%matrix%local_data(:, icol_local)/SQRT(results(icol_local))
-               V_mats(i)%matrix%local_data(:, icol_local + ncol_local) = &
-                  V_mats(i)%matrix%local_data(:, icol_local + ncol_local)/SQRT(results(icol_local))
+               V_mats(i)%local_data(:, icol_local) = V_mats(i)%local_data(:, icol_local)/SQRT(results(icol_local))
+               V_mats(i)%local_data(:, icol_local + ncol_local) = &
+                  V_mats(i)%local_data(:, icol_local + ncol_local)/SQRT(results(icol_local))
             END DO
          ELSE
 !$OMP PARALLEL DO DEFAULT(NONE) SHARED(ncol_local,last_norm,results)
@@ -906,15 +902,15 @@ CONTAINS
 
             IF (conv_norm .LT. eps_exp .OR. i .GT. narnoldi) THEN
 
-               mos_new(1)%matrix%local_data = rzero
-               mos_new(2)%matrix%local_data = rzero
+               mos_new(1)%local_data = rzero
+               mos_new(2)%local_data = rzero
                DO icol_local = 1, ncol_local
                   DO idim = 1, mydim
                      prefac = H_approx(idim, 1, icol_local)*norm1(icol_local)
-                     mos_new(1)%matrix%local_data(:, icol_local) = mos_new(1)%matrix%local_data(:, icol_local) + &
-                                                                   V_mats(idim)%matrix%local_data(:, icol_local)*prefac
-                     mos_new(2)%matrix%local_data(:, icol_local) = mos_new(2)%matrix%local_data(:, icol_local) + &
-                                                                   V_mats(idim)%matrix%local_data(:, icol_local + ncol_local)*prefac
+                     mos_new(1)%local_data(:, icol_local) = mos_new(1)%local_data(:, icol_local) + &
+                                                            V_mats(idim)%local_data(:, icol_local)*prefac
+                     mos_new(2)%local_data(:, icol_local) = mos_new(2)%local_data(:, icol_local) + &
+                                                            V_mats(idim)%local_data(:, icol_local + ncol_local)*prefac
                   END DO
                END DO
 
@@ -932,17 +928,17 @@ CONTAINS
                         END DO
                      END DO
                   END DO
-                  mos_next(1)%matrix%local_data = rzero
-                  mos_next(2)%matrix%local_data = rzero
+                  mos_next(1)%local_data = rzero
+                  mos_next(2)%local_data = rzero
                   DO icol_local = 1, ncol_local
                      DO idim = 1, mydim
                         prefac = H_approx(idim, 1, icol_local)*norm1(icol_local)
-                        mos_next(1)%matrix%local_data(:, icol_local) = &
-                           mos_next(1)%matrix%local_data(:, icol_local) + &
-                           V_mats(idim)%matrix%local_data(:, icol_local)*prefac
-                        mos_next(2)%matrix%local_data(:, icol_local) = &
-                           mos_next(2)%matrix%local_data(:, icol_local) + &
-                           V_mats(idim)%matrix%local_data(:, icol_local + ncol_local)*prefac
+                        mos_next(1)%local_data(:, icol_local) = &
+                           mos_next(1)%local_data(:, icol_local) + &
+                           V_mats(idim)%local_data(:, icol_local)*prefac
+                        mos_next(2)%local_data(:, icol_local) = &
+                           mos_next(2)%local_data(:, icol_local) + &
+                           V_mats(idim)%local_data(:, icol_local + ncol_local)*prefac
                      END DO
                   END DO
                END IF
@@ -967,8 +963,7 @@ CONTAINS
       !deallocate all work matrices
 
       DO i = 1, SIZE(V_mats)
-         CALL cp_fm_release(V_mats(i)%matrix)
-         DEALLOCATE (V_mats(i)%matrix)
+         CALL cp_fm_release(V_mats(i))
       END DO
       CALL cp_fm_struct_release(newstruct)
       CALL mp_comm_free(col_group)

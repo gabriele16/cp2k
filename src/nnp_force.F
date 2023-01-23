@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -132,6 +132,9 @@ CONTAINS
       DO i = 2, logger%para_env%mepos + 1
          istart = istart + allcalc(i - 1)
       END DO
+
+      ! reset extrapolation status
+      nnp%output_expol = .FALSE.
 
       ! calc atomic contribution to energy and force
       DO i = istart, istart + mecalc - 1

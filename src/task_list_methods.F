@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -45,7 +45,7 @@ MODULE task_list_methods
                               mp_alltoall, &
                               mp_bcast, &
                               mp_sum, &
-                              mp_sum_partial
+                              mp_sum_partial, mp_comm_type
    USE particle_types, ONLY: particle_type
    USE particle_methods, ONLY: get_particle_set
    USE pw_env_types, ONLY: pw_env_get, &
@@ -168,18 +168,22 @@ CONTAINS
 
       CALL timeset(routineN, handle)
 
-      ! by default, the full density is calculated
-      my_soft = .FALSE.
-      IF (PRESENT(soft_valid)) my_soft = soft_valid
-
       CALL get_ks_env(ks_env, &
                       qs_kind_set=qs_kind_set, &
                       cell=cell, &
                       particle_set=particle_set, &
                       dft_control=dft_control)
 
+      ! OPTION 1) basis is set through input
+      ! OPTION 2) soft orb basis is requested
+      ! OPTION 3) by default, the full orb basis density is calculated
+      my_soft = .FALSE.
+      IF (PRESENT(soft_valid)) my_soft = soft_valid
       IF (PRESENT(basis_type)) THEN
+         CPASSERT(.NOT. my_soft)
          my_basis_type = basis_type
+      ELSEIF (my_soft) THEN
+         my_basis_type = "ORB_SOFT"
       ELSE
          my_basis_type = "ORB"
       END IF
@@ -203,7 +207,6 @@ CONTAINS
       DO ikind = 1, nkind
          qs_kind => qs_kind_set(ikind)
          CALL get_qs_kind(qs_kind=qs_kind, &
-                          softb=my_soft, &
                           basis_set=orb_basis_set, basis_type=my_basis_type)
 
          IF (.NOT. ASSOCIATED(orb_basis_set)) CYCLE
@@ -239,7 +242,7 @@ CONTAINS
       ALLOCATE (basis_set_list(nkind))
       DO ikind = 1, nkind
          qs_kind => qs_kind_set(ikind)
-         CALL get_qs_kind(qs_kind=qs_kind, softb=my_soft, basis_set=basis_set_a, &
+         CALL get_qs_kind(qs_kind=qs_kind, basis_set=basis_set_a, &
                           basis_type=my_basis_type)
          IF (ASSOCIATED(basis_set_a)) THEN
             basis_set_list(ikind)%gto_basis_set => basis_set_a
@@ -296,7 +299,8 @@ CONTAINS
 
          CALL task_list_inner_loop(task_list%tasks, task_list%ntasks, curr_tasks, &
                                    rs_descs, dft_control, cube_info, gridlevel_info, cindex, &
-                                   iatom, jatom, rpgfa, rpgfb, zeta, zetb, kind_radius_b, set_radius_a, set_radius_b, ra, rab, &
+                                   iatom, jatom, rpgfa, rpgfb, zeta, zetb, kind_radius_b, &
+                                   set_radius_a, set_radius_b, ra, rab, &
                                    la_max, la_min, lb_max, lb_min, npgfa, npgfb, nseta, nsetb)
 
       END DO
@@ -307,7 +311,8 @@ CONTAINS
          rs_descs=rs_descs, ntasks=task_list%ntasks, natoms=natoms, &
          tasks=task_list%tasks, atom_pair_send=task_list%atom_pair_send, &
          atom_pair_recv=task_list%atom_pair_recv, symmetric=.TRUE., &
-         reorder_rs_grid_ranks=reorder_rs_grid_ranks, skip_load_balance_distributed=skip_load_balance_distributed)
+         reorder_rs_grid_ranks=reorder_rs_grid_ranks, &
+         skip_load_balance_distributed=skip_load_balance_distributed)
 
       ! compute offsets for rs_scatter_matrix / rs_copy_matrix
       ALLOCATE (nsgf(natoms))
@@ -345,7 +350,6 @@ CONTAINS
                                  qs_kind_set=qs_kind_set, &
                                  particle_set=particle_set, &
                                  cell=cell, &
-                                 soft=my_soft, &
                                  basis_type=my_basis_type, &
                                  rs_grids=rs_grids)
 
@@ -451,7 +455,8 @@ CONTAINS
          WRITE (6, *)
          WRITE (6, *) "Total number of tasks              ", task_list%ntasks
          DO igrid_level = 1, gridlevel_info%ngrid_levels
-            WRITE (6, *) "Total number of pairs(grid_level)  ", igrid_level, task_list%npairs(igrid_level)
+            WRITE (6, *) "Total number of pairs(grid_level)  ", &
+               igrid_level, task_list%npairs(igrid_level)
          END DO
          WRITE (6, *)
 
@@ -511,18 +516,17 @@ CONTAINS
 !> \brief Sends the task list data to the grid API.
 !> \author Ole Schuett
 ! **************************************************************************************************
-   SUBROUTINE create_grid_task_list(task_list, qs_kind_set, particle_set, cell, soft, basis_type, rs_grids)
+   SUBROUTINE create_grid_task_list(task_list, qs_kind_set, particle_set, cell, basis_type, rs_grids)
       TYPE(task_list_type), POINTER                      :: task_list
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(cell_type), POINTER                           :: cell
-      LOGICAL                                            :: soft
       CHARACTER(LEN=default_string_length)               :: basis_type
       TYPE(realspace_grid_type), DIMENSION(:), POINTER :: rs_grids
 
       TYPE(gto_basis_set_type), POINTER                  :: orb_basis_set
-      INTEGER                                            :: nset, natoms, nkinds, ntasks, ikind, iatom, itask, nsgf
-
+      INTEGER                                            :: nset, natoms, nkinds, ntasks, &
+                                                            ikind, iatom, itask, nsgf
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: atom_kinds, level_list, iatom_list, jatom_list, &
                                                             iset_list, jset_list, ipgf_list, jpgf_list, &
                                                             border_mask_list, block_num_list
@@ -542,7 +546,7 @@ CONTAINS
          ! Basis sets do not change during simulation - only need to create them once.
          ALLOCATE (task_list%grid_basis_sets(nkinds))
          DO ikind = 1, nkinds
-            CALL get_qs_kind(qs_kind_set(ikind), softb=soft, basis_type=basis_type, basis_set=orb_basis_set)
+            CALL get_qs_kind(qs_kind_set(ikind), basis_type=basis_type, basis_set=orb_basis_set)
             CALL get_gto_basis_set(gto_basis_set=orb_basis_set, &
                                    nset=nset, &
                                    nsgf=nsgf, &
@@ -1155,7 +1159,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE optimize_load_list(list, group, my_pos)
       INTEGER, DIMENSION(:, :, 0:)                       :: list
-      INTEGER, INTENT(IN)                                :: group, my_pos
+      TYPE(mp_comm_type), INTENT(IN) :: group
+      INTEGER, INTENT(IN)                                :: my_pos
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'optimize_load_list'
       INTEGER, PARAMETER                                 :: rank_of_root = 0
@@ -2523,7 +2528,7 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:), INTENT(IN)       :: src_matrices
       TYPE(offload_buffer_type), INTENT(INOUT)           :: dest_buffer
       TYPE(task_list_type), INTENT(IN)                   :: task_list
-      INTEGER, INTENT(IN)                                :: group
+      TYPE(mp_comm_type), INTENT(IN)                     :: group
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'rs_scatter_matrices'
 
@@ -2558,7 +2563,7 @@ CONTAINS
       TYPE(offload_buffer_type), INTENT(IN)              :: src_buffer
       TYPE(dbcsr_p_type), DIMENSION(:), INTENT(INOUT)    :: dest_matrices
       TYPE(task_list_type), INTENT(IN)                   :: task_list
-      INTEGER, INTENT(IN)                                :: group
+      TYPE(mp_comm_type), INTENT(IN)                     :: group
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'rs_gather_matrices'
 

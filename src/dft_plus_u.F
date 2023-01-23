@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -351,8 +351,8 @@ CONTAINS
       fm_work2_local_alloc = .FALSE.
 
       IF (ASSOCIATED(scf_env%scf_work1)) THEN
-         IF (ASSOCIATED(scf_env%scf_work1(1)%matrix)) THEN
-            fm_work1 => scf_env%scf_work1(1)%matrix
+         IF (ASSOCIATED(scf_env%scf_work1(1)%matrix_struct)) THEN
+            fm_work1 => scf_env%scf_work1(1)
          END IF
       END IF
 

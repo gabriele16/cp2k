@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -41,7 +41,8 @@ MODULE thermostat_utils
    USE kinds,                           ONLY: default_string_length,&
                                               dp
    USE machine,                         ONLY: m_flush
-   USE message_passing,                 ONLY: mp_sum
+   USE message_passing,                 ONLY: mp_comm_type,&
+                                              mp_sum
    USE molecule_kind_types,             ONLY: get_molecule_kind,&
                                               get_molecule_kind_set,&
                                               molecule_kind_type
@@ -922,7 +923,7 @@ CONTAINS
       TYPE(map_info_type), POINTER                       :: map_info
       TYPE(npt_info_type), DIMENSION(:, :), &
          INTENT(INOUT)                                   :: npt
-      INTEGER, INTENT(IN)                                :: group
+      TYPE(mp_comm_type), INTENT(IN)                     :: group
 
       INTEGER                                            :: i, j, ncoef
 
@@ -983,7 +984,7 @@ CONTAINS
       TYPE(molecule_kind_type), POINTER                  :: molecule_kind_set(:)
       TYPE(distribution_1d_type), POINTER                :: local_molecules
       TYPE(molecule_type), POINTER                       :: molecule_set(:)
-      INTEGER, INTENT(IN)                                :: group
+      TYPE(mp_comm_type), INTENT(IN)                     :: group
       REAL(KIND=dp), INTENT(INOUT), OPTIONAL             :: vel(:, :)
 
       INTEGER                                            :: first_atom, ii, ikind, imol, imol_local, &
@@ -1049,7 +1050,7 @@ CONTAINS
       TYPE(molecule_kind_type), POINTER                  :: molecule_kind_set(:)
       TYPE(distribution_1d_type), POINTER                :: local_molecules
       TYPE(molecule_type), POINTER                       :: molecule_set(:)
-      INTEGER, INTENT(IN)                                :: group
+      TYPE(mp_comm_type), INTENT(IN)                     :: group
       REAL(KIND=dp), INTENT(INOUT), OPTIONAL             :: vel(:, :)
 
       INTEGER                                            :: first_atom, ii, ikind, imol, imol_local, &
@@ -1218,7 +1219,7 @@ CONTAINS
       TYPE(particle_type), POINTER                       :: particle_set(:)
       TYPE(atomic_kind_type), POINTER                    :: atomic_kind_set(:)
       TYPE(distribution_1d_type), POINTER                :: local_particles
-      INTEGER, INTENT(IN)                                :: group
+      TYPE(mp_comm_type), INTENT(IN)                     :: group
       TYPE(particle_type), OPTIONAL, POINTER             :: core_particle_set(:), &
                                                             shell_particle_set(:)
       REAL(KIND=dp), INTENT(INOUT), OPTIONAL             :: core_vel(:, :), shell_vel(:, :)

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -44,6 +44,7 @@ MODULE ipi_driver
                                               int_4
    USE message_passing,                 ONLY: mp_bcast,&
                                               mp_irecv,&
+                                              mp_request_type,&
                                               mp_send,&
                                               mp_sync,&
                                               mp_testany
@@ -324,8 +325,8 @@ CONTAINS
       CHARACTER(LEN=default_string_length)     :: header
       INTEGER                                  :: drv_port, handle, i_drv_unix, &
                                                   idir, ii, inet, ip, iwait, &
-                                                  nat, output_unit, socket, &
-                                                  wait_req(2)
+                                                  nat, output_unit, socket
+      TYPE(mp_request_type), DIMENSION(2) ::                                            wait_req
       INTEGER(KIND=int_4), POINTER             :: wait_msg(:)
       LOGICAL                                  :: drv_unix, fwait, hasdata, &
                                                   ionode, should_stop

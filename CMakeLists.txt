@@ -1,6 +1,6 @@
 #!-------------------------------------------------------------------------------------------------!
 #!   CP2K: A general program to perform molecular dynamics simulations                             !
-#!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                  !
+#!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                  !
 #!                                                                                                 !
 #!   SPDX-License-Identifier: GPL-2.0-or-later                                                     !
 #!-------------------------------------------------------------------------------------------------!
@@ -22,40 +22,14 @@ endif()
 
 # =================================================================================================
 # PROJECT AND VERSION
-include(GetGitRevisionDescription)
 include(CMakeDependentOption)
 cmake_policy(SET CMP0048 NEW)
 
-git_describe(GIT_DESC)
-
-if(GIT_DESC)
-  string(REGEX REPLACE "^v([0-9]+)\\..*" "\\1" VERSION_MAJOR "${GIT_DESC}")
-  string(REGEX REPLACE "^v[0-9]+\\.([0-9]+).*" "\\1" VERSION_MINOR
-                       "${GIT_DESC}")
-  string(REGEX REPLACE "^v[0-9]+\\.[0-9]+\\.([0-9]+).*" "\\1" VERSION_PATCH
-                       "${GIT_DESC}")
-  string(REGEX REPLACE "^v[0-9]+\\.[0-9]+\\.[0-9]+(.*)" "\\1" VERSION_GIT
-                       "${GIT_DESC}")
-
-  git_local_changes(GIT_STATE)
-  if("${GIT_STATE}" STREQUAL "DIRTY")
-    set(VERSION_GIT "${VERSION_GIT}-dirty")
-  endif()
-
-  execute_process(
-    COMMAND git log -1 --format=%ai
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE GIT_COMMIT_DATE
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-  # take only the date from the git timestamp:
-  string(REGEX REPLACE "^([0-9\\-]+) .*" "\\1" VERSION_DATE
-                       "${GIT_COMMIT_DATE}")
-else()
-  set(VERSION_MAJOR 22)
-  set(VERSION_MINOR 11)
-  set(VERSION_PATCH 00)
-endif()
+set(VERSION_MAJOR 22)
+# anything above 12 is to indicate that it is devel-branch. The git hash commit
+# is the only important information to give. It is retrieved few lines below.
+set(VERSION_MINOR 99)
+set(VERSION_PATCH 00)
 
 project(
   cp2k
@@ -111,11 +85,13 @@ option(CP2K_USE_PEXSI "Enable pexsi support" OFF)
 option(CP2K_USE_SUPERLU "Enable superlu support" OFF)
 option(CP2K_USE_COSMA "COSMA is a drop in replacement of scalapack dgemm" ON)
 option(CP2K_USE_LIBINT2 "Enable libint2 support" ON)
+option(CP2K_USE_PLUMED "Enable plumed2 support" OFF)
 option(CP2K_USE_VORI "Enable libvori support" OFF)
 option(CP2K_USE_PEXSI "Enable pexsi support" OFF)
 option(CP2K_USE_QUIP "Enable quip support" OFF)
 option(CP2K_USE_SPGLIB "Enable spglib support" ON)
 option(CP2K_USE_LIBXC "Enable libxc support" ON)
+option(CP2K_USE_LIBTORCH "Enable libtorch support" OFF)
 option(CP2K_USE_STATIC_BLAS "Link against static version of BLAS/LAPACK" OFF)
 option(CP2K_USE_SPLA
        "Use SPLA offloading gemm feature to the GPU if it is beneficial. " OFF)
@@ -385,7 +361,7 @@ if(CP2K_USE_ELPA)
 endif()
 
 if(CP2K_USE_LIBXC)
-  find_package(LibXC 6.0.0 REQUIRED)
+  find_package(LibXC 6 REQUIRED EXACT)
 endif()
 
 if(CP2K_USE_COSMA)
@@ -399,7 +375,7 @@ if(CP2K_USE_COSMA)
   # check that cosma::cosma_pxgemm and cosma::cosma_prefixed_pxgemm exist
   if(NOT TARGET cosma::cosma_pxgemm OR NOT TARGET cosma::cosma_prefixed_pxgemm)
     message(ERROR_ERROR
-            " COSMA needs tor be build with scalapack offloading support")
+            " COSMA needs to be build with scalapack offloading support")
     message(
       FATAL_ERROR
         " COSTA_SCALAPACK and COSMA_SCALAPACK should probably be set properly")
@@ -499,6 +475,10 @@ endif()
 
 if(CP2K_USE_PLUMED)
   find_package(Plumed REQUIRED)
+endif()
+
+if(CP2K_USE_LIBTORCH)
+  find_package(Torch REQUIRED)
 endif()
 
 # OPTION HANDLING
@@ -601,6 +581,12 @@ if(CP2K_USE_LIBXC)
   )
   message(STATUS "   - include directories : " ${CP2K_LIBXC_INCLUDE_DIRS})
   message(STATUS "   - libraries :           " ${CP2K_LIBXC_LINK_LIBRARIES})
+endif()
+
+if(CP2K_USE_LIBTORCH)
+  message(STATUS " ")
+  message(STATUS "- LIBTORCH")
+  message(STATUS "   - libraries :           " ${CP2K_LIBTORCH_LIBRARIES})
 endif()
 
 if(CP2K_USE_FFTW3)
@@ -768,6 +754,10 @@ endif()
 
 if(NOT CP2K_USE_SUPERLU)
   message(STATUS "   - SUPERLU")
+endif()
+
+if(NOT CP2K_USE_LIBTORCH)
+  message(STATUS "   - libtorch")
 endif()
 
 message(

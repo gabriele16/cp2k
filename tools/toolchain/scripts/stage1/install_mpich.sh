@@ -6,8 +6,8 @@
 [ "${BASH_SOURCE[0]}" ] && SCRIPT_NAME="${BASH_SOURCE[0]}" || SCRIPT_NAME=$0
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_NAME")/.." && pwd -P)"
 
-mpich_ver="3.4.3"
-mpich_sha256="8154d89f3051903181018166678018155f4c2b6f04a9bb6fe9515656452c4fd7"
+mpich_ver="4.0.3"
+mpich_sha256="17406ea90a6ed4ecd5be39c9ddcbfac9343e6ab4f77ac4e8c5ebe4a3e3b6c501"
 mpich_pkg="mpich-${mpich_ver}.tar.gz"
 
 source "${SCRIPT_DIR}"/common_vars.sh
@@ -120,15 +120,6 @@ if [ "${with_mpich}" != "__DONTUSE__" ]; then
   else
     mpi_bin="mpirun"
   fi
-  # check MPICH version, versions less than 3.0 will get -D__MPI_VERSION=2 flag
-  raw_version=$(${mpi_bin} --version | grep "Version:" | awk '{print $2}')
-  major_version=$(echo $raw_version | cut -d '.' -f 1)
-  minor_version=$(echo $raw_version | cut -d '.' -f 2)
-  if [ ${major_version} -lt 3 ]; then
-    mpi2_dflags="-D__MPI_VERSION=2"
-  else
-    mpi2_dflags=""
-  fi
   MPICH_LIBS="-lmpifort -lmpicxx -lmpi"
   cat << EOF > "${BUILDDIR}/setup_mpich"
 export MPI_MODE="${MPI_MODE}"
@@ -144,7 +135,7 @@ export MPICH_LIBS="${MPICH_LIBS}"
 export MPI_CFLAGS="${MPICH_CFLAGS}"
 export MPI_LDFLAGS="${MPICH_LDFLAGS}"
 export MPI_LIBS="${MPICH_LIBS}"
-export CP_DFLAGS="\${CP_DFLAGS} IF_MPI(-D__parallel ${mpi2_dflags}|)"
+export CP_DFLAGS="\${CP_DFLAGS} IF_MPI(-D__parallel|)"
 export CP_CFLAGS="\${CP_CFLAGS} IF_MPI(${MPICH_CFLAGS}|)"
 export CP_LDFLAGS="\${CP_LDFLAGS} IF_MPI(${MPICH_LDFLAGS}|)"
 export CP_LIBS="\${CP_LIBS} IF_MPI(${MPICH_LIBS}|)"

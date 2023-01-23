@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -62,7 +62,8 @@ MODULE qs_neighbor_lists
                                               dp,&
                                               int_8
    USE kpoint_types,                    ONLY: kpoint_type
-   USE message_passing,                 ONLY: mp_max,&
+   USE message_passing,                 ONLY: mp_comm_type,&
+                                              mp_max,&
                                               mp_sum
    USE molecule_types,                  ONLY: molecule_type
    USE particle_types,                  ONLY: particle_type
@@ -308,8 +309,8 @@ CONTAINS
       LOGICAL, ALLOCATABLE, DIMENSION(:) :: all_present, aux_fit_present, aux_present, &
          core_present, default_present, nonbond1_atom, nonbond2_atom, oce_present, orb_present, &
          ppl_present, ppnl_present, ri_present, xb1_atom, xb2_atom
-      REAL(dp)                                           :: almo_rcov, almo_rvdw, rcut, roperator, &
-                                                            subcells
+      REAL(dp)                                           :: almo_rcov, almo_rvdw, pdist, rcut, &
+                                                            roperator, subcells
       REAL(dp), ALLOCATABLE, DIMENSION(:) :: all_pot_rad, aux_fit_radius, c_radius, calpha, &
          core_radius, oce_radius, orb_radius, ppl_radius, ppnl_radius, ri_radius, zeff
       REAL(dp), ALLOCATABLE, DIMENSION(:, :)             :: pair_radius
@@ -431,6 +432,7 @@ CONTAINS
          ! enforce MIC for interaction lists in SE
          mic = .TRUE.
       END IF
+      pdist = dft_control%qs_control%pairlist_radius
 
       hfx_sections => section_vals_get_subs_vals(qs_env%input, "DFT%XC%HF")
       CALL section_vals_get(hfx_sections, explicit=do_hfx)
@@ -580,7 +582,12 @@ CONTAINS
       END DO
 
       ! Build the orbital-orbital overlap neighbor lists
-      CALL pair_radius_setup(orb_present, orb_present, orb_radius, orb_radius, pair_radius)
+      IF (pdist < 0.0_dp) THEN
+         pdist = MAX(plane_distance(1, 0, 0, cell), &
+                     plane_distance(0, 1, 0, cell), &
+                     plane_distance(0, 0, 1, cell))
+      END IF
+      CALL pair_radius_setup(orb_present, orb_present, orb_radius, orb_radius, pair_radius, pdist)
       CALL build_neighbor_lists(sab_orb, particle_set, atom2d, cell, pair_radius, &
                                 mic=mic, subcells=subcells, molecular=molecule_only, nlname="sab_orb")
       CALL set_ks_env(ks_env=ks_env, sab_orb=sab_orb)
@@ -833,7 +840,7 @@ CONTAINS
       CALL get_qs_env(qs_env=qs_env, dispersion_env=dispersion_env)
       sab_vdw => dispersion_env%sab_vdw
       sab_cn => dispersion_env%sab_cn
-      IF (dispersion_env%type == xc_vdw_fun_pairpot) THEN
+      IF (dispersion_env%type == xc_vdw_fun_pairpot .OR. xtb) THEN
          c_radius(:) = dispersion_env%rc_disp
          default_present = .TRUE. !include all atoms in vdW (even without basis)
          CALL pair_radius_setup(default_present, default_present, c_radius, c_radius, pair_radius)
@@ -841,9 +848,10 @@ CONTAINS
                                    subcells=subcells, operator_type="PP", nlname="sab_vdw")
          dispersion_env%sab_vdw => sab_vdw
 
-         IF (dispersion_env%pp_type == vdw_pairpot_dftd3 .OR. &
+         IF (xtb .OR. dispersion_env%pp_type == vdw_pairpot_dftd3 .OR. &
              dispersion_env%pp_type == vdw_pairpot_dftd3bj) THEN
             ! Build the neighbor lists for coordination numbers as needed by the DFT-D3 method
+            ! This is also needed for the xTB Hamiltonian
             DO ikind = 1, nkind
                CALL get_atomic_kind(atomic_kind_set(ikind), z=zat)
                c_radius(ikind) = 4._dp*ptable(zat)%covalent_radius*bohr
@@ -1591,23 +1599,30 @@ CONTAINS
 !> \param radius_a ...
 !> \param radius_b ...
 !> \param pair_radius ...
+!> \param prmin ...
 ! **************************************************************************************************
-   SUBROUTINE pair_radius_setup(present_a, present_b, radius_a, radius_b, pair_radius)
+   SUBROUTINE pair_radius_setup(present_a, present_b, radius_a, radius_b, pair_radius, prmin)
       LOGICAL, DIMENSION(:), INTENT(IN)                  :: present_a, present_b
       REAL(dp), DIMENSION(:), INTENT(IN)                 :: radius_a, radius_b
       REAL(dp), DIMENSION(:, :), INTENT(OUT)             :: pair_radius
+      REAL(dp), INTENT(IN), OPTIONAL                     :: prmin
 
       INTEGER                                            :: i, j, nkind
+      REAL(dp)                                           :: rrmin
 
       nkind = SIZE(present_a)
 
       pair_radius = 0._dp
+
+      rrmin = 0.0_dp
+      IF (PRESENT(prmin)) rrmin = prmin
 
       DO i = 1, nkind
          IF (.NOT. present_a(i)) CYCLE
          DO j = 1, nkind
             IF (.NOT. present_b(j)) CYCLE
             pair_radius(i, j) = radius_a(i) + radius_b(j)
+            pair_radius(i, j) = MAX(pair_radius(i, j), rrmin)
          END DO
       END DO
 
@@ -1633,12 +1648,13 @@ CONTAINS
       CHARACTER(len=*), PARAMETER :: routineN = 'write_neighbor_distribution'
       LOGICAL, PARAMETER                                 :: full_output = .FALSE.
 
-      INTEGER                                            :: group, handle, ikind, inode, ipe, jkind, &
-                                                            mype, n, nkind, nnode, npe
+      INTEGER                                            :: handle, ikind, inode, ipe, jkind, mype, &
+                                                            n, nkind, nnode, npe
       INTEGER(int_8)                                     :: nblock_max, nblock_sum, nelement_max, &
                                                             nelement_sum, tmp(2)
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: nblock, nelement, nnsgf
       TYPE(gto_basis_set_type), POINTER                  :: orb_basis_set
+      TYPE(mp_comm_type)                                 :: group
       TYPE(neighbor_list_iterator_p_type), &
          DIMENSION(:), POINTER                           :: nl_iterator
 

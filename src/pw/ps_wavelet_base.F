@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -12,7 +12,8 @@
 MODULE ps_wavelet_base
 
    USE kinds,                           ONLY: dp
-   USE message_passing,                 ONLY: mp_alltoall
+   USE message_passing,                 ONLY: mp_alltoall,&
+                                              mp_comm_type
    USE ps_wavelet_fft3d,                ONLY: ctrig,&
                                               ctrig_length,&
                                               fftstp
@@ -55,7 +56,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(md1, md3, md2/nproc), &
          INTENT(inout)                                   :: zf
       REAL(KIND=dp), INTENT(in)                          :: scal, hx, hy, hz
-      INTEGER, INTENT(in)                                :: mpi_group
+      TYPE(mp_comm_type), INTENT(in)                     :: mpi_group
 
       INTEGER, PARAMETER                                 :: ncache_optimal = 8*1024
 
@@ -845,7 +846,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(md1, md3, md2/nproc), &
          INTENT(inout)                                   :: zf
       REAL(KIND=dp), INTENT(in)                          :: scal
-      INTEGER, INTENT(in)                                :: mpi_group
+      TYPE(mp_comm_type), INTENT(in)                     :: mpi_group
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'S_PoissonSolver'
       INTEGER, PARAMETER                                 :: ncache_optimal = 8*1024
@@ -1591,7 +1592,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(md1, md3, md2/nproc), &
          INTENT(inout)                                   :: zf
       REAL(KIND=dp), INTENT(in)                          :: scal
-      INTEGER, INTENT(in)                                :: mpi_group
+      TYPE(mp_comm_type), INTENT(in)                     :: mpi_group
 
       INTEGER, PARAMETER                                 :: ncache_optimal = 8*1024
 

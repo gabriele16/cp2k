@@ -224,6 +224,8 @@ The --with-PKG options follow the rules:
                           Default = install
   --with-libvori          Enable libvori for the Voronoi integration (and the BQB compressed trajectory format)
                           Default = install
+  --with-libtorch         Enable libtorch the machine learning framework needed for NequIP.
+                          Default = no
 
 FURTHER INSTRUCTIONS
 
@@ -261,7 +263,7 @@ mpi_list="mpich openmpi intelmpi"
 math_list="mkl acml openblas"
 lib_list="fftw libint libxc libxsmm cosma scalapack elpa plumed \
           spfft spla ptscotch superlu pexsi quip gsl spglib hdf5 libvdwxc sirius
-          libvori nequip"
+          libvori libtorch"
 package_list="${tool_list} ${mpi_list} ${math_list} ${lib_list}"
 # ------------------------------------------------------------------------
 
@@ -307,6 +309,7 @@ with_spfft="__DONTUSE__"
 with_spla="__DONTUSE__"
 with_cosma="__INSTALL__"
 with_libvori="__INSTALL__"
+with_libtorch="__DONTUSE__"
 # for MPI, we try to detect system MPI variant
 if (command -v mpirun > /dev/null 2>&1); then
   # check if we are dealing with openmpi, mpich or intelmpi
@@ -376,8 +379,20 @@ fi
 while [ $# -ge 1 ]; do
   case ${1} in
     -j)
-      shift
-      export NPROCS_OVERWRITE="${1}"
+      case "${2}" in
+        -*)
+          export NPROCS_OVERWRITE="$(get_nprocs)"
+          ;;
+        [0-9]*)
+          shift
+          export NPROCS_OVERWRITE="${1}"
+          ;;
+        *)
+          report_error ${LINENO} \
+            "The -j flag can only be followed by an integer number, found ${2}."
+          exit 1
+          ;;
+      esac
       ;;
     -j[0-9]*)
       export NPROCS_OVERWRITE="${1#-j}"
@@ -625,6 +640,9 @@ while [ $# -ge 1 ]; do
     --with-libvori*)
       with_libvori=$(read_with "${1}")
       ;;
+    --with-libtorch*)
+      with_libtorch=$(read_with "${1}")
+      ;;
     --with-spla*)
       with_spla=$(read_with "${1}")
       ;;
@@ -861,7 +879,7 @@ if [ "${ENABLE_CRAY}" = "__TRUE__" ]; then
         export MPI_CFLAGS
         export MPI_LDFLAGS
         export MPI_LIBS=" "
-        export CP_DFLAGS="${CP_DFLAGS} IF_MPI(-D__parallel -D__MPI_VERSION=3|)"
+        export CP_DFLAGS="${CP_DFLAGS} IF_MPI(-D__parallel|)"
       fi
       ;;
     openmpi)
@@ -871,7 +889,7 @@ if [ "${ENABLE_CRAY}" = "__TRUE__" ]; then
         export MPI_CFLAGS
         export MPI_LDFLAGS
         export MPI_LIBS="-lmpi -lmpi_cxx"
-        export CP_DFLAGS="${CP_DFLAGS} IF_MPI(-D__parallel -D__MPI_VERSION=3|)"
+        export CP_DFLAGS="${CP_DFLAGS} IF_MPI(-D__parallel|)"
       fi
       ;;
     intelmpi)
@@ -883,7 +901,7 @@ if [ "${ENABLE_CRAY}" = "__TRUE__" ]; then
         export MPI_CFLAGS
         export MPI_LDFLAGS
         export MPI_LIBS="-lmpi -lmpi_cxx"
-        export CP_DFLAGS="${CP_DFLAGS} IF_MPI(-D__parallel -D__MPI_VERSION=3|)"
+        export CP_DFLAGS="${CP_DFLAGS} IF_MPI(-D__parallel|)"
       fi
       ;;
   esac

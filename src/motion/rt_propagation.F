@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -21,8 +21,7 @@ MODULE rt_propagation
    USE cp_fm_struct,                    ONLY: cp_fm_struct_create,&
                                               cp_fm_struct_release,&
                                               cp_fm_struct_type
-   USE cp_fm_types,                     ONLY: cp_fm_p_type,&
-                                              cp_fm_set_all,&
+   USE cp_fm_types,                     ONLY: cp_fm_set_all,&
                                               cp_fm_to_fm,&
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
@@ -157,14 +156,12 @@ CONTAINS
       CALL section_vals_get(hfx_sections, explicit=rtp%do_hfx)
       CALL section_vals_val_get(print_moments_section, "MAGNETIC", l_val=magnetic)
       CALL section_vals_val_get(print_moments_section, "VEL_REPRS", l_val=vel_reprs)
-      rtp%track_imag_density = magnetic .OR. vel_reprs .OR. rtp_control%velocity_gauge
-      IF (rtp_control%velocity_gauge) THEN
-         rtp%do_hfx = .TRUE.
-      END IF
+      rtp%track_imag_density = magnetic .OR. vel_reprs .OR. rtp_control%velocity_gauge &
+                               .OR. rtp%do_hfx .OR. (.NOT. rtp_control%fixed_ions)
+
       ! Hmm, not really like to initialize with the structure of S but I reckon it is
       ! done everywhere like this
-      IF (rtp%do_hfx .OR. rtp%track_imag_density) &
-         CALL rtp_hfx_rebuild(qs_env)
+      IF (rtp%track_imag_density) CALL rtp_hfx_rebuild(qs_env)
 
       CALL init_propagation_run(qs_env)
       IF (.NOT. rtp_control%fixed_ions) THEN
@@ -200,7 +197,7 @@ CONTAINS
       INTEGER, DIMENSION(2)                              :: nelectron_spin
       LOGICAL                                            :: periodic_cell
       TYPE(cell_type), POINTER                           :: cell
-      TYPE(cp_fm_p_type), DIMENSION(:), POINTER          :: mos_new, mos_old
+      TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new, mos_old
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_ks, matrix_s, rho_new, rho_old
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
@@ -242,14 +239,14 @@ CONTAINS
                CALL apply_delta_pulse_mag(qs_env, mos_old, mos_new)
             ELSE
                DO i = 1, SIZE(mos)
-                  CALL cp_fm_to_fm(mos(i)%mo_coeff, mos_old(2*i - 1)%matrix)
-                  CALL cp_fm_set_all(mos_old(2*i)%matrix, zero, zero)
+                  CALL cp_fm_to_fm(mos(i)%mo_coeff, mos_old(2*i - 1))
+                  CALL cp_fm_set_all(mos_old(2*i), zero, zero)
                END DO
             END IF
          END IF
 
          DO i = 1, SIZE(mos_old)
-            CALL cp_fm_to_fm(mos_old(i)%matrix, mos_new(i)%matrix)
+            CALL cp_fm_to_fm(mos_old(i), mos_new(i))
          END DO
          CALL calc_update_rho(qs_env)
       ELSE

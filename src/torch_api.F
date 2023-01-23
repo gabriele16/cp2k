@@ -1,11 +1,12 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
 MODULE torch_api
    USE ISO_C_BINDING, ONLY: C_ASSOCIATED, &
+                            C_BOOL, &
                             C_CHAR, &
                             C_FLOAT, &
                             C_F_POINTER, &
@@ -52,6 +53,7 @@ MODULE torch_api
    PUBLIC :: torch_dict_insert, torch_dict_get
    PUBLIC :: torch_model_type, torch_model_load, torch_model_eval, torch_model_release
    PUBLIC :: torch_model_read_metadata
+   PUBLIC :: torch_cuda_is_available
 
 CONTAINS
 
@@ -99,6 +101,9 @@ CONTAINS
                                                    source=source)
 #else
             CPABORT("CP2K compiled without the Torch library.")
+            MARK_USED(dict)
+            MARK_USED(key)
+            MARK_USED(source)
 #endif
          END SUBROUTINE torch_dict_insert_${typename}$_${ndims}$d
 
@@ -147,6 +152,9 @@ CONTAINS
             CALL C_F_POINTER(dest_c, dest, shape=sizes_f)
 #else
             CPABORT("CP2K compiled without the Torch library.")
+            MARK_USED(dict)
+            MARK_USED(key)
+            MARK_USED(dest)
 #endif
          END SUBROUTINE torch_dict_get_${typename}$_${ndims}$d
 
@@ -173,6 +181,7 @@ CONTAINS
       CPASSERT(C_ASSOCIATED(dict%c_ptr))
 #else
       CPABORT("CP2K was compiled without Torch library.")
+      MARK_USED(dict)
 #endif
    END SUBROUTINE torch_dict_create
 
@@ -196,6 +205,7 @@ CONTAINS
       dict%c_ptr = C_NULL_PTR
 #else
       CPABORT("CP2K was compiled without Torch library.")
+      MARK_USED(dict)
 #endif
    END SUBROUTINE torch_dict_release
 
@@ -221,6 +231,8 @@ CONTAINS
       CPASSERT(C_ASSOCIATED(model%c_ptr))
 #else
       CPABORT("CP2K was compiled without Torch library.")
+      MARK_USED(model)
+      MARK_USED(filename)
 #endif
    END SUBROUTINE torch_model_load
 
@@ -251,6 +263,9 @@ CONTAINS
                               outputs=outputs%c_ptr)
 #else
       CPABORT("CP2K was compiled without Torch library.")
+      MARK_USED(model)
+      MARK_USED(inputs)
+      MARK_USED(outputs)
 #endif
    END SUBROUTINE torch_model_eval
 
@@ -274,6 +289,7 @@ CONTAINS
       model%c_ptr = C_NULL_PTR
 #else
       CPABORT("CP2K was compiled without Torch library.")
+      MARK_USED(model)
 #endif
    END SUBROUTINE torch_model_release
 
@@ -323,7 +339,32 @@ CONTAINS
       DEALLOCATE (content_f) ! Was allocated on the C side.
 #else
       CPABORT("CP2K was compiled without Torch library.")
+      MARK_USED(filename)
+      MARK_USED(key)
+      MARK_USED(res)
 #endif
    END FUNCTION torch_model_read_metadata
+
+! **************************************************************************************************
+!> \brief Returns true iff the Torch CUDA backend is available.
+!> \author Ole Schuett
+! **************************************************************************************************
+   FUNCTION torch_cuda_is_available() RESULT(res)
+      LOGICAL                                            :: res
+
+#if defined(__LIBTORCH)
+      INTERFACE
+         FUNCTION torch_c_cuda_is_available() BIND(C, name="torch_c_cuda_is_available")
+            IMPORT :: C_BOOL
+            LOGICAL(C_BOOL)                           :: torch_c_cuda_is_available
+         END FUNCTION torch_c_cuda_is_available
+      END INTERFACE
+
+      res = torch_c_cuda_is_available()
+#else
+      CPABORT("CP2K was compiled without Torch library.")
+      MARK_USED(res)
+#endif
+   END FUNCTION torch_cuda_is_available
 
 END MODULE torch_api

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2022 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -31,10 +31,10 @@ MODULE qs_mo_io
                                               open_file
    USE cp_fm_types,                     ONLY: cp_fm_get_info,&
                                               cp_fm_get_submatrix,&
-                                              cp_fm_p_type,&
                                               cp_fm_set_all,&
                                               cp_fm_set_submatrix,&
                                               cp_fm_to_fm,&
+                                              cp_fm_type,&
                                               cp_fm_write_unformatted
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
@@ -59,7 +59,8 @@ MODULE qs_mo_io
    USE kinds,                           ONLY: default_path_length,&
                                               default_string_length,&
                                               dp
-   USE message_passing,                 ONLY: mp_bcast
+   USE message_passing,                 ONLY: mp_bcast,&
+                                              mp_comm_type
    USE orbital_pointers,                ONLY: indco,&
                                               nco,&
                                               nso
@@ -231,7 +232,7 @@ CONTAINS
                                       qs_kind_set)
 
       TYPE(mo_set_type), DIMENSION(:), INTENT(IN)        :: mo_array
-      TYPE(cp_fm_p_type), DIMENSION(:), POINTER          :: rt_mos
+      TYPE(cp_fm_type), DIMENSION(:), INTENT(IN)         :: rt_mos
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(section_vals_type), POINTER                   :: dft_section
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
@@ -286,8 +287,8 @@ CONTAINS
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       INTEGER                                            :: ires
-      TYPE(cp_fm_p_type), DIMENSION(:), OPTIONAL, &
-         POINTER                                         :: rt_mos
+      TYPE(cp_fm_type), DIMENSION(:), INTENT(IN), &
+         OPTIONAL                                        :: rt_mos
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'write_mo_set_low'
 
@@ -403,7 +404,7 @@ CONTAINS
          END IF
          IF (PRESENT(rt_mos)) THEN
             DO imat = 2*ispin - 1, 2*ispin
-               CALL cp_fm_write_unformatted(rt_mos(imat)%matrix, ires)
+               CALL cp_fm_write_unformatted(rt_mos(imat), ires)
             END DO
          ELSE
             CALL cp_fm_write_unformatted(mo_array(ispin)%mo_coeff, ires)
@@ -505,10 +506,11 @@ CONTAINS
       CHARACTER(LEN=*), PARAMETER :: routineN = 'read_mo_set_from_restart'
 
       CHARACTER(LEN=default_path_length)                 :: file_name
-      INTEGER                                            :: group, handle, ispin, natom, nspin, &
+      INTEGER                                            :: handle, ispin, natom, nspin, &
                                                             restart_unit, source
       LOGICAL                                            :: exist, my_cdft
       TYPE(cp_logger_type), POINTER                      :: logger
+      TYPE(mp_comm_type)                                 :: group
 
       CALL timeset(routineN, handle)
       logger => cp_get_default_logger()
@@ -583,7 +585,7 @@ CONTAINS
                                        particle_set, para_env, id_nr, multiplicity, dft_section)
 
       TYPE(mo_set_type), DIMENSION(:), INTENT(INOUT)     :: mo_array
-      TYPE(cp_fm_p_type), DIMENSION(:), POINTER          :: rt_mos
+      TYPE(cp_fm_type), DIMENSION(:), POINTER            :: rt_mos
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
@@ -594,10 +596,11 @@ CONTAINS
       CHARACTER(LEN=*), PARAMETER :: routineN = 'read_rt_mos_from_restart'
 
       CHARACTER(LEN=default_path_length)                 :: file_name
-      INTEGER                                            :: group, handle, ispin, natom, nspin, &
+      INTEGER                                            :: handle, ispin, natom, nspin, &
                                                             restart_unit, source
       LOGICAL                                            :: exist
       TYPE(cp_logger_type), POINTER                      :: logger
+      TYPE(mp_comm_type)                                 :: group
 
       CALL timeset(routineN, handle)
       logger => cp_get_default_logger()
@@ -665,11 +668,10 @@ CONTAINS
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       INTEGER, INTENT(IN)                                :: natom, rst_unit
       INTEGER, INTENT(in), OPTIONAL                      :: multiplicity
-      TYPE(cp_fm_p_type), DIMENSION(:), OPTIONAL, &
-         POINTER                                         :: rt_mos
+      TYPE(cp_fm_type), DIMENSION(:), OPTIONAL, POINTER  :: rt_mos
       LOGICAL, INTENT(OUT), OPTIONAL                     :: natom_mismatch
 
-      INTEGER :: group, homo, homo_read, i, iatom, ikind, imat, irow, iset, iset_read, ishell, &
+      INTEGER :: homo, homo_read, i, iatom, ikind, imat, irow, iset, iset_read, ishell, &
          ishell_read, iso, ispin, lfomo_read, lmax, lshell, my_mult, nao, nao_read, natom_read, &
          nelectron, nelectron_read, nmo, nmo_read, nnshell, nset, nset_max, nshell_max, nspin, &
          nspin_read, offset_read, source
@@ -681,6 +683,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: vecbuffer, vecbuffer_read
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(gto_basis_set_type), POINTER                  :: orb_basis_set
+      TYPE(mp_comm_type)                                 :: group
       TYPE(qs_dftb_atom_type), POINTER                   :: dftb_parameter
 
       logger => cp_get_default_logger()
@@ -824,7 +827,7 @@ CONTAINS
                      vecbuffer(1, :) = 0.0_dp
                   END IF
                   CALL mp_bcast(vecbuffer, source, group)
-                  CALL cp_fm_set_submatrix(rt_mos(imat)%matrix, &
+                  CALL cp_fm_set_submatrix(rt_mos(imat), &
                                            vecbuffer, 1, i, nao, 1, transpose=.TRUE.)
                END DO
             END DO
@@ -1053,10 +1056,14 @@ CONTAINS
       my_rtp = .FALSE.
       IF (PRESENT(rtp)) THEN
          my_rtp = rtp
+         ! print the first time step if MO print required
+         should_output = BTEST(cp_print_key_should_output(logger%iter_info, dft_section, &
+                                                          "PRINT%MO"), cp_p_file) &
+                         .OR. (sim_step == 1)
+      ELSE
+         should_output = BTEST(cp_print_key_should_output(logger%iter_info, dft_section, &
+                                                          "PRINT%MO"), cp_p_file) .OR. my_final
       END IF
-
-      should_output = BTEST(cp_print_key_should_output(logger%iter_info, dft_section, &
-                                                       "PRINT%MO"), cp_p_file) .OR. my_final
 
       IF ((.NOT. should_output) .OR. (.NOT. (print_eigvals .OR. print_eigvecs .OR. print_occup))) RETURN
 
