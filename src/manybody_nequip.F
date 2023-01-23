@@ -7,8 +7,10 @@
 
 ! **************************************************************************************************
 !> \par History
-!>      tersoff and nequip implementation
-!> \author CJM, I-Feng W. Kuo, Teodoro Laino, Gabriele Tocci
+!>      tersoff implementation
+!> \author CJM, I-Feng W. Kuo, Teodoro Laino
+!>      nequip implementation
+!> \author Gabriele Tocci
 ! **************************************************************************************************
 MODULE manybody_nequip
 
@@ -61,7 +63,8 @@ CONTAINS
 !> \param glob_loc_list_a ...
 !> \param cell ...
 !> \par History
-!>      Implementation of the tersoff potential - [tlaino] 2007, Implement nequip - [gtocci] 2022
+!>      Fast implementation of the tersoff potential - [tlaino] 2007
+!>      Implementation of the nequip potential - [gtocci] 2022
 !> \author Teodoro Laino - University of Zurich, Gabriele Tocci - University of Zurich
 ! **************************************************************************************************
    SUBROUTINE setup_nequip_arrays(nonbonded, potparm, glob_loc_list, glob_cell_v, glob_loc_list_a, cell)
@@ -165,7 +168,8 @@ CONTAINS
 !> \param glob_cell_v ...
 !> \param glob_loc_list_a ...
 !> \par History
-!>      Implementation of the tersoff potential - [tlaino] 2007, Implement nequip - [gtocci] 2022
+!>      Fast implementation of the tersoff potential - [tlaino] 2007
+!>      Implementation of the nequip potential - [gtocci] 2022
 !> \author Teodoro Laino - University of Zurich, Gabriele Tocci - University of Zurich
 ! **************************************************************************************************
    SUBROUTINE destroy_nequip_arrays(glob_loc_list, glob_cell_v, glob_loc_list_a)
@@ -199,7 +203,8 @@ CONTAINS
 !> \param fist_nonbond_env ...
 !> \param para_env ...
 !> \par History
-!>      Implementation of the tersoff potential - [tlaino] 2007. Implement nequip - [gtocci] 2022
+!>      Fast implementation of the tersoff potential - [tlaino] 2007
+!>      Implementation of the nequip potential - [gtocci] 2022
 !> \author Teodoro Laino - University of Zurich, Gabriele Tocci - University of Zurich
 ! **************************************************************************************************
    SUBROUTINE nequip_energy_store_force_virial(nonbonded, particle_set, cell, atomic_kind_set, &
