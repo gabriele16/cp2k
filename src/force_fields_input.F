@@ -26,6 +26,7 @@ MODULE force_fields_input
                                               Tosi1964b,&
                                               Yamada2000,&
                                               cite_reference
+   USE cp_files,                        ONLY: discover_file
    USE cp_linked_list_input,            ONLY: cp_sll_val_next,&
                                               cp_sll_val_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
@@ -724,7 +725,7 @@ CONTAINS
             nonbonded%pot(start + n_items)%pot%at2 = atm_names(jsec)
             CALL uppercase(nonbonded%pot(start + n_items)%pot%at1)
             CALL uppercase(nonbonded%pot(start + n_items)%pot%at2)
-            nonbonded%pot(start + n_items)%pot%set(1)%nequip%nequip_file_name = nequip_file_name
+            nonbonded%pot(start + n_items)%pot%set(1)%nequip%nequip_file_name = discover_file(nequip_file_name)
             nonbonded%pot(start + n_items)%pot%set(1)%nequip%unit_coords = unit_coords
             nonbonded%pot(start + n_items)%pot%set(1)%nequip%unit_forces = unit_forces
             nonbonded%pot(start + n_items)%pot%set(1)%nequip%unit_energy = unit_energy
