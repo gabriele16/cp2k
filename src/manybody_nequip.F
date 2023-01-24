@@ -7,8 +7,6 @@
 
 ! **************************************************************************************************
 !> \par History
-!>      tersoff implementation
-!> \author CJM, I-Feng W. Kuo, Teodoro Laino
 !>      nequip implementation
 !> \author Gabriele Tocci
 ! **************************************************************************************************
@@ -63,9 +61,8 @@ CONTAINS
 !> \param glob_loc_list_a ...
 !> \param cell ...
 !> \par History
-!>      Fast implementation of the tersoff potential - [tlaino] 2007
 !>      Implementation of the nequip potential - [gtocci] 2022
-!> \author Teodoro Laino - University of Zurich, Gabriele Tocci - University of Zurich
+!> \author Gabriele Tocci - University of Zurich
 ! **************************************************************************************************
    SUBROUTINE setup_nequip_arrays(nonbonded, potparm, glob_loc_list, glob_cell_v, glob_loc_list_a, cell)
       TYPE(fist_neighbor_type), POINTER                  :: nonbonded
@@ -168,9 +165,8 @@ CONTAINS
 !> \param glob_cell_v ...
 !> \param glob_loc_list_a ...
 !> \par History
-!>      Fast implementation of the tersoff potential - [tlaino] 2007
 !>      Implementation of the nequip potential - [gtocci] 2022
-!> \author Teodoro Laino - University of Zurich, Gabriele Tocci - University of Zurich
+!> \author Gabriele Tocci - University of Zurich
 ! **************************************************************************************************
    SUBROUTINE destroy_nequip_arrays(glob_loc_list, glob_cell_v, glob_loc_list_a)
       INTEGER, DIMENSION(:, :), POINTER                  :: glob_loc_list
@@ -203,9 +199,8 @@ CONTAINS
 !> \param fist_nonbond_env ...
 !> \param para_env ...
 !> \par History
-!>      Fast implementation of the tersoff potential - [tlaino] 2007
 !>      Implementation of the nequip potential - [gtocci] 2022
-!> \author Teodoro Laino - University of Zurich, Gabriele Tocci - University of Zurich
+!> \author Gabriele Tocci - University of Zurich
 ! **************************************************************************************************
    SUBROUTINE nequip_energy_store_force_virial(nonbonded, particle_set, cell, atomic_kind_set, &
                                                potparm, nequip, glob_loc_list_a, r_last_update_pbc, &
@@ -358,7 +353,7 @@ CONTAINS
       ALLOCATE (edge_cell_shifts(3, nedges_tot))
       ALLOCATE (t_edge_index(nedges_tot, 2))
 
-      edge_count_cell = edge_count*3
+      edge_count_cell(:) = edge_count*3
       edge_count = edge_count*2
       displ(1) = 0
       displ_cell(1) = 0
