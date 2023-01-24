@@ -1793,6 +1793,8 @@ CONTAINS
    SUBROUTINE pair_potential_nequip_release(nequip)
       TYPE(nequip_pot_type), POINTER                     :: nequip
 
+
+      WRITE(*, *) "releasing nequip"
       IF (ASSOCIATED(nequip)) THEN
          DEALLOCATE (nequip)
       END IF
