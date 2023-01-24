@@ -371,7 +371,7 @@ CONTAINS
          CALL mp_allgather(temp_edge_index, edge_index, edge_count, displ, para_env%group)
       END IF
 
-      t_edge_index = TRANSPOSE(edge_index)
+      t_edge_index(:, :) = TRANSPOSE(edge_index)
       DEALLOCATE (temp_edge_index, temp_edge_cell_shifts, edge_index)
 
       lattice = cell%hmat/pot%set(1)%nequip%unit_cell_val
