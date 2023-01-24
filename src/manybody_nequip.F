@@ -343,10 +343,10 @@ CONTAINS
       nedges_tot = SUM(edge_count)
 
       ALLOCATE (temp_edge_index(2, nedges))
-      temp_edge_index = edge_index(:, :nedges)
+      temp_edge_index(:, :) = edge_index(:, :nedges)
       DEALLOCATE (edge_index)
       ALLOCATE (temp_edge_cell_shifts(3, nedges))
-      temp_edge_cell_shifts = edge_cell_shifts(:, :nedges)
+      temp_edge_cell_shifts(:, :) = edge_cell_shifts(:, :nedges)
       DEALLOCATE (edge_cell_shifts)
 
       ALLOCATE (edge_index(2, nedges_tot))
