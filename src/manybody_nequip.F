@@ -39,7 +39,7 @@ MODULE manybody_nequip
                                               torch_dict_insert,&
                                               torch_dict_release,&
                                               torch_dict_type,&
-                                              torch_model_eval
+                                              torch_model_eval, torch_model_load
    USE util,                            ONLY: sort
 #include "./base/base_uses.f90"
 
@@ -260,6 +260,32 @@ CONTAINS
       END DO ! ikind
       n_atoms_use = COUNT(use_atom)
 
+      ! get nequip_data to save force, virial info and to load model
+      CALL fist_nonbond_env_get(fist_nonbond_env, nequip_data=nequip_data)
+      IF (.NOT. ASSOCIATED(nequip_data)) THEN
+         ALLOCATE (nequip_data)
+         CALL fist_nonbond_env_set(fist_nonbond_env, nequip_data=nequip_data)
+         NULLIFY (nequip_data%use_indices, nequip_data%force)
+         CALL torch_model_load(nequip_data%model, pot%set(1)%nequip%nequip_file_name)
+      END IF
+      IF (ASSOCIATED(nequip_data%force)) THEN
+         IF (SIZE(nequip_data%force, 2) /= n_atoms_use) THEN
+            DEALLOCATE (nequip_data%force, nequip_data%use_indices)
+         END IF
+      END IF
+      IF (.NOT. ASSOCIATED(nequip_data%force)) THEN
+         ALLOCATE (nequip_data%force(3, n_atoms_use))
+         ALLOCATE (nequip_data%use_indices(n_atoms_use))
+      END IF
+
+      iat_use = 0
+      DO iat = 1, n_atoms_use
+         IF (use_atom(iat)) THEN
+            iat_use = iat_use + 1
+            nequip_data%use_indices(iat_use) = iat
+         END IF
+      END DO
+
       nedges = 0
       ALLOCATE (edge_index(2, SIZE(glob_loc_list_a)))
       ALLOCATE (edge_cell_shifts(3, SIZE(glob_loc_list_a)))
@@ -395,8 +421,8 @@ CONTAINS
          CALL torch_dict_insert(inputs, "atom_types", atom_types)
 
          CALL torch_dict_create(outputs)
-
-         CALL torch_model_eval(pot%set(1)%nequip%model, inputs, outputs)
+         
+         CALL torch_model_eval(nequip_data%model, inputs, outputs)
 
          CALL torch_dict_get(outputs, "total_energy", total_energy)
          CALL torch_dict_get(outputs, "atomic_energy", atomic_energy)
@@ -411,40 +437,6 @@ CONTAINS
          DEALLOCATE (pos, t_edge_index, edge_cell_shifts, atom_types, total_energy, atomic_energy)
 
       END IF
-
-      ! get nequip_data to save force, virial info
-      CALL fist_nonbond_env_get(fist_nonbond_env, nequip_data=nequip_data)
-      IF (.NOT. ASSOCIATED(nequip_data)) THEN
-         ALLOCATE (nequip_data)
-         CALL fist_nonbond_env_set(fist_nonbond_env, nequip_data=nequip_data)
-         NULLIFY (nequip_data%use_indices, nequip_data%force)
-      END IF
-      IF (ASSOCIATED(nequip_data%force)) THEN
-         IF (SIZE(nequip_data%force, 2) /= n_atoms_use) THEN
-            DEALLOCATE (nequip_data%force, nequip_data%use_indices)
-         END IF
-      END IF
-      IF (.NOT. ASSOCIATED(nequip_data%force)) THEN
-         ALLOCATE (nequip_data%force(3, n_atoms_use))
-         ALLOCATE (nequip_data%use_indices(n_atoms_use))
-      END IF
-
-      IF (ASSOCIATED(forces)) THEN
-         IF (SIZE(forces, 2) /= n_atoms_use) THEN
-            DEALLOCATE (forces)
-         END IF
-      END IF
-      IF (.NOT. ASSOCIATED(forces)) THEN
-         ALLOCATE (forces(3, n_atoms_use))
-      END IF
-
-      iat_use = 0
-      DO iat = 1, n_atoms_use
-         IF (use_atom(iat)) THEN
-            iat_use = iat_use + 1
-            nequip_data%use_indices(iat_use) = iat
-         END IF
-      END DO
 
       IF (torch_cuda_is_available()) THEN
          CALL mp_bcast(pot_nequip, para_env%source, para_env%group)

@@ -73,8 +73,8 @@ MODULE force_fields_input
    USE shell_potential_types,           ONLY: shell_p_create,&
                                               shell_p_type
    USE string_utilities,                ONLY: uppercase
-   USE torch_api,                       ONLY: torch_model_load,&
-                                              torch_model_read_metadata
+   USE torch_api,                       ONLY: torch_model_read_metadata
+
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -2319,7 +2319,6 @@ CONTAINS
 
       CHARACTER(LEN=default_path_length)                 :: cutoff_str
 
-      CALL torch_model_load(nequip%model, nequip%nequip_file_name)
       nequip%nequip_version = torch_model_read_metadata(nequip%nequip_file_name, "nequip_version")
       cutoff_str = torch_model_read_metadata(nequip%nequip_file_name, "r_max")
       READ (cutoff_str, *) nequip%rcutsq

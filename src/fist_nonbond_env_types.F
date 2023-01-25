@@ -25,6 +25,7 @@ MODULE fist_nonbond_env_types
                                               pair_potential_pp_type,&
                                               siepmann_type,&
                                               tersoff_type
+   USE torch_api,                       ONLY: torch_model_type, torch_model_release
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -55,6 +56,7 @@ MODULE fist_nonbond_env_types
       INTEGER, POINTER :: use_indices(:)
       REAL(KIND=dp), POINTER :: force(:, :)
       REAL(KIND=dp) :: virial(3, 3)
+      TYPE(torch_model_type) :: model      
    END TYPE
 
 ! **************************************************************************************************
@@ -493,6 +495,7 @@ CONTAINS
          IF (ASSOCIATED(fist_nonbond_env%nequip_data%use_indices)) THEN
             DEALLOCATE (fist_nonbond_env%nequip_data%use_indices)
          END IF
+         CALL torch_model_release(fist_nonbond_env%nequip_data%model)
          DEALLOCATE (fist_nonbond_env%nequip_data)
       END IF
       IF (ASSOCIATED(fist_nonbond_env%rshell_last_update_pbc)) THEN

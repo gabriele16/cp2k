@@ -183,7 +183,6 @@ MODULE pair_potential_types
                                                 unit_forces, unit_energy, unit_cell
       REAL(KIND=dp)                          :: rcutsq, unit_coords_val, unit_forces_val, &
                                                 unit_energy_val, unit_cell_val
-      TYPE(torch_model_type)                 :: model
    END TYPE nequip_pot_type
 
 ! **************************************************************************************************
@@ -1750,7 +1749,6 @@ CONTAINS
       nequip_dest%nequip_file_name = nequip_source%nequip_file_name
       nequip_dest%nequip_version = nequip_source%nequip_version
       nequip_dest%rcutsq = nequip_source%rcutsq
-      nequip_dest%model = nequip_source%model
       nequip_dest%unit_coords = nequip_source%unit_coords
       nequip_dest%unit_coords_val = nequip_source%unit_coords_val
       nequip_dest%unit_forces = nequip_source%unit_forces
@@ -1793,8 +1791,6 @@ CONTAINS
    SUBROUTINE pair_potential_nequip_release(nequip)
       TYPE(nequip_pot_type), POINTER                     :: nequip
 
-
-      WRITE(*, *) "releasing nequip"
       IF (ASSOCIATED(nequip)) THEN
          DEALLOCATE (nequip)
       END IF
