@@ -100,7 +100,8 @@ CONTAINS
       INTEGER :: atom_a, atom_b, handle, i, iend, ifirst, igrp, ikind, ilast, ilist, indexa, &
          ipair, iparticle, iparticle_local, istart, iunique, jkind, junique, mpair, nkinds, &
          nloc_size, npairs, nparticle, nparticle_local, nr_h3O, nr_o, nr_oh, nunique
-      INTEGER, DIMENSION(:), POINTER                     :: glob_loc_list_a, work_list
+      INTEGER, DIMENSION(:), POINTER                     :: glob_loc_list_a, work_list, &
+                                                            unique_list_a
       INTEGER, DIMENSION(:, :), POINTER                  :: glob_loc_list, list, sort_list
       LOGICAL                                            :: any_gal, any_gal21, any_nequip, &
                                                             any_quip, any_siepmann, any_tersoff
@@ -187,13 +188,14 @@ CONTAINS
       END IF
       ! NEQUIP
       IF (any_nequip) THEN
-         NULLIFY (glob_loc_list, glob_cell_v, glob_loc_list_a)
-         CALL setup_nequip_arrays(nonbonded, potparm, glob_loc_list, glob_cell_v, glob_loc_list_a, cell)
+         NULLIFY (glob_loc_list, glob_cell_v, glob_loc_list_a, unique_list_a)
+         CALL setup_nequip_arrays(nonbonded, potparm, glob_loc_list, glob_cell_v, glob_loc_list_a, & 
+                                  unique_list_a, cell)
          CALL nequip_energy_store_force_virial(nonbonded, particle_set, cell, atomic_kind_set, potparm, &
                                                nequip, glob_loc_list_a, r_last_update_pbc, pot_nequip, &
-                                               fist_nonbond_env, para_env)
+                                               fist_nonbond_env, para_env, glob_loc_list, unique_list_a)
          pot_manybody = pot_manybody + pot_nequip
-         CALL destroy_nequip_arrays(glob_loc_list, glob_cell_v, glob_loc_list_a)
+         CALL destroy_nequip_arrays(glob_loc_list, glob_cell_v, glob_loc_list_a, unique_list_a)
       END IF
       ! TERSOFF
       IF (any_tersoff) THEN
