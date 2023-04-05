@@ -220,8 +220,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE nequip_energy_store_force_virial(nonbonded, particle_set, cell, atomic_kind_set, &
                                                potparm, nequip, glob_loc_list_a, r_last_update_pbc, &
-                                               pot_nequip, fist_nonbond_env, para_env, glob_loc_list, &
-                                               unique_list_a)
+                                               pot_nequip, fist_nonbond_env, unique_list_a)
 
       TYPE(fist_neighbor_type), POINTER                  :: nonbonded
       TYPE(particle_type), POINTER                       :: particle_set(:)
@@ -230,29 +229,24 @@ CONTAINS
       TYPE(pair_potential_pp_type), POINTER              :: potparm
       TYPE(nequip_pot_type), POINTER                     :: nequip
       INTEGER, DIMENSION(:), POINTER                     :: glob_loc_list_a, unique_list_a
-      INTEGER, DIMENSION(:, :), POINTER                  :: glob_loc_list
       TYPE(pos_type), DIMENSION(:), POINTER              :: r_last_update_pbc
       REAL(kind=dp)                                      :: pot_nequip
       TYPE(fist_nonbond_env_type), POINTER               :: fist_nonbond_env
-      TYPE(mp_para_env_type), OPTIONAL, POINTER          :: para_env
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'nequip_energy_store_force_virial'
 
       INTEGER :: atom_a, atom_b, handle, i, iat, iat_use, iend, ifirst, igrp, ikind, ilast, ilist, &
-         ipair, istart, iunique, jkind, junique, mpair, n_atoms, n_atoms_use, nedges, nedges_tot, &
-         nloc_size, npairs, nunique, ntotal
+         ipair, istart, iunique, jkind, junique, mpair, n_atoms, n_atoms_use, nedges, nloc_size, &
+         npairs, nunique 
       INTEGER(kind=int_8), ALLOCATABLE                   :: atom_types(:), temp_atom_types(:)
       INTEGER(kind=int_8), ALLOCATABLE, DIMENSION(:, :)  :: edge_index, t_edge_index, temp_edge_index
-!      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: displ, displ_cell, edge_count, &
-!                                                            edge_count_cell
       INTEGER, DIMENSION(:), POINTER                     :: work_list
       INTEGER, DIMENSION(:, :), POINTER                  :: list, sort_list
       LOGICAL, ALLOCATABLE                               :: use_atom(:)
       REAL(kind=dp)                                      :: drij, lattice(3, 3), rab2_max, rij(3)
       REAL(KIND=dp), DIMENSION(3)                        :: cell_v, cvi
       REAL(kind=sp), ALLOCATABLE                         :: pos(:, :)
-      REAL(kind=dp), ALLOCATABLE                         :: r_a(:, :)
-      REAL(kind=sp), ALLOCATABLE, DIMENSION(:, :)        :: edge_cell_shifts, temp_edge_cell_shifts
+      REAL(kind=sp), ALLOCATABLE, DIMENSION(:, :)        :: edge_cell_shifts, new_edge_cell_shifts
       REAL(sp), DIMENSION(:, :), POINTER                 :: atomic_energy, forces, total_energy
       TYPE(neighbor_kind_pairs_type), POINTER            :: neighbor_kind_pair
       TYPE(nequip_data_type), POINTER                    :: nequip_data
@@ -308,19 +302,10 @@ CONTAINS
       END DO
 
       nedges = 0
-      ntotal = 0
       ALLOCATE (edge_index(2, SIZE(glob_loc_list_a)))
       ALLOCATE (edge_cell_shifts(3, SIZE(glob_loc_list_a)))
       ALLOCATE (temp_atom_types(SIZE(glob_loc_list_a)))
-      ALLOCATE (r_a(3, SIZE(glob_loc_list_a)))
 
-      WRITE(*,*) "SIZE(glob_loc_list_a)", SIZE(glob_loc_list_a)
-      WRITE(*,*) "SIZE(glob_loc_list)", SIZE(glob_loc_list)
-
-      DO ilist =1, SIZE(unique_list_a)
-         WRITE(*,*) "glob_loc_list_a para_env%mepos ", unique_list_a(ilist), para_env%mepos
-      END DO
- 
       DO ilist = 1, nonbonded%nlists
          neighbor_kind_pair => nonbonded%neighbor_kind_pairs(ilist)
          npairs = neighbor_kind_pair%npairs
@@ -358,12 +343,8 @@ CONTAINS
                   ipair = 1
                   junique = sort_list(1, ipair)
                   ifirst = 1
-!                  WRITE(*, *) "junique nloc_size para_env%mepos", junique, nloc_size, para_env%mepos
                   DO iunique = 1, nunique
-!                     ntotal = ntotal + 1
                      atom_a = junique
-!                     temp_atom_types(ntotal) = particle_set(atom_a)%atomic_kind%kind_number - 1
-!                     r_a(:, ntotal) = r_last_update_pbc(atom_a)%r(:) - cell_v
                      IF (glob_loc_list_a(ifirst) > atom_a) CYCLE
                      DO mpair = ifirst, SIZE(glob_loc_list_a)
                         IF (glob_loc_list_a(mpair) == atom_a) EXIT
@@ -375,12 +356,6 @@ CONTAINS
                      ilast = mpair - 1
                      nloc_size = 0
                      IF (ifirst /= 0) nloc_size = ilast - ifirst + 1
-                     IF ( ntotal < SIZE(unique_list_a)) THEN
-                        ntotal = ntotal +1
-                        temp_atom_types(ntotal) = particle_set(atom_a)%atomic_kind%kind_number - 1
-                        r_a(:, ntotal) = r_last_update_pbc(atom_a)%r(:) - cell_v
-                        WRITE(*, *) "atom_a, para_env%mepos", atom_a, para_env%mepos, SIZE(unique_list_a)
-                     END IF
                      DO WHILE (ipair <= npairs)
                         IF (sort_list(1, ipair) /= junique) EXIT
                         atom_b = sort_list(2, ipair)
@@ -391,8 +366,6 @@ CONTAINS
                            nedges = nedges + 1
                            edge_index(:, nedges) = [atom_a - 1, atom_b - 1]
                            edge_cell_shifts(:, nedges) = REAL(cvi, kind=sp)
-!                           r_a(:, nedges) = r_last_update_pbc(atom_a)%r(:)
-!                           temp_atom_types(nedges) = particle_set(atom_a)%atomic_kind%kind_number - 1
                         END IF
                      END DO
                      ifirst = ilast + 1
@@ -404,63 +377,19 @@ CONTAINS
          END DO Kind_Group_Loop_Nequip
       END DO
 
-!      ALLOCATE (edge_count(para_env%num_pe))
-!      ALLOCATE (edge_count_cell(para_env%num_pe))
-!      ALLOCATE (displ_cell(para_env%num_pe))
-!      ALLOCATE (displ(para_env%num_pe))
-
-!      CALL para_env%allgather(nedges, edge_count)
-!      nedges_tot = SUM(edge_count)
-
-      nedges_tot = nedges
-      WRITE(*, *) "para_env%num_pe", para_env%num_pe
-      WRITE(*, *) "para_env%num_pe, nedges", para_env%num_pe, nedges
-!      WRITE(*, *) "para_env%num_pe, ntotal", para_env%num_pe, ntotal
-
       ALLOCATE (temp_edge_index(2, nedges))
       temp_edge_index(:, :) = edge_index(:, :nedges)
-      ALLOCATE(temp_edge_cell_shifts(3, nedges))
-      temp_edge_cell_shifts(:, :) = edge_cell_shifts(:, :nedges)
+      ALLOCATE(new_edge_cell_shifts(3, nedges))
+      new_edge_cell_shifts(:, :) = edge_cell_shifts(:, :nedges)
 
-      ALLOCATE(pos(3, ntotal))
-      pos(:, :) = REAL(r_a(:, :ntotal)/nequip%unit_coords_val ,kind=sp)
-
-      ALLOCATE(atom_types(ntotal))
-      atom_types(:) = temp_atom_types(:ntotal)
-
-!      ALLOCATE (temp_edge_index(2, nedges))
-!      temp_edge_index(:, :) = edge_index(:, :nedges)
-!      DEALLOCATE (edge_index)
-!      ALLOCATE (temp_edge_cell_shifts(3, nedges))
-!      temp_edge_cell_shifts(:, :) = edge_cell_shifts(:, :nedges)
-!      DEALLOCATE (edge_cell_shifts)
-
-!      ALLOCATE (edge_index(2, nedges_tot))
-!      ALLOCATE (edge_cell_shifts(3, nedges_tot))
       ALLOCATE (t_edge_index(nedges, 2))
-!      DEALLOCATE (edge_index, temp_edge_index)
-
-!      edge_count_cell(:) = edge_count*3
-!      edge_count = edge_count*2
-!      displ(1) = 0
-!      displ_cell(1) = 0
-!      DO ipair = 2, para_env%num_pe
-!         displ(ipair) = displ(ipair - 1) + edge_count(ipair - 1)
-!         displ_cell(ipair) = displ_cell(ipair - 1) + edge_count_cell(ipair - 1)
-!      END DO
-
-!      CALL para_env%allgatherv(temp_edge_cell_shifts, edge_cell_shifts, edge_count_cell, displ_cell)
-!      CALL para_env%allgatherv(temp_edge_index, edge_index, edge_count, displ)
 
       t_edge_index(:, :) = TRANSPOSE(temp_edge_index)
-!      DEALLOCATE (temp_edge_index, temp_edge_cell_shifts, edge_index)
       DEALLOCATE (temp_edge_index, edge_index)
-      DEALLOCATE (r_a, temp_atom_types)
 
       lattice = cell%hmat/pot%set(1)%nequip%unit_cell_val
 
       iat_use = 0
-      DEALLOCATE (pos, atom_types)
       ALLOCATE (pos(3, n_atoms_use), atom_types(n_atoms_use))
 
       DO iat = 1, n_atoms_use
@@ -473,7 +402,7 @@ CONTAINS
       CALL torch_dict_create(inputs)
       CALL torch_dict_insert(inputs, "pos", pos)
       CALL torch_dict_insert(inputs, "edge_index", t_edge_index)
-      CALL torch_dict_insert(inputs, "edge_cell_shift", temp_edge_cell_shifts)
+      CALL torch_dict_insert(inputs, "edge_cell_shift", new_edge_cell_shifts)
       CALL torch_dict_insert(inputs, "cell", REAL(lattice, kind=sp))
       CALL torch_dict_insert(inputs, "atom_types", atom_types)
 
@@ -485,42 +414,21 @@ CONTAINS
       CALL torch_dict_get(outputs, "atomic_energy", atomic_energy)
       CALL torch_dict_get(outputs, "forces", forces)
 
-
-      WRITE(*, *) "SIZE(atomic_energy) SHAPE(atomic_energy)", SIZE(atomic_energy), SHAPE(atomic_energy)
-  
       pot_nequip = REAL(total_energy(1, 1), kind=dp)*pot%set(1)%nequip%unit_energy_val
       total_energy = total_energy(1, 1)*REAL(pot%set(1)%nequip%unit_energy_val, kind=sp)
 
-!      pot_nequip = 0.0_dp
-!      DO iat_use = 1, n_atoms_use
-!         pot_nequip = pot_nequip + REAL(atomic_energy(iat_use, 1 ), kind=dp)*nequip%unit_energy_val
-!      END DO
-
+      nequip_data%force = 0.0_dp
       pot_nequip = 0.0_dp
       DO iat_use = 1, SIZE(unique_list_a)
          pot_nequip = pot_nequip + REAL(atomic_energy(unique_list_a(iat_use), 1 ), kind=dp)*nequip%unit_energy_val
+         nequip_data%force(:, unique_list_a(iat_use)) = REAL(forces(:, unique_list_a(iat_use)), kind=dp)*nequip%unit_forces_val
       END DO
    
-      WRITE(*, *) "pot_nequip, para_env%mepos", pot_nequip, para_env%mepos
-
       CALL torch_dict_release(inputs)
       CALL torch_dict_release(outputs)
 
       DEALLOCATE (pos, t_edge_index, edge_cell_shifts, atom_types, total_energy, atomic_energy)
-      DEALLOCATE (temp_edge_cell_shifts)
-      ! account for double counting from multiple MPI processes
-!      IF (PRESENT(para_env)) pot_nequip = pot_nequip/REAL(para_env%num_pe, dp)
-!      IF (PRESENT(para_env)) THEN
-!         nequip_data%force = REAL(forces, kind=dp)* &
-!                             pot%set(1)%nequip%unit_forces_val/REAL(para_env%num_pe, dp)
-!      ELSE
-       nequip_data%force = REAL(forces, kind=dp)*nequip%unit_forces_val
-       WRITE(*, *) "forces(1), para_env%mepos", forces(:, 1), para_env%mepos
-       WRITE(*, *) "forces(n_atoms_use) para_env%mepos", forces(:, n_atoms_use), para_env%mepos, n_atoms_use
-
-!      END IF
-
-      WRITE(*, *) "SHAPE(forces)", SHAPE(forces)
+      DEALLOCATE (new_edge_cell_shifts)
       DEALLOCATE (forces)
 
       CALL timestop(handle)

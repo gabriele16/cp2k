@@ -193,7 +193,7 @@ CONTAINS
                                   unique_list_a, cell)
          CALL nequip_energy_store_force_virial(nonbonded, particle_set, cell, atomic_kind_set, potparm, &
                                                nequip, glob_loc_list_a, r_last_update_pbc, pot_nequip, &
-                                               fist_nonbond_env, para_env, glob_loc_list, unique_list_a)
+                                               fist_nonbond_env, unique_list_a)
          pot_manybody = pot_manybody + pot_nequip
          CALL destroy_nequip_arrays(glob_loc_list, glob_cell_v, glob_loc_list_a, unique_list_a)
       END IF
