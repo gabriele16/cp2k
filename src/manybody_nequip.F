@@ -24,7 +24,6 @@ MODULE manybody_nequip
    USE kinds,                           ONLY: dp,&
                                               int_8,&
                                               sp
-   USE message_passing,                 ONLY: mp_para_env_type
    USE pair_potential_types,            ONLY: nequip_pot_type,&
                                               nequip_type,&
                                               pair_potential_pp_type,&
@@ -213,7 +212,7 @@ CONTAINS
 !> \param r_last_update_pbc ...
 !> \param pot_nequip ...
 !> \param fist_nonbond_env ...
-!> \param para_env ...
+!> \param unique_list_a
 !> \par History
 !>      Implementation of the nequip potential - [gtocci] 2022
 !> \author Gabriele Tocci - University of Zurich
