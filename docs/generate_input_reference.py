@@ -12,7 +12,7 @@ import sys
 SectionPath = Tuple[str, ...]
 
 
-# =======================================================================================
+# ======================================================================================
 def main() -> None:
     if len(sys.argv) != 3:
         print("generate_input_reference.py <cp2k_input.xml> <references.html>")
@@ -25,17 +25,20 @@ def main() -> None:
     build_input_reference(cp2k_input_xml_fn, output_dir)
 
 
-# =======================================================================================
+# ======================================================================================
 def build_bibliography(references_html_fn: str, output_dir: Path) -> None:
     content = Path(references_html_fn).read_text()
     entries = re.findall("<TR>.*?</TR>", content, re.DOTALL)
 
     output = []
     output += ["%", "% This file was created by generate_input_reference.py", "%"]
-    output += [f"# Bibliography", ""]
+    output += ["# Bibliography", ""]
 
     for entry in entries:
-        pattern = '<TR><TD>\[(.*?)\]</TD><TD>\n <A NAME="reference_\d+">(.*?)</A><br>(.*?)</TD></TR>'
+        pattern = (
+            '<TR><TD>\[(.*?)\]</TD><TD>\n <A NAME="reference_\d+">(.*?)</A><br>'
+            "(.*?)</TD></TR>"
+        )
         parts = re.search(pattern, entry, re.DOTALL)
         assert parts
         key = parts.group(1)
@@ -66,7 +69,7 @@ def build_bibliography(references_html_fn: str, output_dir: Path) -> None:
     print(f"Wrote {filename}")
 
 
-# =======================================================================================
+# ======================================================================================
 def build_input_reference(cp2k_input_xml_fn: str, output_dir: Path) -> None:
     tree = ET.parse(cp2k_input_xml_fn)
     root = tree.getroot()
@@ -80,7 +83,7 @@ def build_input_reference(cp2k_input_xml_fn: str, output_dir: Path) -> None:
 
     output = []
     output += ["%", "% This file was created by generate_input_reference.py", "%"]
-    output += [f"# Input reference", ""]
+    output += ["# Input reference", ""]
 
     assert compile_revision.startswith("git:")
     github_url = f"https://github.com/cp2k/cp2k/tree/{compile_revision[4:]}"
@@ -99,7 +102,7 @@ def build_input_reference(cp2k_input_xml_fn: str, output_dir: Path) -> None:
     print(f"Wrote markdown files for {num_files_written} input sections.")
 
 
-# =======================================================================================
+# ======================================================================================
 def process_section(
     section: lxml.etree._Element, section_path: SectionPath, output_dir: Path
 ) -> int:
@@ -110,22 +113,19 @@ def process_section(
     section_name = section_path[-1]  # section.find("NAME") doesn't work for root
 
     # Find section references.
-    references = [get_text(ref.find("NAME")) for ref in section.findall("REFERENCE")]
+    references = [get_name(ref) for ref in section.findall("REFERENCE")]
 
     output = []
     output += ["%", "% This file was created by generate_input_reference.py", "%"]
     output += [f"# {section_name}", ""]
     if repeats:
-        output += [f"**Section can be repeated.**", ""]
+        output += ["**Section can be repeated.**", ""]
     if references:
         citations = ", ".join([f"{{ref}}`{r}`" for r in references])
-        output += [
-            f"**References:** {citations}",
-            "",
-        ]
+        output += [f"**References:** {citations}", ""]
     output += [f"{escape_markdown(description)} {github_link(location)}", ""]
 
-    # Render TOC
+    # Render TOC for subsections
     if section.findall("SECTION"):
         output += ["```{toctree}"]
         output += [":maxdepth: 1"]
@@ -135,14 +135,22 @@ def process_section(
         output += [f"{section_name}/*"]  # TODO maybe list subsection explicitly.
         output += ["```", ""]
 
-    # Render keywords
+    # Collect and sort keywords
     keywords = (
         section.findall("SECTION_PARAMETERS")
         + section.findall("DEFAULT_KEYWORD")
-        + section.findall("KEYWORD")
+        + sorted(section.findall("KEYWORD"), key=get_name)
     )
+
+    # Render keywords
     if keywords:
-        output += [f"## Keywords", ""]
+        # Render TOC for keywords
+        output += ["## Keywords", ""]
+        for keyword in keywords:
+            output += [f"* {get_name(keyword)}"]  # TODO cross-links with description
+        output += [""]
+        # Render keywords
+        output += ["## Keyword descriptions", ""]
         for keyword in keywords:
             output += render_keyword(keyword, section_path)
 
@@ -155,15 +163,13 @@ def process_section(
 
     # Process subsections
     for subsection in section.findall("SECTION"):
-        subsection_name_element = subsection.find("NAME")
-        subsection_name = get_text(subsection.find("NAME"))
-        subsection_path = (*section_path, subsection_name)
+        subsection_path = (*section_path, get_name(subsection))
         num_files_written += process_section(subsection, subsection_path, output_dir)
 
     return num_files_written
 
 
-# =======================================================================================
+# ======================================================================================
 def render_keyword(
     keyword: lxml.etree._Element, section_path: SectionPath
 ) -> List[str]:
@@ -198,7 +204,7 @@ def render_keyword(
     n_var = int(get_text(data_type_element.find("N_VAR")))
 
     # Find keyword references.
-    references = [get_text(ref.find("NAME")) for ref in keyword.findall("REFERENCE")]
+    references = [get_name(ref) for ref in keyword.findall("REFERENCE")]
 
     # Skip removed keywords.
     if keyword.attrib.get("removed", "no") == "yes":
@@ -218,7 +224,7 @@ def render_keyword(
         output += [f":value: '{default_value}'"]
     output += [""]
     if repeats:
-        output += [f"**Keyword can be repeated.**", ""]
+        output += ["**Keyword can be repeated.**", ""]
     if len(keyword_names) > 1:
         aliases = " ,".join(keyword_names[1:])
         output += [f"**Aliase:** {aliases}", ""]
@@ -227,11 +233,10 @@ def render_keyword(
     if usage:
         output += [f"**Usage:** _{escape_markdown(usage)}_", ""]
     if data_type == "enum":
-        output += [f"**Valid values:**"]
+        output += ["**Valid values:**"]
         for item in keyword.findall("DATA_TYPE/ENUMERATION/ITEM"):
-            item_name = get_text(item.find("NAME"))
             item_description = get_text(item.find("DESCRIPTION"))
-            output += [f"* `{item_name}` {escape_markdown(item_description)}"]
+            output += [f"* `{get_name(item)}` {escape_markdown(item_description)}"]
         output += [""]
     if references:
         citations = ", ".join([f"{{ref}}`{r}`" for r in references])
@@ -243,7 +248,12 @@ def render_keyword(
     return output
 
 
-# =======================================================================================
+# ======================================================================================
+def get_name(element: lxml.etree._Element) -> str:
+    return get_text(element.find("NAME"))
+
+
+# ======================================================================================
 def get_text(element: Optional[lxml.etree._Element]) -> str:
     if element is not None:
         if element.text is not None:
@@ -251,14 +261,14 @@ def get_text(element: Optional[lxml.etree._Element]) -> str:
     return ""
 
 
-# =======================================================================================
+# ======================================================================================
 def escape_markdown(text: str) -> str:
     text = text.replace("__", "\_\_")
     text = text.replace("#", "\#")
     return text
 
 
-# =======================================================================================
+# ======================================================================================
 def github_link(location: str) -> str:
     if not location:
         return ""
@@ -267,7 +277,7 @@ def github_link(location: str) -> str:
     return f"<small>[[Edit on GitHub]({github_url})]</small>"
 
 
-# =======================================================================================
+# ======================================================================================
 
 main()
 
