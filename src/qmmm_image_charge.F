@@ -43,7 +43,8 @@ MODULE qmmm_image_charge
    USE message_passing,                 ONLY: mp_para_env_type
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_type
-   USE pw_methods,                      ONLY: pw_integral_ab,&
+   USE pw_methods,                      ONLY: pw_axpy,&
+                                              pw_integral_ab,&
                                               pw_scale,&
                                               pw_transfer,&
                                               pw_zero
@@ -64,10 +65,9 @@ MODULE qmmm_image_charge
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_integrate_potential,          ONLY: integrate_pgf_product
-   USE realspace_grid_types,            ONLY: pw2rs,&
-                                              realspace_grid_desc_type,&
+   USE realspace_grid_types,            ONLY: realspace_grid_desc_type,&
                                               realspace_grid_type,&
-                                              rs_pw_transfer
+                                              transfer_pw2rs
    USE util,                            ONLY: get_limit
    USE virial_types,                    ONLY: virial_type
 #include "./base/base_uses.f90"
@@ -368,7 +368,7 @@ CONTAINS
       CALL get_qs_env(qs_env=qs_env, pw_env=pw_env)
       CALL pw_env_get(pw_env=pw_env, auxbas_rs_desc=auxbas_rs_desc, &
                       auxbas_rs_grid=rs_v)
-      CALL rs_pw_transfer(rs_v, potential, pw2rs)
+      CALL transfer_pw2rs(rs_v, potential)
 
       CALL get_qs_env(qs_env=qs_env, &
                       cell=cell, &
@@ -488,7 +488,7 @@ CONTAINS
       CALL get_qs_env(qs_env=qs_env, pw_env=pw_env)
       CALL pw_env_get(pw_env=pw_env, auxbas_rs_desc=auxbas_rs_desc, &
                       auxbas_rs_grid=rs_v)
-      CALL rs_pw_transfer(rs_v, potential, pw2rs)
+      CALL transfer_pw2rs(rs_v, potential)
 
       CALL get_qs_env(qs_env=qs_env, &
                       cell=cell, &
@@ -945,7 +945,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE add_image_pot_to_hartree_pot(v_hartree, v_metal, qs_env)
 
-      TYPE(pw_type), INTENT(IN)                          :: v_hartree, v_metal
+      TYPE(pw_type), INTENT(INOUT)                       :: v_hartree
+      TYPE(pw_type), INTENT(IN)                          :: v_metal
       TYPE(qs_environment_type), POINTER                 :: qs_env
 
       CHARACTER(len=*), PARAMETER :: routineN = 'add_image_pot_to_hartree_pot'
@@ -960,7 +961,7 @@ CONTAINS
       logger => cp_get_default_logger()
 
       !add image charge potential
-      v_hartree%cr3d = v_hartree%cr3d + v_metal%cr3d
+      CALL pw_axpy(v_metal, v_hartree)
 
       ! print info
       CALL get_qs_env(qs_env=qs_env, &

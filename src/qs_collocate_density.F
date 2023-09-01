@@ -102,9 +102,8 @@ MODULE qs_collocate_density
    USE realspace_grid_types,            ONLY: map_gaussian_here,&
                                               realspace_grid_desc_p_type,&
                                               realspace_grid_type,&
-                                              rs2pw,&
                                               rs_grid_zero,&
-                                              rs_pw_transfer
+                                              transfer_rs2pw
    USE rs_pw_interface,                 ONLY: density_rs2pw
    USE task_list_methods,               ONLY: rs_copy_to_buffer,&
                                               rs_distribute_matrix,&
@@ -314,7 +313,7 @@ CONTAINS
          DEALLOCATE (cores)
       END IF
 
-      CALL rs_pw_transfer(rs_rho, rho_nlcc, rs2pw)
+      CALL transfer_rs2pw(rs_rho, rho_nlcc)
 
       CALL timestop(handle)
 
@@ -487,7 +486,7 @@ CONTAINS
          DEALLOCATE (cores)
       END IF
 
-      CALL rs_pw_transfer(rs_rho, vppl, rs2pw)
+      CALL transfer_rs2pw(rs_rho, vppl)
 
       CALL timestop(handle)
 
@@ -511,8 +510,7 @@ CONTAINS
    SUBROUTINE calculate_lri_rho_elec(lri_rho_g, lri_rho_r, qs_env, &
                                      lri_coef, total_rho, basis_type, exact_1c_terms, pmat, atomlist)
 
-      TYPE(pw_type), INTENT(IN)                          :: lri_rho_g
-      TYPE(pw_type), INTENT(INOUT)                       :: lri_rho_r
+      TYPE(pw_type), INTENT(INOUT)                       :: lri_rho_g, lri_rho_r
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(lri_kind_type), DIMENSION(:), POINTER         :: lri_coef
       REAL(KIND=dp), INTENT(OUT)                         :: total_rho
@@ -760,8 +758,8 @@ CONTAINS
 
       DO igrid_level = 1, gridlevel_info%ngrid_levels
          CALL pw_zero(mgrid_rspace(igrid_level))
-         CALL rs_pw_transfer(rs=rs_rho(igrid_level), &
-                             pw=mgrid_rspace(igrid_level), dir=rs2pw)
+         CALL transfer_rs2pw(rs=rs_rho(igrid_level), &
+                             pw=mgrid_rspace(igrid_level))
       END DO
 
       DO igrid_level = 1, gridlevel_info%ngrid_levels
@@ -897,7 +895,7 @@ CONTAINS
       CALL pw_pool_create_pw(auxbas_pw_pool, rhoc_r, &
                              use_data=REALDATA3D, in_space=REALSPACE)
 
-      CALL rs_pw_transfer(rs_rho, rhoc_r, rs2pw)
+      CALL transfer_rs2pw(rs_rho, rhoc_r)
 
       total_rho = pw_integrate_function(rhoc_r, isign=-1)
 
@@ -1032,7 +1030,7 @@ CONTAINS
       CALL pw_pool_create_pw(auxbas_pw_pool, rhoc_r, &
                              use_data=REALDATA3D, in_space=REALSPACE)
 
-      CALL rs_pw_transfer(rs_rho, rhoc_r, rs2pw)
+      CALL transfer_rs2pw(rs_rho, rhoc_r)
 
       CALL pw_transfer(rhoc_r, drho_core)
 
@@ -1121,7 +1119,7 @@ CONTAINS
       CALL pw_pool_create_pw(auxbas_pw_pool, rhoc_r, &
                              use_data=REALDATA3D, in_space=REALSPACE)
 
-      CALL rs_pw_transfer(rs_rho, rhoc_r, rs2pw)
+      CALL transfer_rs2pw(rs_rho, rhoc_r)
 
       CALL pw_transfer(rhoc_r, rho_gb)
 
@@ -1226,7 +1224,7 @@ CONTAINS
       CALL pw_pool_create_pw(auxbas_pw_pool, rhoc_r, &
                              use_data=REALDATA3D, in_space=REALSPACE)
 
-      CALL rs_pw_transfer(rs_rho, rhoc_r, rs2pw)
+      CALL transfer_rs2pw(rs_rho, rhoc_r)
 
       IF (PRESENT(total_rho_metal)) &
          !minus sign: account for the fact that rho_metal has opposite sign
@@ -1320,7 +1318,7 @@ CONTAINS
       CALL pw_pool_create_pw(auxbas_pw_pool, rhoc_r, &
                              use_data=REALDATA3D, in_space=REALSPACE)
 
-      CALL rs_pw_transfer(rs_rho, rhoc_r, rs2pw)
+      CALL transfer_rs2pw(rs_rho, rhoc_r)
 
       CALL pw_transfer(rhoc_r, rho_gb)
 
@@ -1425,7 +1423,7 @@ CONTAINS
       CALL pw_pool_create_pw(auxbas_pw_pool, rhoc_r, &
                              use_data=REALDATA3D, in_space=REALSPACE)
 
-      CALL rs_pw_transfer(rs_rho, rhoc_r, rs2pw)
+      CALL transfer_rs2pw(rs_rho, rhoc_r)
 
       CALL pw_transfer(rhoc_r, rho_resp)
       CALL pw_pool_give_back_pw(auxbas_pw_pool, rhoc_r)
@@ -2420,8 +2418,7 @@ CONTAINS
                                         atomic_kind_set, qs_kind_set, cell, dft_control, particle_set, &
                                         pw_env, required_function, basis_type)
 
-      TYPE(pw_type), INTENT(INOUT)                       :: rho
-      TYPE(pw_type), INTENT(IN)                          :: rho_gspace
+      TYPE(pw_type), INTENT(INOUT)                       :: rho, rho_gspace
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(cell_type), POINTER                           :: cell
@@ -2560,8 +2557,8 @@ CONTAINS
       END DO
 
       DO igrid_level = 1, gridlevel_info%ngrid_levels
-         CALL rs_pw_transfer(rs_rho(igrid_level), &
-                             mgrid_rspace(igrid_level), rs2pw)
+         CALL transfer_rs2pw(rs_rho(igrid_level), &
+                             mgrid_rspace(igrid_level))
       END DO
 
       CALL pw_zero(rho_gspace)
@@ -2615,8 +2612,7 @@ CONTAINS
 
       TYPE(cp_fm_type), INTENT(IN)                       :: mo_vectors
       INTEGER, INTENT(IN)                                :: ivector
-      TYPE(pw_type), INTENT(INOUT)                       :: rho
-      TYPE(pw_type), INTENT(IN)                          :: rho_gspace
+      TYPE(pw_type), INTENT(INOUT)                       :: rho, rho_gspace
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(cell_type), POINTER                           :: cell
@@ -2762,8 +2758,8 @@ CONTAINS
       END DO
 
       DO igrid_level = 1, gridlevel_info%ngrid_levels
-         CALL rs_pw_transfer(rs_rho(igrid_level), &
-                             mgrid_rspace(igrid_level), rs2pw)
+         CALL transfer_rs2pw(rs_rho(igrid_level), &
+                             mgrid_rspace(igrid_level))
       END DO
 
       CALL pw_zero(rho_gspace)

@@ -97,9 +97,9 @@ MODULE library_tests
                                               pw_release,&
                                               pw_type
    USE realspace_grid_types,            ONLY: &
-        pw2rs, realspace_grid_desc_type, realspace_grid_input_type, realspace_grid_type, rs2pw, &
-        rs_grid_create, rs_grid_create_descriptor, rs_grid_print, rs_grid_release, &
-        rs_grid_release_descriptor, rs_grid_zero, rs_pw_transfer
+        realspace_grid_desc_type, realspace_grid_input_type, realspace_grid_type, rs_grid_create, &
+        rs_grid_create_descriptor, rs_grid_print, rs_grid_release, rs_grid_release_descriptor, &
+        rs_grid_zero, transfer_pw2rs, transfer_rs2pw
    USE shg_integrals_test,              ONLY: shg_integrals_perf_acc_test
 #include "./base/base_uses.f90"
 
@@ -708,8 +708,7 @@ CONTAINS
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'rs_pw_transfer_test'
 
-      INTEGER                                            :: dir, halo_size, handle, i_loop, n_loop, &
-                                                            ns_max
+      INTEGER                                            :: halo_size, handle, i_loop, n_loop, ns_max
       INTEGER, DIMENSION(3)                              :: no, np
       INTEGER, DIMENSION(:), POINTER                     :: i_vals
       LOGICAL                                            :: do_rs2pw
@@ -745,8 +744,7 @@ CONTAINS
       CALL pw_grid_setup(box%hmat, grid, grid_span=FULLSPACE, npts=np, fft_usage=.TRUE., iounit=iw)
       no = grid%npts
 
-      CALL pw_create(ca, grid, REALDATA3D)
-      ca%in_space = REALSPACE
+      CALL pw_create(ca, grid, REALDATA3D, REALSPACE)
       CALL pw_zero(ca)
 
       ! .. rs input setting type
@@ -767,11 +765,6 @@ CONTAINS
 
       CALL section_vals_val_get(rs_pw_transfer_section, "N_loop", i_val=N_loop)
       CALL section_vals_val_get(rs_pw_transfer_section, "RS2PW", l_val=do_rs2pw)
-      IF (do_rs2pw) THEN
-         dir = rs2pw
-      ELSE
-         dir = pw2rs
-      END IF
 
       ! go for the real loops, sync to get max timings
       IF (para_env%is_source()) THEN
@@ -783,7 +776,11 @@ CONTAINS
       DO i_loop = 1, N_loop
          CALL para_env%sync()
          tstart = m_walltime()
-         CALL rs_pw_transfer(rs_grid, ca, dir)
+         IF (do_rs2pw) THEN
+            CALL transfer_rs2pw(rs_grid, ca)
+         ELSE
+            CALL transfer_pw2rs(rs_grid, ca)
+         END IF
          CALL para_env%sync()
          tend = m_walltime()
          IF (para_env%is_source()) THEN
@@ -943,15 +940,14 @@ CONTAINS
             ! note that the number of grid points might be different from what the user requested (fft-able needed)
             no = grid%npts
 
-            CALL pw_create(ca, grid, COMPLEXDATA1D)
-            CALL pw_create(cb, grid, COMPLEXDATA3D)
-            CALL pw_create(cc, grid, COMPLEXDATA1D)
+            CALL pw_create(ca, grid, COMPLEXDATA1D, RECIPROCALSPACE)
+            CALL pw_create(cb, grid, COMPLEXDATA3D, REALSPACE)
+            CALL pw_create(cc, grid, COMPLEXDATA1D, RECIPROCALSPACE)
 
             ! initialize data
             CALL pw_zero(ca)
             CALL pw_zero(cb)
             CALL pw_zero(cc)
-            ca%in_space = RECIPROCALSPACE
             nn = SIZE(ca%cc)
             DO ig = 1, nn
                gsq = grid%gsq(ig)

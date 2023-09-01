@@ -62,6 +62,7 @@ list(
   atom_utils.F
   atom_xc.F
   auto_basis.F
+  bandstructure_methods.F
   basis_set_output.F
   beta_gamma_psi.F
   block_p_types.F
@@ -200,6 +201,10 @@ list(
   group_dist_types.F
   grrm_utils.F
   gapw_1c_basis_set.F
+  gw_communication.F
+  gw_methods.F
+  gw_types.F
+  gw_utils.F
   hartree_local_methods.F
   hartree_local_types.F
   header.F
@@ -462,6 +467,10 @@ list(
   qs_2nd_kernel_ao.F
   qs_active_space_methods.F
   qs_active_space_types.F
+  qs_active_space_utils.F
+  qcschema.F
+  hdf5_wrapper.F
+  sockets_interface.F
   qs_atomic_block.F
   qs_band_structure.F
   qs_basis_gradient.F
@@ -1424,8 +1433,9 @@ if(CP2K_USE_CUDA)
   else()
     target_link_libraries(
       cp2k_cuda_libs
-      INTERFACE $<$<BOOL:${CP2K_USE_CUSOLVER_MP}>:CUDA::cusolver> CUDA::cufft
-                CUDA::cufftw CUDA::cublas CUDA::cudart CUDA::cuda_driver)
+      INTERFACE $<$<BOOL:${CP2K_USE_CUSOLVER_MP}>:CP2K::CUSOLVER_MP::cusolvermp>
+                CUDA::cufft CUDA::cufftw CUDA::cublas CUDA::cudart
+                CUDA::cuda_driver)
   endif()
 endif()
 
@@ -1674,7 +1684,7 @@ target_compile_definitions(
   PRIVATE $<$<CONFIG:Release>:NDEBUG> $<$<BOOL:${CP2K_USE_LIBXSMM}>:__LIBXSMM>
           $<$<STREQUAL:${CP2K_BLAS_VENDOR},"MKL">:__MKL>)
 
-if(NOT CP2K_DISABLE_DBM_GPU)
+if(CP2K_DISABLE_DBM_GPU)
   target_compile_definitions(dbm_miniapp PRIVATE __NO_OFFLOAD_DBM)
 else()
   target_compile_definitions(dbm_miniapp PRIVATE ${CP2K_GPU_DFLAGS})

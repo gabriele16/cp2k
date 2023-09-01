@@ -717,7 +717,7 @@ CONTAINS
 
       IF ((times_called .NE. 0) .AND. (.NOT. use_zero_initial_guess)) THEN
          CALL pw_copy(v_new, ps_implicit_env%initial_guess)
-         ps_implicit_env%initial_lambda = lambda_new
+         ps_implicit_env%initial_lambda(:) = lambda_new
       END IF
 
       ps_implicit_env%cstr_charge%cr3d = Btxlambda_new3D
@@ -1006,7 +1006,7 @@ CONTAINS
 
       IF ((times_called .NE. 0) .AND. (.NOT. use_zero_initial_guess)) THEN
          CALL pw_copy(v_new_xpndd, ps_implicit_env%initial_guess)
-         ps_implicit_env%initial_lambda = lambda_new
+         ps_implicit_env%initial_lambda(:) = lambda_new
       END IF
 
       ps_implicit_env%cstr_charge%cr3d = Btxlambda_new3D
@@ -1150,6 +1150,11 @@ CONTAINS
 
          ALLOCATE (ps_implicit_env%idx_1dto3d(data_size))
          l = 1
+         ! Suppress OpenMP (at least the Intel compiler has an issue here)
+         ! An automatic OpenMP parallelization of this loop might be tricky
+         ! because of the l incrementation
+!$OMP PARALLEL IF(.FALSE.)
+!$OMP DO
          DO k = lb3, ub3
             DO j = lb2, ub2
                DO i = lb1, ub1
@@ -1160,6 +1165,8 @@ CONTAINS
                END DO
             END DO
          END DO
+!$OMP END DO
+!$OMP END PARALLEL
 
          n_contacts = SIZE(ps_implicit_env%contacts)
          n_tiles_tot = 0
@@ -1216,7 +1223,7 @@ CONTAINS
             END DO
             indx1 = indx2 + 1
          END DO
-         ps_implicit_env%B = TRANSPOSE(ps_implicit_env%Bt)
+         ps_implicit_env%B(:, :) = TRANSPOSE(ps_implicit_env%Bt)
 
 ! evaluate QS = - B*(\Delta^-1)*B^t
          IF (data_size .NE. 0) THEN
@@ -1235,7 +1242,7 @@ CONTAINS
          R(1:n_tiles_tot, n_tiles_tot + 1) = Bxunit_vec
          R(n_tiles_tot + 1, 1:n_tiles_tot) = Bxunit_vec
 ! evaluate R^(-1)
-         ps_implicit_env%Rinv = R
+         ps_implicit_env%Rinv(:, :) = R
          CALL DGETRF(n_tiles_tot + 1, n_tiles_tot + 1, ps_implicit_env%Rinv, n_tiles_tot + 1, ipiv, info)
          IF (info .NE. 0) &
             CALL cp_abort(__LOCATION__, &
@@ -1279,6 +1286,11 @@ CONTAINS
 
          ALLOCATE (ps_implicit_env%idx_1dto3d(data_size))
          l = 1
+         ! Suppress OpenMP (at least the Intel compiler has an issue here)
+         ! An automatic OpenMP parallelization of this loop might be tricky
+         ! because of the l incrementation
+!$OMP PARALLEL IF(.FALSE.)
+!$OMP DO
          DO k = lb3, ub3
             DO j = lb2, ub2
                DO i = lb1, ub1
@@ -1289,6 +1301,8 @@ CONTAINS
                END DO
             END DO
          END DO
+!$OMP END DO
+!$OMP END PARALLEL
 
          n_contacts = SIZE(ps_implicit_env%contacts)
          n_tiles_tot = 0
@@ -1338,7 +1352,7 @@ CONTAINS
             END DO
             indx1 = indx2 + 1
          END DO
-         ps_implicit_env%B = TRANSPOSE(ps_implicit_env%Bt)
+         ps_implicit_env%B(:, :) = TRANSPOSE(ps_implicit_env%Bt)
 
 ! evaluate QS = - B*(\Delta^-1)*B^t
          IF (data_size .NE. 0) THEN
@@ -1357,7 +1371,7 @@ CONTAINS
          R(1:n_tiles_tot, n_tiles_tot + 1) = Bxunit_vec
          R(n_tiles_tot + 1, 1:n_tiles_tot) = Bxunit_vec
 ! evaluate R^(-1)
-         ps_implicit_env%Rinv = R
+         ps_implicit_env%Rinv(:, :) = R
          CALL DGETRF(n_tiles_tot + 1, n_tiles_tot + 1, ps_implicit_env%Rinv, n_tiles_tot + 1, ipiv, info)
          IF (info .NE. 0) &
             CALL cp_abort(__LOCATION__, &
@@ -2096,8 +2110,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE convert_1dto3d(idx_1dto3d, arr1d, arr3d)
 
-      INTEGER, DIMENSION(:), INTENT(IN), POINTER         :: idx_1dto3d
-      REAL(dp), ALLOCATABLE, DIMENSION(:), INTENT(IN)    :: arr1d
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: idx_1dto3d
+      REAL(dp), DIMENSION(:), INTENT(IN)                 :: arr1d
       REAL(dp), ALLOCATABLE, DIMENSION(:, :, :), &
          INTENT(INOUT)                                   :: arr3d
 

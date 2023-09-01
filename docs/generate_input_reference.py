@@ -73,7 +73,7 @@ def build_bibliography(references_html_fn: str, output_dir: Path) -> None:
 def build_input_reference(cp2k_input_xml_fn: str, output_dir: Path) -> None:
     tree = ET.parse(cp2k_input_xml_fn)
     root = tree.getroot()
-    num_files_written = process_section(root, ("CP2K_INPUT",), output_dir)
+    num_files_written = process_section(root, ("CP2K_INPUT",), False, output_dir)
 
     # Build landing page.
     cp2k_version = get_text(root.find("CP2K_VERSION"))
@@ -83,7 +83,8 @@ def build_input_reference(cp2k_input_xml_fn: str, output_dir: Path) -> None:
 
     output = []
     output += ["%", "% This file was created by generate_input_reference.py", "%"]
-    output += ["# Input reference", ""]
+    output += ["(CP2K_INPUT)="]
+    output += ["# Input Reference", ""]
 
     assert compile_revision.startswith("git:")
     github_url = f"https://github.com/cp2k/cp2k/tree/{compile_revision[4:]}"
@@ -104,19 +105,27 @@ def build_input_reference(cp2k_input_xml_fn: str, output_dir: Path) -> None:
 
 # ======================================================================================
 def process_section(
-    section: lxml.etree._Element, section_path: SectionPath, output_dir: Path
+    section: lxml.etree._Element,
+    section_path: SectionPath,
+    has_name_collision: bool,
+    output_dir: Path,
 ) -> int:
     # Find more section fields.
     repeats = "repeats" in section.attrib and section.attrib["repeats"] == "yes"
     description = get_text(section.find("DESCRIPTION"))
     location = get_text(section.find("LOCATION"))
     section_name = section_path[-1]  # section.find("NAME") doesn't work for root
+    section_xref = ".".join(section_path)  # used for cross-referencing
 
     # Find section references.
     references = [get_name(ref) for ref in section.findall("REFERENCE")]
 
     output = []
     output += ["%", "% This file was created by generate_input_reference.py", "%"]
+    # There are a few collisions between cross references for sections and keywords,
+    # for example CP2K_INPUT.FORCE_EVAL.SUBSYS.KIND.POTENTIAL
+    collision_resolution_suffix = "_SECTION" if has_name_collision else ""
+    output += [f"({section_xref}{collision_resolution_suffix})="]
     output += [f"# {section_name}", ""]
     if repeats:
         output += ["**Section can be repeated.**", ""]
@@ -125,14 +134,17 @@ def process_section(
         output += [f"**References:** {citations}", ""]
     output += [f"{escape_markdown(description)} {github_link(location)}", ""]
 
+    # Collect and sort subsections.
+    subsections = sorted(section.findall("SECTION"), key=get_name)
+
     # Render TOC for subsections
-    if section.findall("SECTION"):
+    if subsections:
         output += ["```{toctree}"]
         output += [":maxdepth: 1"]
         output += [":titlesonly:"]
         output += [":caption: Subsections"]
-        output += [":glob:", ""]
-        output += [f"{section_name}/*"]  # TODO maybe list subsection explicitly.
+        for subsection in subsections:
+            output += [f"{section_name}/{get_name(subsection)}"]
         output += ["```", ""]
 
     # Collect and sort keywords
@@ -142,17 +154,22 @@ def process_section(
         + sorted(section.findall("KEYWORD"), key=get_name)
     )
 
+    # Filter out removed keywords.
+    keywords = [k for k in keywords if k.attrib.get("removed", "no") == "no"]
+
     # Render keywords
     if keywords:
         # Render TOC for keywords
         output += ["## Keywords", ""]
         for keyword in keywords:
-            output += [f"* {get_name(keyword)}"]  # TODO cross-links with description
+            keyword_name = get_name(keyword)
+            keyword_xref = f"{section_xref}.{sanitize_name(keyword_name)}"
+            output += [f"* [{escape_markdown(keyword_name)}](#{keyword_xref})"]
         output += [""]
         # Render keywords
         output += ["## Keyword descriptions", ""]
         for keyword in keywords:
-            output += render_keyword(keyword, section_path)
+            output += render_keyword(keyword, section_xref)
 
     # Write output
     section_dir = output_dir / "/".join(section_path[:-1])
@@ -162,17 +179,18 @@ def process_section(
     num_files_written = 1
 
     # Process subsections
-    for subsection in section.findall("SECTION"):
+    keyword_names = {get_name(keyword) for keyword in keywords}
+    for subsection in subsections:
         subsection_path = (*section_path, get_name(subsection))
-        num_files_written += process_section(subsection, subsection_path, output_dir)
+        has_name_collision = get_name(subsection) in keyword_names
+        n = process_section(subsection, subsection_path, has_name_collision, output_dir)
+        num_files_written += n
 
     return num_files_written
 
 
 # ======================================================================================
-def render_keyword(
-    keyword: lxml.etree._Element, section_path: SectionPath
-) -> List[str]:
+def render_keyword(keyword: lxml.etree._Element, section_xref: str) -> List[str]:
     # Find keyword names.
     keyword_names: List[str]
     if keyword.tag == "SECTION_PARAMETERS":
@@ -188,7 +206,7 @@ def render_keyword(
     usage = get_text(keyword.find("USAGE"))
     description = get_text(keyword.find("DESCRIPTION"))
     location = get_text(keyword.find("LOCATION"))
-    lone_leyword_value = get_text(keyword.find("LONE_KEYWORD_VALUE"))
+    lone_keyword_value = get_text(keyword.find("LONE_KEYWORD_VALUE"))
 
     # Find keyword data type.
     data_type_element = keyword.find("DATA_TYPE")
@@ -206,19 +224,17 @@ def render_keyword(
     # Find keyword references.
     references = [get_name(ref) for ref in keyword.findall("REFERENCE")]
 
-    # Skip removed keywords.
-    if keyword.attrib.get("removed", "no") == "yes":
-        print(f"Skipping removed keyword: {keyword_names[0]}")
-        return []
-
-    # To get references to work we'd have to encode the `section_path` as `:module:`.
-    # We could then also set `add_module_names = False` in the config and re-enable
-    # the warnings for the sphinx.domains.python module.
-    # However, the links would not be backwards compatible. A solution might be
-    # a combinations of explicit targets and myst_heading_slug_func in the config.
     output: List[str] = []
-    output += [f"```{{py:data}}  {keyword_names[0]}"]
+
+    # Include HTML anchors to preserve old links.
+    output += [f"<a id='list_{keyword_names[0]}'></a>"]
+    output += [f"<a id='desc_{keyword_names[0]}'></a>"]
+    output += [f"<a id='{keyword_names[0]}'></a>", ""]
+
+    # Use Sphinx's py:data directive to document keywords.
+    output += [f"```{{py:data}}  {sanitize_name(keyword_names[0])}"]
     n_var_brackets = f"[{n_var}]" if n_var > 1 else ""
+    output += [f":module: {section_xref}"]
     output += [f":type: '{data_type}{n_var_brackets}'"]
     if default_value:
         output += [f":value: '{default_value}'"]
@@ -227,9 +243,9 @@ def render_keyword(
         output += ["**Keyword can be repeated.**", ""]
     if len(keyword_names) > 1:
         aliases = " ,".join(keyword_names[1:])
-        output += [f"**Aliase:** {aliases}", ""]
-    if lone_leyword_value:
-        output += [f"**Lone keyword:** `{escape_markdown(lone_leyword_value)}`", ""]
+        output += [f"**Aliases:** {escape_markdown(aliases)}", ""]
+    if lone_keyword_value:
+        output += [f"**Lone keyword:** `{escape_markdown(lone_keyword_value)}`", ""]
     if usage:
         output += [f"**Usage:** _{escape_markdown(usage)}_", ""]
     if data_type == "enum":
@@ -259,6 +275,15 @@ def get_text(element: Optional[lxml.etree._Element]) -> str:
         if element.text is not None:
             return element.text
     return ""
+
+
+# ======================================================================================
+def sanitize_name(name: str) -> str:
+    name = name.replace("-", "_")
+    name = name.replace("+", "_")
+    name = name.replace("[", "_")
+    name = name.replace("]", "")
+    return name
 
 
 # ======================================================================================

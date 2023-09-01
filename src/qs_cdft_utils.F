@@ -54,6 +54,7 @@ MODULE qs_cdft_utils
    USE particle_types,                  ONLY: particle_type
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_type
+   USE pw_methods,                      ONLY: pw_zero
    USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
                                               pw_pool_type
    USE pw_types,                        ONLY: REALDATA3D,&
@@ -70,9 +71,8 @@ MODULE qs_cdft_utils
    USE qs_subsys_types,                 ONLY: qs_subsys_get,&
                                               qs_subsys_type
    USE realspace_grid_types,            ONLY: realspace_grid_type,&
-                                              rs2pw,&
                                               rs_grid_zero,&
-                                              rs_pw_transfer
+                                              transfer_rs2pw
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -199,11 +199,11 @@ CONTAINS
       END IF
       ! Zero weight functions
       DO igroup = 1, SIZE(group)
-         group(igroup)%weight%cr3d = 0.0_dp
+         CALL pw_zero(group(igroup)%weight)
       END DO
       IF (cdft_control%atomic_charges) THEN
          DO iatom = 1, cdft_control%natoms
-            cdft_control%charge(iatom)%cr3d = 0.0_dp
+            CALL pw_zero(cdft_control%charge(iatom))
          END DO
       END IF
       ! Allocate storage for cell adjustment coefficients and needed distance vectors
@@ -393,7 +393,7 @@ CONTAINS
          DEALLOCATE (pab)
          CALL pw_pool_create_pw(auxbas_pw_pool, becke_control%cavity, &
                                 use_data=REALDATA3D, in_space=REALSPACE)
-         CALL rs_pw_transfer(rs_cavity, becke_control%cavity, rs2pw)
+         CALL transfer_rs2pw(rs_cavity, becke_control%cavity)
          ! Grid points where the Gaussian density falls below eps_cavity are ignored
          ! We can calculate the smallest/largest values along z-direction outside
          ! which the cavity is zero at every point (x, y)
