@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -15,6 +15,8 @@ MODULE rt_propagation
                                               cite_reference
    USE cp_control_types,                ONLY: dft_control_type,&
                                               rtp_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
+                                              dbcsr_p_type
    USE cp_external_control,             ONLY: external_control
    USE cp_fm_types,                     ONLY: cp_fm_set_all,&
                                               cp_fm_to_fm,&
@@ -24,10 +26,11 @@ MODULE rt_propagation
                                               cp_to_string
    USE cp_output_handling,              ONLY: cp_add_iter_level,&
                                               cp_iterate,&
+                                              cp_p_file,&
+                                              cp_print_key_generate_filename,&
+                                              cp_print_key_should_output,&
                                               cp_print_key_unit_nr,&
                                               cp_rm_iter_level
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
-                                              dbcsr_p_type
    USE efield_utils,                    ONLY: calculate_ecore_efield
    USE force_env_methods,               ONLY: force_env_calc_energy_force
    USE force_env_types,                 ONLY: force_env_get,&
@@ -44,7 +47,8 @@ MODULE rt_propagation
                                               section_vals_type,&
                                               section_vals_val_get,&
                                               section_vals_val_set
-   USE kinds,                           ONLY: dp
+   USE kinds,                           ONLY: default_path_length,&
+                                              dp
    USE machine,                         ONLY: m_walltime
    USE md_environment_types,            ONLY: md_environment_type
    USE pw_env_types,                    ONLY: pw_env_type
@@ -60,6 +64,7 @@ MODULE rt_propagation
    USE qs_ks_types,                     ONLY: qs_ks_did_change,&
                                               qs_ks_env_type,&
                                               set_ks_env
+   USE qs_mo_io,                        ONLY: wfn_restart_file_name
    USE qs_mo_types,                     ONLY: get_mo_set,&
                                               init_mo_set,&
                                               mo_set_type
@@ -74,11 +79,13 @@ MODULE rt_propagation
    USE rt_propagation_types,            ONLY: get_rtp,&
                                               rt_prop_create,&
                                               rt_prop_type,&
+                                              rtp_create_SinvH_imag,&
                                               rtp_history_create
    USE rt_propagation_utils,            ONLY: calc_S_derivs,&
                                               calc_update_rho,&
                                               calc_update_rho_sparse,&
-                                              get_restart_wfn
+                                              get_restart_wfn,&
+                                              warn_section_unused
    USE rt_propagation_velocity_gauge,   ONLY: velocity_gauge_ks_matrix
    USE rt_propagator_init,              ONLY: init_propagators,&
                                               rt_initialize_rho_from_mos
@@ -114,7 +121,8 @@ CONTAINS
       TYPE(rtp_control_type), POINTER                    :: rtp_control
       TYPE(section_vals_type), POINTER                   :: hfx_sections, input, ls_scf_section, &
                                                             md_section, motion_section, &
-                                                            print_moments_section
+                                                            print_moments_section, &
+                                                            rtp_print_section
 
       NULLIFY (qs_env, rtp_control, dft_control)
 
@@ -156,8 +164,22 @@ CONTAINS
       CALL section_vals_val_get(print_moments_section, "MAGNETIC", l_val=magnetic)
       CALL section_vals_val_get(print_moments_section, "VEL_REPRS", l_val=vel_reprs)
 
-      rtp%track_imag_density = magnetic .OR. vel_reprs .OR. rtp_control%velocity_gauge .OR. rtp%do_hfx
+      rtp%track_imag_density = (magnetic) .OR. (vel_reprs) .OR. (rtp_control%velocity_gauge) &
+                               .OR. (rtp%do_hfx) .OR. (.NOT. rtp_control%fixed_ions)
       rtp%propagate_complex_ks = rtp%do_hfx .OR. rtp_control%velocity_gauge
+
+      ! Marek : In case some print sections that apply so far only to RTBSE are present,
+      !         warn the user that the quantities will not be in fact printed out
+      rtp_print_section => section_vals_get_subs_vals(force_env%root_section, &
+                                                      "FORCE_EVAL%DFT%REAL_TIME_PROPAGATION%PRINT")
+      CALL warn_section_unused(rtp_print_section, "POLARIZABILITY", &
+                               "POLARIZABILITY printing not implemented for non-RTBSE code.")
+      CALL warn_section_unused(rtp_print_section, "MOMENTS", &
+                               "MOMENTS not implemented: Use DFT%PRINT%MOMENTS for moments printing with TDDFT.")
+      CALL warn_section_unused(rtp_print_section, "MOMENTS_FT", &
+                               "MOMENTS_FT printing not implemented for non-RTBSE code.")
+      CALL warn_section_unused(rtp_print_section, "DENSITY_MATRIX", &
+                               "DENSITY_MATRIX printing not implemented for non-RTBSE code.")
 
       CALL rt_init_complex_quantities(qs_env, imag_p=rtp%track_imag_density, &
                                       imag_ks=rtp%propagate_complex_ks, imag_h=rtp_control%velocity_gauge)
@@ -403,16 +425,36 @@ CONTAINS
       TYPE(qs_environment_type), OPTIONAL, POINTER       :: qs_env
       TYPE(force_env_type), POINTER                      :: force_env
 
+      CHARACTER(len=default_path_length)                 :: file_name
       REAL(KIND=dp), DIMENSION(:), POINTER               :: tmp_vals
+      TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(section_vals_type), POINTER                   :: efield_section, motion_section, &
+      TYPE(section_vals_type), POINTER                   :: dft_section, efield_section, &
+                                                            motion_section, print_key, &
                                                             root_section, rt_section
 
       CALL get_qs_env(qs_env=qs_env, dft_control=dft_control)
       root_section => force_env%root_section
       motion_section => section_vals_get_subs_vals(root_section, "MOTION")
+      dft_section => section_vals_get_subs_vals(root_section, "FORCE_EVAL%DFT")
       rt_section => section_vals_get_subs_vals(root_section, "FORCE_EVAL%DFT%REAL_TIME_PROPAGATION")
+
       CALL section_vals_val_set(rt_section, "INITIAL_WFN", i_val=use_rt_restart)
+      CALL section_vals_val_set(rt_section, "APPLY_DELTA_PULSE", l_val=.FALSE.)
+      CALL section_vals_val_set(rt_section, "APPLY_DELTA_PULSE_MAG", l_val=.FALSE.)
+      CALL section_vals_val_set(rt_section, "APPLY_WFN_MIX_INIT_RESTART", l_val=.FALSE.)
+
+      logger => cp_get_default_logger()
+
+      ! to continue propagating the TD wavefunction we need to read from the new .rtpwfn
+      IF (BTEST(cp_print_key_should_output(logger%iter_info, &
+                                           rt_section, "PRINT%RESTART"), cp_p_file)) THEN
+         print_key => section_vals_get_subs_vals(rt_section, "PRINT%RESTART")
+         file_name = cp_print_key_generate_filename(logger, print_key, &
+                                                    extension=".rtpwfn", my_local=.FALSE.)
+         CALL section_vals_val_set(dft_section, "WFN_RESTART_FILE_NAME", c_val=TRIM(file_name))
+      END IF
+
       ! coming from RTP
       IF (.NOT. PRESENT(md_env)) THEN
          CALL section_vals_val_set(motion_section, "MD%STEP_START_VAL", i_val=force_env%qs_env%sim_step)
@@ -514,13 +556,15 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho
+      TYPE(rt_prop_type), POINTER                        :: rtp
 
       NULLIFY (ks_env, rho, dft_control)
 
       CALL get_qs_env(qs_env, &
                       dft_control=dft_control, &
                       ks_env=ks_env, &
-                      rho=rho)
+                      rho=rho, &
+                      rtp=rtp)
 
       ! rho
       CALL qs_rho_set(rho, complex_rho_ao=imag_p)
@@ -528,7 +572,11 @@ CONTAINS
 
       ! ks
       CALL set_ks_env(ks_env, complex_ks=imag_ks)
-      IF (imag_ks) CALL qs_ks_allocate_basics(qs_env, is_complex=imag_ks)
+      IF (imag_ks) THEN
+         CALL qs_ks_allocate_basics(qs_env, is_complex=imag_ks)
+         IF (.NOT. dft_control%rtp_control%fixed_ions) &
+            CALL rtp_create_SinvH_imag(rtp, dft_control%nspins)
+      END IF
 
       ! h
       IF (imag_h) CALL qs_matrix_h_allocate_imag_from_real(qs_env)

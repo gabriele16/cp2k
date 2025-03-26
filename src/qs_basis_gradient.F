@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -15,21 +15,20 @@ MODULE qs_basis_gradient
                                               get_atomic_kind,&
                                               get_atomic_kind_set
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set,&
+                                              dbcsr_type
    USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set
    USE cp_fm_types,                     ONLY: cp_fm_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
-                                              dbcsr_p_type,&
-                                              dbcsr_set,&
-                                              dbcsr_type
    USE input_section_types,             ONLY: section_vals_type
    USE kinds,                           ONLY: dp
    USE message_passing,                 ONLY: mp_para_env_type
    USE particle_types,                  ONLY: particle_type
    USE qs_core_hamiltonian,             ONLY: build_core_hamiltonian_matrix
    USE qs_density_matrices,             ONLY: calculate_density_matrix
-   USE qs_energy_matrix_w,              ONLY: qs_energies_compute_w
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_force_types,                  ONLY: allocate_qs_force,&
@@ -44,6 +43,7 @@ MODULE qs_basis_gradient
    USE qs_ks_types,                     ONLY: get_ks_env,&
                                               qs_ks_env_type,&
                                               set_ks_env
+   USE qs_matrix_w,                     ONLY: compute_matrix_w
    USE qs_mixing_utils,                 ONLY: mixing_allocate
    USE qs_mo_methods,                   ONLY: make_basis_sm
    USE qs_mo_types,                     ONLY: get_mo_set,&
@@ -160,7 +160,7 @@ CONTAINS
          END IF
       END IF
       ! time to compute the w matrix
-      CALL qs_energies_compute_w(qs_env, .TRUE.)
+      CALL compute_matrix_w(qs_env, .TRUE.)
 
       ! core hamiltonian forces
       CALL build_core_hamiltonian_matrix(qs_env=qs_env, calculate_forces=.TRUE.)

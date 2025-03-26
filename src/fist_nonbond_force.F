@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -38,7 +38,7 @@ MODULE fist_nonbond_force
    USE message_passing,                 ONLY: mp_comm_type
    USE pair_potential_coulomb,          ONLY: potential_coulomb
    USE pair_potential_types,            ONLY: &
-        allegro_type, gal21_type, gal_type, nequip_type, nosh_nosh, nosh_sh, &
+        allegro_type, deepmd_type, gal21_type, gal_type, nequip_type, nosh_nosh, nosh_sh, &
         pair_potential_pp_type, pair_potential_single_type, sh_sh, siepmann_type, tersoff_type
    USE particle_types,                  ONLY: particle_type
    USE shell_potential_types,           ONLY: get_shell,&
@@ -229,7 +229,8 @@ CONTAINS
                fac_vdw = fac_kind
                full_nl = ANY(pot%type == tersoff_type) .OR. ANY(pot%type == siepmann_type) &
                          .OR. ANY(pot%type == gal_type) .OR. ANY(pot%type == gal21_type) &
-                         .OR. ANY(pot%type == nequip_type) .OR. ANY(pot%type == allegro_type)
+                         .OR. ANY(pot%type == nequip_type) .OR. ANY(pot%type == allegro_type) &
+                         .OR. ANY(pot%type == deepmd_type)
                IF ((.NOT. full_nl) .AND. (atom_a == atom_b)) THEN
                   fac_ei = 0.5_dp*fac_ei
                   fac_vdw = 0.5_dp*fac_vdw
@@ -539,15 +540,6 @@ CONTAINS
                   DO i = 1, 3
                      DO j = 1, 3
                         pv_thread(j, i) = pv_thread(j, i) + pv(j, i)
-                        ! Update atomic stress tensors
-                        IF (atprop_env%stress) THEN
-!$OMP                          ATOMIC
-                           atprop_env%atstress(j, i, atom_a) = atprop_env%atstress(j, i, atom_a) + &
-                                                               0.5_dp*pv(j, i)
-!$OMP                          ATOMIC
-                           atprop_env%atstress(j, i, atom_b) = atprop_env%atstress(j, i, atom_b) + &
-                                                               0.5_dp*pv(j, i)
-                        END IF
                      END DO
                   END DO
                END IF
@@ -728,7 +720,8 @@ CONTAINS
                fac_ei = ij_kind_full_fac(kind_a, kind_b)
                full_nl = ANY(pot%type == tersoff_type) .OR. ANY(pot%type == siepmann_type) &
                          .OR. ANY(pot%type == gal_type) .OR. ANY(pot%type == gal21_type) &
-                         .OR. ANY(pot%type == nequip_type) .OR. ANY(pot%type == allegro_type)
+                         .OR. ANY(pot%type == nequip_type) .OR. ANY(pot%type == allegro_type) &
+                         .OR. ANY(pot%type == deepmd_type)
                IF ((.NOT. full_nl) .AND. (atom_a == atom_b)) THEN
                   fac_ei = fac_ei*0.5_dp
                END IF
@@ -974,13 +967,6 @@ CONTAINS
          fbc(3, 2) = -fij_com(3)*rij(2)
          fbc(3, 3) = -fij_com(3)*rij(3)
          pv_bc(:, :) = pv_bc(:, :) + fbc(:, :)
-         IF (atprop_env%stress) THEN
-            ! Atomic stress tensors
-            iatom = particle_set1(i)%atom_index
-            atprop_env%atstress(:, :, iatom) = atprop_env%atstress(:, :, iatom) + 0.5_dp*fbc(:, :)
-            jatom = particle_set2(j)%atom_index
-            atprop_env%atstress(:, :, jatom) = atprop_env%atstress(:, :, jatom) + 0.5_dp*fbc(:, :)
-         END IF
       END IF
 
    END SUBROUTINE bonded_correct_gaussian_low
@@ -1089,11 +1075,6 @@ CONTAINS
          fbc(3, 2) = -fr(3)*rij(2)
          fbc(3, 3) = -fr(3)*rij(3)
          pv_bc(:, :) = pv_bc(:, :) + fbc(:, :)
-         IF (atprop_env%stress) THEN
-            ! Atomic stress tensors
-            iatom = shell_particle_set(i)%atom_index
-            atprop_env%atstress(:, :, iatom) = atprop_env%atstress(:, :, iatom) + fbc(:, :)
-         END IF
       END IF
 
    END SUBROUTINE bonded_correct_gaussian_low_sh

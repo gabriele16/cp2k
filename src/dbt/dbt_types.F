@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -14,7 +14,7 @@ MODULE dbt_types
    #:set maxdim = maxrank
    #:set ndims = range(2,maxdim+1)
 
-   USE dbcsr_api, ONLY: dbcsr_type, dbcsr_get_info, dbcsr_distribution_type, dbcsr_distribution_get
+   USE cp_dbcsr_api, ONLY: dbcsr_type, dbcsr_get_info, dbcsr_distribution_type, dbcsr_distribution_get
    USE dbt_array_list_methods, ONLY: &
       array_list, array_offsets, create_array_list, destroy_array_list, get_array_elements, &
       sizes_of_arrays, sum_of_arrays, array_sublist, get_arrays, get_ith_array, array_eq_i
@@ -774,17 +774,6 @@ CONTAINS
             ALLOCATE (dist%refcount)
             dist%refcount = 1
             CALL timestop(handle)
-
-         CONTAINS
-            PURE FUNCTION array_eq_i(arr1, arr2)
-               INTEGER, INTENT(IN), DIMENSION(:) :: arr1
-               INTEGER, INTENT(IN), DIMENSION(:) :: arr2
-               LOGICAL                           :: array_eq_i
-
-               array_eq_i = .FALSE.
-               IF (SIZE(arr1) .EQ. SIZE(arr2)) array_eq_i = ALL(arr1 == arr2)
-
-            END FUNCTION
 
          END SUBROUTINE
 

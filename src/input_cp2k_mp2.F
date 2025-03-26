@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -12,44 +12,52 @@
 !> \author MDB
 ! **************************************************************************************************
 MODULE input_cp2k_mp2
-   USE bibliography,                    ONLY: &
-        Bates2013, DelBen2012, DelBen2013, DelBen2015, DelBen2015b, Rybkin2016, Wilhelm2016a, &
-        Wilhelm2016b, Wilhelm2017, Wilhelm2018
-   USE cp_eri_mme_interface,            ONLY: create_eri_mme_section
-   USE cp_output_handling,              ONLY: add_last_numeric,&
-                                              cp_print_key_section_create,&
-                                              debug_print_level,&
-                                              high_print_level,&
-                                              low_print_level,&
-                                              medium_print_level,&
-                                              silent_print_level
-   USE cp_units,                        ONLY: cp_unit_to_cp2k
-   USE input_constants,                 ONLY: &
-        do_eri_gpw, do_eri_mme, do_eri_os, do_potential_coulomb, do_potential_id, &
-        do_potential_long, do_potential_mix_cl, do_potential_short, do_potential_truncated, &
-        do_potential_tshpsc, eri_default, gaussian, gw_no_print_exx, gw_pade_approx, gw_print_exx, &
-        gw_read_exx, gw_skip_for_regtest, gw_two_pole_model, kp_weights_W_auto, &
-        kp_weights_W_tailored, kp_weights_W_uniform, mp2_method_direct, mp2_method_gpw, &
-        mp2_method_none, numerical, ot_precond_full_all, ot_precond_full_kinetic, &
-        ot_precond_full_single, ot_precond_full_single_inverse, ot_precond_none, &
-        ot_precond_s_inverse, ri_default, ri_rpa_g0w0_crossing_bisection, &
-        ri_rpa_g0w0_crossing_newton, ri_rpa_g0w0_crossing_z_shot, soc_lda, soc_none, soc_pbe, &
-        wfc_mm_style_gemm, wfc_mm_style_syrk, z_solver_cg, z_solver_pople, z_solver_richardson, &
-        z_solver_sd
-   USE input_cp2k_hfx,                  ONLY: create_hfx_section
-   USE input_cp2k_kpoints,              ONLY: create_kpoint_set_section
-   USE input_keyword_types,             ONLY: keyword_create,&
-                                              keyword_release,&
-                                              keyword_type
-   USE input_section_types,             ONLY: section_add_keyword,&
-                                              section_add_subsection,&
-                                              section_create,&
-                                              section_release,&
-                                              section_type
-   USE input_val_types,                 ONLY: integer_t,&
-                                              real_t
-   USE kinds,                           ONLY: dp
-   USE string_utilities,                ONLY: s2a
+   USE bibliography, ONLY: &
+      Bates2013, DelBen2012, DelBen2013, DelBen2015, DelBen2015b, Rybkin2016, Wilhelm2016a, &
+      Wilhelm2016b, Wilhelm2017, Wilhelm2018, Stein2022, Stein2024, Bussy2023
+   USE cp_eri_mme_interface, ONLY: create_eri_mme_section
+   USE cp_output_handling, ONLY: add_last_numeric, &
+                                 cp_print_key_section_create, &
+                                 debug_print_level, &
+                                 high_print_level, &
+                                 low_print_level, &
+                                 medium_print_level, &
+                                 silent_print_level
+   USE cp_units, ONLY: cp_unit_to_cp2k
+   USE input_constants, ONLY: &
+      bse_fulldiag, bse_iterdiag, bse_tda, bse_abba, bse_both, &
+      bse_screening_w0, bse_screening_tdhf, bse_screening_rpa, bse_screening_alpha, &
+      bse_iter_both_cond, bse_iter_en_cond, bse_iter_res_cond, bse_singlet, &
+      bse_triplet, do_eri_gpw, do_eri_mme, do_eri_os, do_potential_coulomb, do_potential_id, &
+      do_potential_long, do_potential_mix_cl, do_potential_short, do_potential_truncated, &
+      do_potential_tshpsc, eri_default, gaussian, gw_no_print_exx, gw_pade_approx, gw_print_exx, &
+      gw_read_exx, gw_skip_for_regtest, gw_two_pole_model, kp_weights_W_auto, &
+      kp_weights_W_tailored, kp_weights_W_uniform, mp2_method_direct, mp2_method_gpw, &
+      mp2_method_none, numerical, ot_precond_full_all, ot_precond_full_kinetic, &
+      ot_precond_full_single, ot_precond_full_single_inverse, ot_precond_none, &
+      ot_precond_s_inverse, ri_default, ri_rpa_g0w0_crossing_bisection, &
+      ri_rpa_g0w0_crossing_newton, ri_rpa_g0w0_crossing_z_shot, soc_lda, soc_none, soc_pbe, &
+      wfc_mm_style_gemm, wfc_mm_style_syrk, z_solver_cg, z_solver_pople, z_solver_richardson, &
+      z_solver_sd, rpa_exchange_none, rpa_exchange_axk, rpa_exchange_sosex, G0W0, evGW0, evGW, &
+      sigma_none, sigma_PBE0_S1, sigma_PBE0_S2, sigma_PBE_S1, sigma_PBE_S2
+   USE input_cp2k_hfx, ONLY: create_hfx_section
+   USE input_cp2k_kpoints, ONLY: create_kpoint_set_section
+   USE input_keyword_types, ONLY: keyword_create, &
+                                  keyword_release, &
+                                  keyword_type
+   USE input_section_types, ONLY: section_add_keyword, &
+                                  section_add_subsection, &
+                                  section_create, &
+                                  section_release, &
+                                  section_type
+
+   USE input_val_types, ONLY: char_t, &
+                              integer_t, &
+                              logical_t, &
+                              real_t
+   USE kinds, ONLY: dp
+   USE string_utilities, ONLY: newline, &
+                               s2a
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -78,7 +86,8 @@ CONTAINS
                           "RI-MP2, RI-SOS-MP2, RI-RPA and GW (inside RI-RPA). ", &
                           n_keywords=4, n_subsections=7, repeats=.TRUE., &
                           citations=(/DelBen2012, DelBen2013, DelBen2015, DelBen2015b, Rybkin2016, &
-                                      Wilhelm2016a, Wilhelm2016b, Wilhelm2017, Wilhelm2018/))
+                                      Wilhelm2016a, Wilhelm2016b, Wilhelm2017, Wilhelm2018, Stein2022, &
+                                      Stein2024, Bussy2023/))
 
       NULLIFY (keyword, subsection)
 
@@ -276,7 +285,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="NUMBER_INTEGRATION_GROUPS", &
-                          description="Sets the number of integration groups of the communication scheme in RI-MP2."// &
+                          description="Sets the number of integration groups of the communication scheme in RI-MP2. "// &
                           "Integrals will be replicated such that each integration group has all integrals available. "// &
                           "Must be a divisor of the number of subgroups (see GROUP_SIZE keyword in the WF_CORRELATION "// &
                           "section. Smaller groups reduce the communication costs but increase the memory developments. "// &
@@ -418,7 +427,7 @@ CONTAINS
          description="Number of groups for the integration in the Laplace method. Each groups processes "// &
          "the same amount of quadrature points. It must be a divisor of the number of quadrature points and "// &
          "NUM_INTEG_GROUPS*GROUP_SIZE must be a divisor of the total number of processes. The default (-1) is automatic.", &
-         usage="SIZE_INTEG_GROUP 2", &
+         usage="NUM_INTEG_GROUPS 2", &
          default_i_val=-1)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -439,7 +448,8 @@ CONTAINS
       CALL section_create(section, __LOCATION__, name="CANONICAL_GRADIENTS", &
                           description="Parameters influencing gradient calculations of canonical RI methods. "// &
                           "Ignored if the IM_TIME section is set.", &
-                          n_keywords=3, n_subsections=1, repeats=.FALSE.)
+                          n_keywords=3, n_subsections=1, repeats=.FALSE., &
+                          citations=(/DelBen2015b, Rybkin2016, Stein2022, Stein2024/))
 
       NULLIFY (subsection, keyword)
       CALL create_cphf(subsection)
@@ -459,21 +469,10 @@ CONTAINS
          keyword, __LOCATION__, &
          name="FREE_HFX_BUFFER", &
          description="Free the buffer containing the 4 center integrals used in the Hartree-Fock exchange calculation. "// &
-         "This will be effective only for gradients calculations, since for the energy only "// &
-         "case, the buffers are released by default. (Right now debugging only).", &
+         "Ignored for energy-only calculations. May fail.", &
          usage="FREE_HFX_BUFFER", &
-         default_l_val=.TRUE., &
+         default_l_val=.FALSE., &
          lone_keyword_l_val=.TRUE.)
-      CALL section_add_keyword(section, keyword)
-      CALL keyword_release(keyword)
-
-      CALL keyword_create( &
-         keyword, __LOCATION__, &
-         name="USE_OLD_GRADIENT_CODE", &
-         description="Use the original RI-MP2 gradient code.", &
-         usage="USE_OLD_GRADIENT_CODE  T", &
-         lone_keyword_l_val=.TRUE., &
-         default_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -525,6 +524,23 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create( &
+         keyword, __LOCATION__, &
+         name="SIGMA_FUNCTIONAL", &
+         description="Determine parametrization for sigma-functional", &
+         usage="SIGMA_FUNCTIONAL PBE_S2", &
+         enum_c_vals=s2a("NONE", "PBE0_S1", "PBE0_S2", "PBE_S1", "PBE_S2"), &
+         enum_i_vals=(/sigma_none, sigma_PBE0_S1, sigma_PBE0_S2, sigma_PBE_S1, sigma_PBE_S2/), &
+         enum_desc=s2a("No sigma functional calculation", &
+                       "use parameters based on PBE0 with S1 set.", &
+                       "use parameters based on PBE0 with S2 set.", &
+                       "use parameters based on PBE with S1 set.", &
+                       "use parameters based on PBE with S2 set." &
+                       ), &
+         default_i_val=sigma_none)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       CALL keyword_create(keyword, __LOCATION__, name="QUADRATURE_POINTS", &
                           variants=(/"RPA_NUM_QUAD_POINTS"/), &
                           description="Number of quadrature points for the numerical integration in the RI-RPA method.", &
@@ -538,7 +554,7 @@ CONTAINS
                           "the same amount of quadrature points. It must be a divisor of the number of quadrature points and "// &
                           "NUM_INTEG_GROUPS*GROUP_SIZE must be a divisor of the total number of processes. "// &
                           "The default (-1) is automatic.", &
-                          usage="SIZE_INTEG_GROUP 2", &
+                          usage="NUM_INTEG_GROUPS 2", &
                           default_i_val=-1)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -569,21 +585,10 @@ CONTAINS
 
       CALL keyword_create( &
          keyword, __LOCATION__, &
-         name="RI_AXK", &
-         variants=(/"AXK"/), &
-         description="Decide whether to perform an RPA-AXK calculation.", &
-         usage="RI_AXK", &
-         default_l_val=.FALSE., &
-         lone_keyword_l_val=.TRUE.)
-      CALL section_add_keyword(section, keyword)
-      CALL keyword_release(keyword)
-
-      CALL keyword_create( &
-         keyword, __LOCATION__, &
          name="RSE", &
          variants=(/"SE"/), &
          description="Decide whether to add singles correction.", &
-         usage="RI_AXK", &
+         usage="RSE", &
          default_l_val=.FALSE., &
          lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -606,7 +611,7 @@ CONTAINS
       CALL keyword_create( &
          keyword, __LOCATION__, &
          name="SCALE_RPA", &
-         description="Scales RPA energy contributions (RPA, AXK).", &
+         description="Scales RPA energy contributions (RPA, exchange correction).", &
          usage="SCALE_RPA 1.0", &
          default_r_val=1.0_dp)
       CALL section_add_keyword(section, keyword)
@@ -631,8 +636,8 @@ CONTAINS
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
-      ! here we generate a RI_AXK subsection
-      CALL create_ri_axk(subsection)
+      ! here we the RPA exchange section
+      CALL create_rpa_exchange(subsection)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
@@ -642,20 +647,50 @@ CONTAINS
 !> \brief ...
 !> \param section ...
 ! **************************************************************************************************
-   SUBROUTINE create_ri_axk(section)
+   SUBROUTINE create_rpa_exchange(section)
       TYPE(section_type), POINTER                        :: section
 
-      !TYPE(section_type), POINTER                        :: subsection
+      TYPE(keyword_type), POINTER                        :: keyword
 
       CPASSERT(.NOT. ASSOCIATED(section))
-      CALL section_create(section, __LOCATION__, name="RI_AXK", &
-                          description="Parameters influencing the RI-RPA-AXK method", &
-                          n_keywords=0, n_subsections=0, repeats=.FALSE., &
-                          citations=(/Bates2013/))
+      CALL section_create(section, __LOCATION__, name="EXCHANGE_CORRECTION", &
+                          description="Parameters influencing exchange corrections to RPA. No gradients available.", &
+                          n_keywords=3, n_subsections=1, repeats=.FALSE.)
 
-      !NULLIFY (keyword, subsection)
+      NULLIFY (keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="_SECTION_PARAMETERS_", &
+                          description="Choose the kind of exchange correction.", &
+                          usage="&EXCHANGE_CORRECTION AXK", &
+                          enum_c_vals=s2a("NONE", "AXK", "SOSEX"), &
+                          enum_i_vals=(/rpa_exchange_none, rpa_exchange_axk, rpa_exchange_sosex/), &
+                          enum_desc=s2a("Apply no exchange correction.", &
+                                        "Apply Approximate eXchange Kernel (AXK) correction.", &
+                                        "Apply Second Order Screened eXchange (SOSEX) correction."), &
+                          default_i_val=rpa_exchange_none)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
 
-   END SUBROUTINE create_ri_axk
+      CALL keyword_create( &
+         keyword, __LOCATION__, &
+         name="BLOCK_SIZE", &
+         description="Choose the block size of the contraction step. Larger block sizes improve performance but "// &
+         "require more memory (quadratically!, number of stored elements: $o^2\cdot N_B^2$). "// &
+         "Nonpositive numbers turn off blocking.", &
+         usage="BLOCK_SIZE 1", &
+         default_i_val=1)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create( &
+         keyword, __LOCATION__, &
+         name="USE_HFX_IMPLEMENTATION", &
+         description="Use a HF-based implementation with RI_RPA%HF section. Recommended for large systems.", &
+         usage="USE_HFX_IMPLEMENTATION T", &
+         default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+   END SUBROUTINE create_rpa_exchange
 
 ! **************************************************************************************************
 !> \brief ...
@@ -669,7 +704,9 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="GW", &
-                          description="Parameters influencing the RI-G0W0 method", &
+                          description="Parameters influencing GW calculations on molecules, "// &
+                          "see also 'Electronic band structure from GW', "// &
+                          "https://manual.cp2k.org/trunk/methods/properties/bandstructure_gw.html.", &
                           n_keywords=24, n_subsections=1, repeats=.FALSE.)
 
       NULLIFY (keyword, subsection)
@@ -681,14 +718,32 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="SELF_CONSISTENCY", &
+                          description="Decide the level of self-consistency of eigenvalues "// &
+                          "(= quasiparticle energies = single-electron energies) in GW. "// &
+                          "Updates of Kohn-Sham orbitals (for example qsGW) are not implemented. "// &
+                          "For details which type of eigenvalue self-consistency might be good, "// &
+                          "please consult Golze, Dvorak, Rinke, Front. Chem. 2019.", &
+                          usage="SELF_CONSISTENCY evGW0", &
+                          enum_c_vals=s2a("G0W0", "evGW0", "evGW"), &
+                          enum_i_vals=(/G0W0, evGW0, evGW/), &
+                          enum_desc=s2a("Use DFT eigenvalues; not update.", &
+                                        "Update DFT eigenvalues in G, not in W.", &
+                                        "Update DFT eigenvalues in G and W."), &
+                          default_i_val=G0W0)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       CALL keyword_create(keyword, __LOCATION__, name="CORR_MOS_OCC", &
                           variants=(/"CORR_OCC"/), &
-                          description="Number of occupied MOs whose energies are corrected by RI-G0W0. "// &
+                          description="Number of occupied MOs whose energies are corrected in GW. "// &
                           "Counting beginning from HOMO, e.g. 3 corrected occ. MOs correspond "// &
                           "to correction of HOMO, HOMO-1 and HOMO-2. Numerical effort and "// &
                           "storage of RI-G0W0 increase linearly with this number. In case you "// &
-                          "want to correct all occ. MOs, insert a number larger than the number "// &
-                          "of occ. MOs.", &
+                          "want to correct all occ. MOs, insert either a negative number or "// &
+                          "a number larger than the number of occ. MOs. Invoking CORR_MOS_OCC -2 "// &
+                          "together with a BSE cutoff, sets a sufficiently large CORR_MOS_OCC "// &
+                          "for the given BSE cutoff deduced from DFT eigenvalues.", &
                           usage="CORR_OCC 3", &
                           default_i_val=10)
       CALL section_add_keyword(section, keyword)
@@ -696,12 +751,14 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="CORR_MOS_VIRT", &
                           variants=(/"CORR_VIRT"/), &
-                          description="Number of virtual MOs whose energies are corrected by RI-G0W0. "// &
+                          description="Number of virtual MOs whose energies are corrected by GW. "// &
                           "Counting beginning from LUMO, e.g. 3 corrected occ. MOs correspond "// &
                           "to correction of LUMO, LUMO+1 and LUMO+2. Numerical effort and "// &
                           "storage of RI-G0W0 increase linearly with this number. In case you "// &
-                          "want to correct all virt. MOs, insert a number larger than the number "// &
-                          "of virt. MOs.", &
+                          "want to correct all virt. MOs, insert either a negative number or "// &
+                          "a number larger than the number of virt. MOs. Invoking CORR_MOS_VIRT -2 "// &
+                          "together with a BSE cutoff, sets a sufficiently large CORR_MOS_VIRT "// &
+                          "for the given BSE cutoff deduced from DFT eigenvalues.", &
                           usage="CORR_VIRT 3", &
                           default_i_val=10)
       CALL section_add_keyword(section, keyword)
@@ -747,17 +804,34 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="HEDIN_SHIFT", &
+                          description="If true, use Hedin's shift in G0W0, evGW and evGW0 "// &
+                          "(aka scGW0). Details see in Li et al. JCTC 18, 7570 "// &
+                          "(2022), Figure 1. G0W0 with Hedin's shift should give "// &
+                          "similar GW eigenvalues as evGW0; at a lower "// &
+                          "computational cost.", &
+                          usage="HEDIN_SHIFT", &
+                          default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
       CALL keyword_create(keyword, __LOCATION__, name="EV_GW_ITER", &
-                          description="Maximum number of iterations for eigenvalue self-consistency cycle. The "// &
-                          "computational effort of GW scales linearly with this number. ", &
+                          description="Maximum number of iterations for eigenvalue "// &
+                          "self-consistency cycle. The computational effort of GW scales "// &
+                          "linearly with this number. In case of choosing "// &
+                          "GW_SELF_CONSISTENCY EVGW, the code sets EV_GW_ITER 10.", &
                           usage="EV_GW_ITER 3", &
                           default_i_val=1)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="SC_GW0_ITER", &
-                          description="Maximum number of iterations for GW0 self-consistency cycle. The "// &
-                          "computational effort of GW is not much affected by the number of scGW0 cycles. ", &
+                          description="Maximum number of iterations for GW0 "// &
+                          "self-consistency cycle. The computational effort "// &
+                          "of GW is not much affected by the number of scGW0 cycles. "// &
+                          "In case of choosing "// &
+                          "GW_SELF_CONSISTENCY EVGW0, the code sets SC_GW0_ITER 10.", &
                           usage="SC_GW0_ITER 3", &
                           default_i_val=1)
       CALL section_add_keyword(section, keyword)
@@ -768,7 +842,7 @@ CONTAINS
                           "If the G0W0 HOMO-LUMO gap differs by less than the "// &
                           "target accuracy during the iteration, the eigenvalue "// &
                           "self-consistency cycle stops. Unit: Hartree.", &
-                          usage="EPS_EV_SC_ITER 0.00005", &
+                          usage="EPS_ITER 0.00005", &
                           default_r_val=cp_unit_to_cp2k(value=0.00136_dp, unit_str="eV"), &
                           unit_str="eV")
 
@@ -808,7 +882,7 @@ CONTAINS
                           description="If true, print the self-energy for all levels for real energy "// &
                           "together with the straight line to see the quasiparticle energy as intersection. "// &
                           "In addition, prints the self-energy for imaginary frequencies together with the Pade fit.", &
-                          usage="SELF_ENERGY", &
+                          usage="PRINT_SELF_ENERGY", &
                           default_l_val=.FALSE., &
                           lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -846,16 +920,6 @@ CONTAINS
                           "Method is not recommended to use, use instead PERIODIC_LOW_SCALING which much "// &
                           "more accurate than the periodic correction.", &
                           usage="PERIODIC_CORRECTION", &
-                          default_l_val=.FALSE., &
-                          lone_keyword_l_val=.TRUE.)
-      CALL section_add_keyword(section, keyword)
-      CALL keyword_release(keyword)
-
-      CALL keyword_create(keyword, __LOCATION__, name="BSE", &
-                          description="If true, electronic excitation energies are computed from the Bethe-"// &
-                          "Salpeter equation on top of GW eigenvalues.  Parameter of BSE can be adjusted in "// &
-                          "the corresponding section.", &
-                          usage="BSE", &
                           default_l_val=.FALSE., &
                           lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -918,7 +982,7 @@ CONTAINS
                           description="Specify number of k-points for the k-point grid of the self-energy. Internally, a "// &
                           "Monkhorst-Pack grid is used. A dense k-point grid may be necessary to compute an accurate density "// &
                           "of state from GW. Large self-energy k-meshes do not cost much more computation time.", &
-                          usage="KPOINTS  nx  ny  nz", repeats=.TRUE., &
+                          usage="KPOINTS_SELF_ENERGY  nx  ny  nz", repeats=.TRUE., &
                           n_var=3, type_of_var=integer_t, default_i_vals=(/0, 0, 0/))
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -1044,12 +1108,12 @@ CONTAINS
       CALL section_release(print_key)
 
       CALL section_create(gw_dos_section, __LOCATION__, name="GW_DOS", &
-                          description="Section for printing the spectral funtion.", &
+                          description="Section for printing the spectral function.", &
                           n_keywords=6, n_subsections=0, repeats=.FALSE.)
 
       CALL keyword_create(keyword, __LOCATION__, name="LOWER_BOUND", &
                           description="Lower bound for GW-DOS in eV.", &
-                          usage="GW_DOS_LOWER_BOUND -20.0", &
+                          usage="LOWER_BOUND -20.0", &
                           default_r_val=cp_unit_to_cp2k(value=-20.0_dp, unit_str="eV"), &
                           unit_str="eV")
       CALL section_add_keyword(gw_dos_section, keyword)
@@ -1057,7 +1121,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="UPPER_BOUND", &
                           description="Upper bound for GW-DOS in eV.", &
-                          usage="GW_DOS_UPPER_BOUND 5.0", &
+                          usage="UPPER_BOUND 5.0", &
                           default_r_val=cp_unit_to_cp2k(value=0.0_dp, unit_str="eV"), &
                           unit_str="eV")
       CALL section_add_keyword(gw_dos_section, keyword)
@@ -1065,9 +1129,23 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="STEP", &
                           description="Difference of two consecutive energy levels for GW-DOS.", &
-                          usage="GW_DOS_PRECISION 0.1", &
+                          usage="STEP 0.1", &
                           default_r_val=cp_unit_to_cp2k(value=0.0_dp, unit_str="eV"), &
                           unit_str="eV")
+      CALL section_add_keyword(gw_dos_section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="MIN_LEVEL_SPECTRAL", &
+                          description="Lowest energy level to print the self energy to files.", &
+                          usage="MIN_LEVEL_SPECTRAL 3", &
+                          default_i_val=1)
+      CALL section_add_keyword(gw_dos_section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="MAX_LEVEL_SPECTRAL", &
+                          description="Highest energy level to print the self energy to files.", &
+                          usage="MAX_LEVEL_SPECTRAL 6", &
+                          default_i_val=0)
       CALL section_add_keyword(gw_dos_section, keyword)
       CALL keyword_release(keyword)
 
@@ -1183,7 +1261,7 @@ CONTAINS
                           "in case a diffused basis is used for GW to converge the HOMO-LUMO gap. In this case, "// &
                           "numerical problems may occur due to diffuse functions in the basis. This keyword only works if "// &
                           "AUX_GW <basis set>  is specified in the kind section for every atom kind.", &
-                          usage="AUX_BAS_GW TRUE", &
+                          usage="DO_AUX_BAS_GW TRUE", &
                           default_l_val=.FALSE., &
                           lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -1214,40 +1292,435 @@ CONTAINS
       TYPE(section_type), POINTER                        :: section
 
       TYPE(keyword_type), POINTER                        :: keyword
+      TYPE(section_type), POINTER                        :: subsection
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="BSE", &
-                          description="Parameters influencing the Bethe-Salpeter calculations on "// &
-                          "top of GW eigenvalues.", &
-                          n_keywords=12, n_subsections=1, repeats=.FALSE.)
+                          description="Parameters for a calculation solving the Bethe-Salpeter equation "// &
+                          "(BSE) for electronic excitations. The full BSE "// &
+                          "$\left( \begin{array}{cc}A &  B\\B &  A\end{array} \right)$ "// &
+                          "$\left( \begin{array}{cc}\mathbf{X}^{(n)}\\\mathbf{Y}^{(n)}\end{array} \right) = "// &
+                          "\Omega^{(n)}\left(\begin{array}{cc}1&0\\0&-1\end{array}\right)$ "// &
+                          "$\left(\begin{array}{cc}\mathbf{X}^{(n)}\\\mathbf{Y}^{(n)}\end{array}\right)$ "// &
+                          "enables, for example, the computation of electronic excitation energies $\Omega^{(n)}$ "// &
+                          "as well as optical properties. The BSE can be solved by diagonalizing "// &
+                          "the full ABBA-matrix or by setting B=0, i.e. within the Tamm-Dancoff approximation (TDA). "// &
+                         "Preliminary reference: Eq. (35) in PRB 92, 045209 (2015); http://dx.doi.org/10.1103/PhysRevB.92.045209", &
+                          n_keywords=8, n_subsections=3, repeats=.FALSE.)
 
       NULLIFY (keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="NUM_Z_VECTORS", &
-                          description="Number Z vectors used in the subspace iterations. This is a convergence "// &
-                          "parameter: Increasing NUM_Z_VECTORS should keep the result constant in case of convergence,.", &
-                          usage="NUM_Z_VECTORS 50", &
-                          default_i_val=20)
+      CALL keyword_create(keyword, __LOCATION__, name="_SECTION_PARAMETERS_", &
+                          description="Activates BSE calculations.", &
+                          usage="&BSE .TRUE.", &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="THRESHOLD_MIN_TRANS", &
-                          variants=(/"EPS"/), &
+      CALL keyword_create(keyword, __LOCATION__, name="SPIN_CONFIG", &
+                          description="Choose between calculation of singlet or triplet excitation (cf. given Reference above).", &
+                          usage="SPIN_CONFIG TRIPLET", &
+                          enum_c_vals=s2a("SINGLET", "TRIPLET"), &
+                          enum_i_vals=(/bse_singlet, bse_triplet/), &
+                          enum_desc=s2a("Computes singlet excitations.", &
+                                        "Computes triplet excitations."), &
+                          default_i_val=bse_singlet)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="BSE_DIAG_METHOD", &
+                          description="Method for BSE calculations. "// &
+                          "Choose between full or iterative diagonalization.", &
+                          usage="BSE_DIAG_METHOD FULLDIAG", &
+                          enum_c_vals=s2a("FULLDIAG", "ITERDIAG"), &
+                          enum_i_vals=(/bse_fulldiag, bse_iterdiag/), &
+                          enum_desc=s2a("Fully diagonalizes the BSE matrices within the chosen level of approximation.", &
+                                        "Iterative diagonalization has not been implemented yet."), &
+                          default_i_val=bse_fulldiag)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="TDA", &
+                          description="Level of approximation applied to BSE calculations. "// &
+                          "Choose between Tamm Dancoff approximation (TDA) and/or diagonalization of the full ABBA-matrix.", &
+                          usage="TDA ON", &
+                          enum_c_vals=s2a("ON", "OFF", "TDA+ABBA"), &
+                          enum_i_vals=(/bse_tda, bse_abba, bse_both/), &
+                          enum_desc=s2a("The TDA is applied, i.e. B=0.", &
+                                        "The ABBA-matrix is diagonalized, i.e. the TDA is not applied.", &
+                                        "The BSE is solved within the TDA (B=0) as well as for the full ABBA-matrix."), &
+                          default_i_val=bse_tda)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="ENERGY_CUTOFF_OCC", &
+                          description="Remove all orbitals with indices i,j from A_ia,jb and B_ia,jb with energy difference "// &
+                          "to HOMO level larger than the given energy cutoff, i.e. "// &
+               "$\varepsilon_i\in[\varepsilon_{i=\text{HOMO}}^{GW}-E_\text{cut}^\text{occ},\varepsilon_{i=\text{HOMO}}^{GW}]$. "// &
+                          "Can be used to accelerate runtime and reduce memory consumption.", &
+                          usage="ENERGY_CUTOFF_OCC 10.0", unit_str="eV", &
+                          type_of_var=real_t, default_r_val=-1.0_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="ENERGY_CUTOFF_EMPTY", &
+                          description="Remove all orbitals with indices a,b from A_ia,jb and B_ia,jb with energy difference "// &
+                          "to LUMO level larger than the given energy cutoff, i.e. "// &
+             "$\varepsilon_a\in[\varepsilon_{a=\text{LUMO}}^{GW},\varepsilon_{a=\text{LUMO}}^{GW}+E_\text{cut}^\text{empty}]$. "// &
+                          "Can be used to accelerate runtime and reduce memory consumption.", &
+                          usage="ENERGY_CUTOFF_EMPTY 10.0", unit_str="eV", &
+                          type_of_var=real_t, default_r_val=-1.0_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="BSE_DEBUG_PRINT", &
+                          description="Activates debug print statements in the BSE calculation.", &
+                          usage="BSE_DEBUG_PRINT .TRUE.", &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="NUM_PRINT_EXC", &
+                          description="Number of printed excitation levels with respective "// &
+                          "energies and oscillator strengths. Does not affect computation time.", &
+                          usage="NUM_PRINT_EXC 25", &
+                          default_i_val=25)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="NUM_PRINT_EXC_DESCR", &
+                          description="Number of excitation levels for which the exciton "// &
+                          "descriptors are computed. Negative or too large "// &
+                          "NUM_PRINT_EXC_DESCR defaults to NUM_PRINT_EXC.", &
+                          usage="NUM_PRINT_EXC_DESCR 5", &
+                          default_i_val=0)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="PRINT_DIRECTIONAL_EXC_DESCR", &
+                          description="Activates printing of exciton descriptors per direction.", &
+                          usage="PRINT_DIRECTIONAL_EXC_DESCR .TRUE.", &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="EPS_X", &
+                          description="Threshold for printing contributions of singleparticle "// &
+                          "transitions, i.e. elements of the eigenvectors $X_{ia}^{(n)}$ and $Y_{ia}^{(n)}$.", &
+                          usage="EPS_X 0.1", &
+                          type_of_var=real_t, default_r_val=0.1_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="USE_KS_ENERGIES", &
+                          description="Uses KS energies instead of GW quasiparticle energies.", &
+                          usage="USE_KS_ENERGIES .TRUE.", &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      NULLIFY (subsection)
+      CALL create_bse_screening_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      NULLIFY (subsection)
+      CALL create_bse_iterat_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      NULLIFY (subsection)
+      CALL create_bse_spectrum_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      NULLIFY (subsection)
+      CALL create_bse_nto_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+   END SUBROUTINE
+
+   SUBROUTINE create_bse_screening_section(section)
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(keyword_type), POINTER                        :: keyword
+
+      CPASSERT(.NOT. ASSOCIATED(section))
+
+      CALL section_create(section, __LOCATION__, name="SCREENING_IN_W", &
+                          description="Screening $\epsilon$ applied to $W(\omega=0)=\epsilon^{-1}(\omega=0) v $ "// &
+                          "in the BSE calculation. Besides default BSE, i.e. $W_0$ (screening with DFT energies), "// &
+                          "a fixed $\alpha = \epsilon^{-1}(\omega)$ can be applied, which is similar to the mixing "// &
+                          "parameter for hybrid functionals in LR-TDDFT. In addition, the keywords TDHF "// &
+                          "(no screening - $\alpha = 1$) and RPA (infinite screening - $\alpha = 0$) can be applied.", &
+                          n_keywords=2, n_subsections=0, repeats=.FALSE.)
+
+      NULLIFY (keyword)
+
+      CALL keyword_create( &
+         keyword, __LOCATION__, name="_SECTION_PARAMETERS_", &
+         description="Shortcut for the most common functional combinations.", &
+         usage="&xc_functional BLYP", &
+         enum_c_vals=s2a("W_0", "TDHF", "RPA", "ALPHA"), &
+         enum_i_vals=(/bse_screening_w0, bse_screening_tdhf, bse_screening_rpa, bse_screening_alpha/), &
+         enum_desc=s2a("The Coulomb interaction is screened by applying DFT energies "// &
+                       "$\varepsilon_p^{DFT}$, which is typically used for GW-BSE and "// &
+                       "often labeled as $W_0$.", &
+                       "The Coulomb interaction is not screened, i.e. $W_{pq,rs}(\omega=0) "// &
+                       "\rightarrow v_{pq,rs}$ enters.", &
+                       "Infinite screening is applied, i.e. $W_{pq,rs}(\omega=0) \rightarrow 0$.", &
+                       "Arbitrary screening parameter. Specify within section."), &
+         default_i_val=bse_screening_w0, &
+         lone_keyword_i_val=bse_screening_w0)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="ALPHA", &
+                          description="Screening parameter similar to the mixing in hybrid functionals used in TDDFT. "// &
+                          "$\alpha$ mimicks the screening $\epsilon^{-1}(\omega)$ and enforces $W = \alpha v$ "// &
+                          "in the BSE calculation.", &
+                          usage="ALPHA 0.25", &
+                          type_of_var=real_t, default_r_val=-1.00_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+   END SUBROUTINE create_bse_screening_section
+
+   SUBROUTINE create_bse_nto_section(print_key)
+      TYPE(section_type), POINTER                        :: print_key
+
+      TYPE(keyword_type), POINTER                        :: keyword
+
+      CPASSERT(.NOT. ASSOCIATED(print_key))
+
+      CALL cp_print_key_section_create(print_key, __LOCATION__, name="NTO_ANALYSIS", &
+                                description="Perform a natural transition orbital analysis, i.e. the transition density matrix "// &
+                            "$T^{(n)}=\left( \begin{array}{cc}0& {X}^{(n)}\\ \left({Y}^{(n)} \right)^T & 0\end{array} \right)$ "// &
+                                       "is decomposed into its singular values "// &
+                                       "$T^{(n)} = {U}^{(n)} {\Lambda^{(n)}} \left({V}^{(n)}\right)^T$ "// &
+                                       "in order to compute the NTO pairs "// &
+                   "$\phi_I^{(n)}(\mathbf{r}_e) = \sum_{p=1}^{N_b} \varphi_p(\mathbf{r}_e) V_{p,I}^{(n)}$ for the electron and "// &
+                            "$\chi_I^{(n)}(\mathbf{r}_h) = \sum_{q=1}^{N_b} \varphi_q(\mathbf{r}_h) U_{q,I}^{(n)}$ for the hole.", &
+                                       print_level=debug_print_level + 1, &  ! Corresponds to "off" as default behavior
+                                       filename="BSE-NTO_ANALYSIS")        ! All other print levels will trigger the analysis
+      ! cf. input/cp_output_handling.F:cp_print_key_section_create
+
+      NULLIFY (keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="EPS_NTO_EIGVAL", &
+                          description="Threshold for NTO eigenvalues, i.e. only "// &
+                          "${\left(\lambda_I^{(n)}\right)}^2$ > EPS_NTO_EIGVAL are considered.", &
+                          usage="EPS_NTO_EIGVAL 0.01", &
+                          n_var=1, &
+                          type_of_var=real_t, &
+                          default_r_val=0.01_dp)
+      CALL section_add_keyword(print_key, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="EPS_OSC_STR", &
+                          description="Threshold of oscillator strengths $f^{(n)}$ for an excitation level. "// &
+                          "In case, the excitation level n has a smaller oscillator strength, the "// &
+                          "NTOs for this excitation level are not printed.", &
+                          usage="EPS_OSC_STR 0.01", &
+                          n_var=1, &
+                          type_of_var=real_t, &
+                          default_r_val=-1.0_dp)
+      CALL section_add_keyword(print_key, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="NUM_PRINT_EXC_NTOS", &
+                          description="Number of excitation level $n$ up to which NTOs are printed. "// &
+                          "By default, this is set to NUM_PRINT_EXC. Negative or too large "// &
+                          "NUM_PRINT_EXC_NTOS defaults to NUM_PRINT_EXC.", &
+                          usage="NUM_PRINT_EXC_NTOS 5", &
+                          n_var=1, &
+                          type_of_var=integer_t, &
+                          default_i_val=-1)
+      CALL section_add_keyword(print_key, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="STATE_LIST", &
+                          description="Specifies a list of excitation levels $n$ for which NTOs are printed. "// &
+                          "Overrides NUM_PRINT_EXC_NTOS.", &
+                          usage="STATE_LIST {integer} {integer} .. {integer}", &
+                          n_var=-1, type_of_var=integer_t)
+      CALL section_add_keyword(print_key, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="CUBE_FILES", &
+                          description="Print NTOs on Cube Files", &
+                          usage="CUBE_FILES {logical}", repeats=.FALSE., n_var=1, &
+                          default_l_val=.TRUE., lone_keyword_l_val=.TRUE., type_of_var=logical_t)
+      CALL section_add_keyword(print_key, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="STRIDE", &
+                          description="The stride (X,Y,Z) used to write the cube file "// &
+                          "(larger values result in smaller cube files). Provide 3 numbers (for X,Y,Z) or"// &
+                          " 1 number valid for all components.", &
+                          usage="STRIDE 2 2 2", n_var=-1, default_i_vals=(/2, 2, 2/), type_of_var=integer_t)
+      CALL section_add_keyword(print_key, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="APPEND", &
+                          description="append the cube files when they already exist", &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(print_key, keyword)
+      CALL keyword_release(keyword)
+
+   END SUBROUTINE create_bse_nto_section
+
+   SUBROUTINE create_bse_spectrum_section(section)
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(keyword_type), POINTER                        :: keyword
+
+      CPASSERT(.NOT. ASSOCIATED(section))
+      CALL section_create(section, __LOCATION__, name="BSE_SPECTRUM", &
+                          description="Parameters influencing the output of the optical absorption spectrum, i.e. "// &
+                          "the dynamical dipole polarizability tensor $\alpha_{\mu,\mu'}(\omega)$ "// &
+                          "($\mu,\mu'\in\{x,y,z\}$), obtained from a BSE calculation, which is defined as "// &
+                          "$ \alpha_{\mu,\mu'}(\omega) = \sum_n \frac{2 E^{(n)} d^{(n)}_{\mu} d^{(n)}_{\mu'}} "// &
+                          "{(\omega+i\eta)^2-\left(\Omega^{(n)}\right)^2} $. "// &
+                          "The printed file will contain the specified frequency range $\omega$ and the "// &
+                          "corresponding imaginary part of the average $\bar{\alpha}(\omega)=\frac{1}{3}\mathrm{Tr} "// &
+                          "\left[ \alpha_{\mu,\mu'}(\omega)\right]$ as well as of the elements of $\alpha_{\mu,\mu'}(\omega)$.", &
+                          n_keywords=9, n_subsections=0, repeats=.FALSE.)
+
+      NULLIFY (keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="_SECTION_PARAMETERS_", &
+                          description="Activates printing of optical absorption spectrum from the BSE calculation.", &
+                          usage="&BSE .TRUE.", &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="FREQUENCY_STEP_SIZE", &
+                          description="Step size of frequencies for the optical absorption spectrum.", &
+                          usage="FREQUENCY_STEP_SIZE 0.1", unit_str="eV", &
+                          type_of_var=real_t, &
+                          default_r_val=cp_unit_to_cp2k(value=0.1_dp, unit_str="eV"))
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="FREQUENCY_STARTING_POINT", &
+                          description="First frequency to print in the optical absorption spectrum.", &
+                          usage="FREQUENCY_STARTING_POINT 0", unit_str="eV", &
+                          type_of_var=real_t, default_r_val=0.0_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="FREQUENCY_END_POINT", &
+                          description="Last frequency to print in the optical absorption spectrum.", &
+                          usage="FREQUENCY_END_POINT 0", unit_str="eV", &
+                          type_of_var=real_t, &
+                          default_r_val=cp_unit_to_cp2k(value=100.0_dp, unit_str="eV"))
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="ETA_LIST", &
+                          description="List of broadening of the peaks in the optical absorption spectrum.", &
+                          usage="ETA_LIST 0.01 ...", unit_str="eV", &
+                          default_r_vals=(/cp_unit_to_cp2k(value=0.01_dp, unit_str="eV")/), &
+                          type_of_var=real_t, n_var=-1)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+   END SUBROUTINE
+
+! **************************************************************************************************
+!> \brief ...
+!> \param section ...
+! **************************************************************************************************
+   SUBROUTINE create_bse_iterat_section(section)
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(keyword_type), POINTER                        :: keyword
+
+      CPASSERT(.NOT. ASSOCIATED(section))
+      CALL section_create(section, __LOCATION__, name="BSE_ITERAT", &
+                          description="Parameters influencing the iterative Bethe-Salpeter calculation. "// &
+                          "The iterative solver has not been fully implemented yet.", &
+                          n_keywords=9, n_subsections=0, repeats=.FALSE.)
+
+      NULLIFY (keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="DAVIDSON_ABORT_COND", &
+                          description="Desired abortion condition for Davidson solver", &
+                          usage="DAVIDSON_ABORT_COND OR", &
+                          enum_c_vals=s2a("EN", "RES", "OR"), &
+                          enum_i_vals=(/bse_iter_en_cond, bse_iter_res_cond, bse_iter_both_cond/), &
+                          enum_desc=s2a("Uses energy threshold for successfully exiting solver.", &
+                                        "Uses residual threshold for successfully exiting solver.", &
+                                        "Uses either energy or residual threshold for successfully exiting solver."), &
+                          default_i_val=bse_iter_en_cond)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="NUM_EXC_EN", &
+                          description="Number of lowest excitation energies to be computed.", &
+                          usage="NUM_EXC_EN 3", &
+                          default_i_val=3)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="NUM_ADD_START_Z_SPACE", &
+                          description="Determines the initial dimension of the subspace as "// &
+                          "dim = (NUM_EXC_EN+NUM_ADD_START_Z_SPACE)", &
+                          usage="NUM_ADD_START_Z_SPACE 1", &
+                          default_i_val=0)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="FAC_MAX_Z_SPACE", &
+                          description="Factor to determine maximum dimension of the Davidson subspace. "// &
+                          "dimension = (NUM_EXC_EN+NUM_ADD_START_Z_SPACE)*FAC_MAX_Z_SPACE", &
+                          usage="FAC_MAX_Z_SPACE 5", &
+                          default_i_val=5)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="NUM_NEW_T", &
+                          description="Number of new t vectors added. "// &
+                          "Must be smaller/equals (NUM_EXC_EN+NUM_ADD_START_Z_SPACE)", &
+                          usage="NUM_NEW_T 4", &
+                          default_i_val=1)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="EPS_RES", &
                           description="Threshold for stopping the iteration for computing the transition energies. "// &
-                          "If the lowest excitation changes by less than THRESHOLD_MIN_TRANS (in eV), the ieration"// &
+                          "If the residuals inside the Davidson space change by less than EPS_RES (in eV), the iteration "// &
                           "stops.", &
-                          usage="THRESHOLD_MIN_TRANS 0.001", &
-                          default_r_val=0.001_dp)
+                          usage="EPS_RES 0.001", unit_str="eV", &
+                          type_of_var=real_t, default_r_val=0.001_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="MAX_ITER", &
+      CALL keyword_create(keyword, __LOCATION__, name="EPS_EXC_EN", &
+                          description="Threshold for stopping the iteration for computing the transition energies. "// &
+                          "If the desired excitation energies change by less than EPS_EXC_EN (in eV), the iteration "// &
+                          "stops.", &
+                          usage="EPS_EXC_EN 0.001", unit_str="eV", &
+                          type_of_var=real_t, default_r_val=0.001_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="NUM_DAVIDSON_ITER", &
                           description="Maximum number of iterations for determining the transition energies.", &
-                          usage="MAX_ITER 200", &
-                          default_i_val=200)
+                          usage="NUM_DAVIDSON_ITER 100", &
+                          default_i_val=100)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="Z_SPACE_ENERGY_CUTOFF", &
+                          description="Cutoff (in eV) for maximal energy difference entering the A matrix. "// &
+                          "Per default and for negative values, there is no cutoff applied.", &
+                          usage="Z_SPACE_ENERGY_CUTOFF 60", unit_str="eV", &
+                          type_of_var=real_t, default_r_val=-1.0_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
    END SUBROUTINE
 
 ! **************************************************************************************************
@@ -1271,7 +1744,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="PRINT_IC_LIST", &
                           description="If true, the image charge correction values are printed in a list, "// &
                           "such that it can be used as input for a subsequent evGW calculation.", &
-                          usage="PRINT_IC_VALUES", &
+                          usage="PRINT_IC_LIST .TRUE.", &
                           default_l_val=.FALSE., &
                           lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -1302,7 +1775,8 @@ CONTAINS
          description="Cubic scaling RI-RPA, GW and Laplace-SOS-MP2 method using the imaginary time formalism. "// &
          "EPS_GRID in WFC_GPW section controls accuracy / req. memory for 3-center integrals. "// &
          "SORT_BASIS EXP should be specified in DFT section.", &
-         n_keywords=12, n_subsections=2, repeats=.FALSE.)
+         n_keywords=12, n_subsections=2, repeats=.FALSE., &
+         citations=(/Wilhelm2016b, Wilhelm2018, Bussy2023/))
 
       NULLIFY (keyword)
       CALL keyword_create(keyword, __LOCATION__, name="_SECTION_PARAMETERS_", &
@@ -1332,7 +1806,7 @@ CONTAINS
 
       CALL keyword_create( &
          keyword, __LOCATION__, name="EPS_FILTER", &
-         description="Determines a threshold for the DBCSR based multiply."// &
+         description="Determines a threshold for the DBCSR based multiply. "// &
          "Normally, this EPS_FILTER determines accuracy and timing of low-scaling RPA and GW calculations.", &
          usage="EPS_FILTER 1.0E-10 ", type_of_var=real_t, &
          default_r_val=1.0E-9_dp)
@@ -1437,7 +1911,7 @@ CONTAINS
          name="EPS_EIGVAL_S_GAMMA", &
          description="Parameter to reduce the expansion coefficients in RI for periodic GW. Removes all "// &
          "eigenvectors and eigenvalues of M_PQ(k=0) that are smaller than EPS_EIGVAL_S. ", &
-         usage="EPS_EIGVAL_S 1.0E-3", &
+         usage="EPS_EIGVAL_S_GAMMA 1.0E-3", &
          default_r_val=0.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -1516,7 +1990,7 @@ CONTAINS
          keyword, __LOCATION__, &
          name="K_MESH_G_FACTOR", &
          description="The k-mesh for the Green's function can be chosen to be larger than the k-mesh for "// &
-         "W (without much higher computational cost). The factor given here multiplies the mesh for W to obtain"// &
+         "W (without much higher computational cost). The factor given here multiplies the mesh for W to obtain "// &
          "the k-mesh for G. Example: factor 4, k-mesh for W: 4x4x1 -> k-mesh for G: 16x16x1 (z-dir. is "// &
          "non-periodic).", &
          default_i_val=1)
@@ -1574,7 +2048,7 @@ CONTAINS
 
       CALL keyword_create( &
          keyword, __LOCATION__, name="EPS_FILTER", &
-         description="Determines a threshold for the DBCSR based multiply (usually 10 times smaller than EPS_GRID)."// &
+         description="Determines a threshold for the DBCSR based multiply (usually 10 times smaller than EPS_GRID). "// &
          "Normally, this EPS_FILTER determines accuracy and timing of cubic-scaling RPA calculation.", &
          usage="EPS_FILTER 1.0E-10 ", type_of_var=real_t, &
          default_r_val=1.0E-9_dp)
@@ -1695,7 +2169,7 @@ CONTAINS
                           description="Use a Polak-Ribiere update of the search vector in CG instead of the Fletcher "// &
                           "Reeves update. Improves the convergence with modified step sizes. "// &
                           "Ignored with other methods than CG.", &
-                          usage="ENFORCE_DECREASE T", &
+                          usage="DO_POLAK_RIBIERE T", &
                           lone_keyword_l_val=.TRUE., &
                           default_l_val=.FALSE.)
       CALL section_add_keyword(section, keyword)
@@ -1730,7 +2204,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="EPS_CONV", &
                           description="Target accuracy for Z-vector euation solution.", &
-                          usage="EPS 1.e-6", default_r_val=1.e-6_dp)
+                          usage="EPS_CONV 1.e-6", default_r_val=1.e-6_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -1805,14 +2279,17 @@ CONTAINS
                        do_potential_mix_cl, &
                        do_potential_id/), &
          enum_desc=s2a("Coulomb potential: 1/r", &
-                       "TShPSC:<ul><li>1/x - s/Rc for x &le; Rc</li>"// &
-                       "<li>(1 - s)/Rc - (x - Rc)/Rc^2 + (x - Rc)^2/Rc^3 - "// &
-                       "(2*n^2 - 7*n + 9 - 4*s)*(x - Rc)^3/(Rc^4*(n^2 - 2*n + 1)*(n - 1)) + "// &
-                       "(6-3*s - 4*n + n^2)*(x - Rc)^4/(Rc^5*(n^4 - 4*n^3 + 6*n^2 - 4*n + 1)) "// &
-                       "for Rc &lt; x &le; n*Rc (4th order polynomial)</li>"// &
-                       "<li>0 for x &gt; n*Rc</li></ul>", &
-                       "Longrange Coulomb potential: erf(w*r)/r)", &
-                       "Shortrange Coulomb potential: erfc(w*r)/r", &
+                       "| Range | TShPSC |"//newline// &
+                       "| ----- | ------ |"//newline// &
+                       "| $ x \leq R_c $ | $ 1/x - s/R_c $ |"//newline// &
+                       "| $ R_c < x \leq nR_c $ | "// &
+                       "$ (1 - s)/R_c - (x - R_c)/R_c^2 + (x - R_c)^2/R_c^3 - "// &
+                       "(2n^2 - 7n + 9 - 4s)(x - R_c)^3/(R_c^4(n^2 - 2n + 1)(n - 1)) + "// &
+                       "(6-3s - 4n + n^2)(x - R_c)^4/(R_c^5(n^4 - 4n^3 + 6n^2 - 4n + 1)) $ "// &
+                       "(4th order polynomial) | "//newline// &
+                       "| $ x > nR_c $ | $ 0 $ | "//newline, &
+                       "Longrange Coulomb potential: $ \operatorname{erf}(wr)/r $", &
+                       "Shortrange Coulomb potential: $ \operatorname{erfc}(wr)/r $", &
                        "Truncated Coulomb potential", &
                        "Mixed Coulomb/Longrange Coulomb potential", &
                        "Delta potential"), &
@@ -1854,9 +2331,9 @@ CONTAINS
       CALL keyword_create( &
          keyword, __LOCATION__, &
          name="SCALE_COULOMB", &
-         description="Scaling factor of (truncated) Coulomb potential in mixed (truncated) Coulomb/Longrange potential."// &
+         description="Scaling factor of (truncated) Coulomb potential in mixed (truncated) Coulomb/Longrange potential. "// &
          "Only valid when mixed potential is requested.", &
-         usage="OMEGA 0.5", type_of_var=real_t, &
+         usage="SCALE_COULOMB 0.5", type_of_var=real_t, &
          default_r_val=1.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -1864,9 +2341,9 @@ CONTAINS
       CALL keyword_create( &
          keyword, __LOCATION__, &
          name="SCALE_LONGRANGE", &
-         description="Scaling factor of longrange Coulomb potential in mixed (truncated) Coulomb/Longrange potential."// &
+         description="Scaling factor of longrange Coulomb potential in mixed (truncated) Coulomb/Longrange potential. "// &
          "Only valid when mixed potential is requested.", &
-         usage="OMEGA 0.5", type_of_var=real_t, &
+         usage="SCALE_LONGRANGE 0.5", type_of_var=real_t, &
          default_r_val=1.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -1885,7 +2362,7 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="RI", &
-                          description="Parameters influencing resolution of the identity (RI) that is"// &
+                          description="Parameters influencing resolution of the identity (RI) that is "// &
                           "used in RI-MP2, RI-RPA, RI-SOS-MP2 and GW (inside RI-RPA).", &
                           n_keywords=6, n_subsections=2, repeats=.FALSE.)
 
@@ -1903,7 +2380,7 @@ CONTAINS
          keyword, __LOCATION__, &
          name="ROW_BLOCK", &
          variants=(/"ROW_BLOCK_SIZE"/), &
-         description="Size of the row block used in the SCALAPACK block cyclic data distribution."// &
+         description="Size of the row block used in the SCALAPACK block cyclic data distribution. "// &
          "Default is (ROW_BLOCK=-1) is automatic. "// &
          "A proper choice can speedup the parallel matrix multiplication in the case of RI-RPA and RI-SOS-MP2-Laplace.", &
          usage="ROW_BLOCK 512", &
@@ -1915,7 +2392,7 @@ CONTAINS
          keyword, __LOCATION__, &
          name="COL_BLOCK", &
          variants=(/"COL_BLOCK_SIZE"/), &
-         description="Size of the column block used in the SCALAPACK block cyclic data distribution."// &
+         description="Size of the column block used in the SCALAPACK block cyclic data distribution. "// &
          "Default is (COL_BLOCK=-1) is automatic. "// &
          "A proper choice can speedup the parallel matrix multiplication in the case of RI-RPA and RI-SOS-MP2-Laplace.", &
          usage="COL_BLOCK 512", &
@@ -1941,6 +2418,13 @@ CONTAINS
                           "potential is employed.", &
                           usage="DO_SVD  .TRUE.", &
                           default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="EPS_SVD", &
+                          description="Determines the upper bound of eigenvectors to be removed during the SVD (see DO_SVD).", &
+                          usage="EPS_SVD  1E-5", &
+                          default_r_val=0.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -1987,7 +2471,7 @@ CONTAINS
       NULLIFY (keyword)
       CALL keyword_create(keyword, __LOCATION__, name="ERI_METHOD", &
                           description="Method for calculating periodic electron repulsion integrals "// &
-                          "(MME method is faster but experimental, forces not yet implemented)."// &
+                          "(MME method is faster but experimental, forces not yet implemented). "// &
                           "Obara-Saika (OS) for the Coulomb operator can only be used for non-periodic calculations.", &
                           usage="ERI_METHOD MME", &
                           enum_c_vals=s2a("DEFAULT", "GPW", "MME", "OS"), &

@@ -46,10 +46,14 @@ case "$with_libvdwxc" in
       tar -xzf libvdwxc-${libvdwxc_ver}.tar.gz
       cd libvdwxc-${libvdwxc_ver}
 
+      if [ "$(uname -s)" = "Darwin" ]; then
+        LDFLAGS="${LDFLAGS} -ld_classic"
+      fi
+
       if [ "${MPI_MODE}" = "no" ]; then
         # compile libvdwxc without mpi support since fftw (or mkl) do not have mpi support activated
         ./configure \
-          CC="${CC}" \
+          CC="${CC}" CFLAGS="${CFLAGS} -fpermissive" \
           FC="${FC}" \
           FFTW3_INCLUDES="${FFTW3_INCLUDES}" \
           FFTW3_LIBS="$(resolve_string "${FFTW3_LIBS}" "MPI")" \
@@ -59,7 +63,7 @@ case "$with_libvdwxc" in
           > configure.log 2>&1 || tail -n ${LOG_LINES} configure.log
       else
         ./configure \
-          CC="${MPICC}" \
+          CC="${MPICC}" CFLAGS="${CFLAGS} -fpermissive" \
           FC="${MPIFC}" \
           FFTW3_INCLUDES="${FFTW3_INCLUDES}" \
           FFTW3_LIBS="$(resolve_string "${FFTW3_LIBS}" "MPI")" \
@@ -106,15 +110,16 @@ prepend_path CMAKE_PREFIX_PATH "$pkg_install_dir"
 EOF
   fi
   cat << EOF >> "${BUILDDIR}/setup_libvdwxc"
-export LIBVDWXC_CFLAGS="-I$pkg_install_dir/include ${LIBVDWXC_CFLAGS}"
+export LIBVDWXC_VER="${libvdwxc_ver}"
+export LIBVDWXC_CFLAGS="-I${pkg_install_dir}/include ${LIBVDWXC_CFLAGS}"
 export LIBVDWXC_LDFLAGS="${LIBVDWXC_LDFLAGS}"
 export LIBVDWXC_LIBS="${LIBVDWXC_LIBS}"
 export CP_DFLAGS="\${CP_DFLAGS} IF_MPI(-D__LIBVDWXC|)"
 export CP_CFLAGS="\${CP_CFLAGS} IF_MPI(${LIBVDWXC_CFLAGS}|)"
 export CP_LDFLAGS="\${CP_LDFLAGS} IF_MPI(${LIBVDWXC_LDFLAGS}|)"
 export CP_LIBS="IF_MPI(${LIBVDWXC_LIBS}|) \${CP_LIBS}"
-export PKG_CONFIG_PATH="$pkg_install_dir/lib/pkgconfig:$PKG_CONFIG_PATH"
-export VDWXC_ROOT="$pkg_install_dir"
+export PKG_CONFIG_PATH="${pkg_install_dir}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+export VDWXC_ROOT="${pkg_install_dir}"
 EOF
   cat "${BUILDDIR}/setup_libvdwxc" >> $SETUPFILE
 fi

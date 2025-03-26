@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -341,8 +341,8 @@ CONTAINS
                   END IF
                ELSE
                   CALL cp_warn(__LOCATION__, &
-                               "Thermostat for Shells has been defined but for the selected ensemble the adiabatic  "// &
-                               " shell model has not been implemented! Ignoring thermostat input.")
+                               "Thermostat for Shells has been defined but for the selected ensemble the adiabatic "// &
+                               "shell model has not been implemented! Ignoring thermostat input.")
                END IF
             END IF
          ELSE IF (explicit_shell) THEN

@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -11,7 +11,7 @@
 #include "../offload/offload_runtime.h"
 #if defined(__OFFLOAD) && !defined(__NO_OFFLOAD_DBM)
 
-#include "dbm_multiply_internal.h"
+#include "dbm_internal.h"
 #include "dbm_shard.h"
 
 /*******************************************************************************
@@ -44,7 +44,7 @@ typedef struct {
 } dbm_multiply_gpu_context_t;
 
 /*******************************************************************************
- * \brief Internal routine for intializing the gpu backend.
+ * \brief Internal routine for initializing the gpu backend.
  * \author Ole Schuett
  ******************************************************************************/
 void dbm_multiply_gpu_start(const int max_batch_size, const int nshards,

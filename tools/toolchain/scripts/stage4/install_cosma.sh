@@ -10,8 +10,8 @@ cosma_ver="2.6.6"
 cosma_sha256="1604be101e77192fbcc5551236bc87888d336e402f5409bbdd9dea900401cc37"
 costa_ver="2.2.2"
 costa_sha256="e87bc37aad14ac0c5922237be5d5390145c9ac6aef0350ed17d86cb2d994e67c"
-tiled_mm_ver="2.2"
-tiled_mm_sha256="6d0b49c9588ece744166822fd44a7bc5bec3dc666b836de8bf4bf1a7bb675aac"
+tiled_mm_ver="2.3.1"
+tiled_mm_sha256="68914a483e62f796b790ea428210b1d5ef5943d6289e53d1aa62f56a20fbccc8"
 
 source "${SCRIPT_DIR}"/common_vars.sh
 source "${SCRIPT_DIR}"/tool_kit.sh
@@ -262,6 +262,7 @@ prepend_path CMAKE_PREFIX_PATH "$pkg_install_dir"
 EOF
   fi
   cat << EOF >> "${BUILDDIR}/setup_cosma"
+export COSMA_VER="${cosma_ver}"
 export COSMA_CFLAGS="${COSMA_CFLAGS}"
 export COSMA_LDFLAGS="${COSMA_LDFLAGS}"
 export COSMA_CUDA_LDFLAGS="${COSMA_CUDA_LDFLAGS}"
@@ -273,7 +274,6 @@ export COSMA_LIBS="${COSMA_LIBS}"
 export COSMA_ROOT="$pkg_install_dir"
 export COSMA_INCLUDE_DIR="$pkg_install_dir/include"
 export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:${COSMA_LIBDIR}/pkgconfig"
-export COSMA_VERSION=${cosma_ver}
 export CP_LIBS="IF_MPI(${COSMA_LIBS}|) \${CP_LIBS}"
 EOF
   cat "${BUILDDIR}/setup_cosma" >> $SETUPFILE

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -110,8 +110,8 @@ CONTAINS
          END IF
          IF (simpar%temp_tol > 0.0_dp) THEN
             CALL cp_warn(__LOCATION__, &
-                         "Control of the global temperature by rescaling of the velocity"// &
-                         "is not consistent with the presence of different thermal regions."// &
+                         "Control of the global temperature by rescaling of the velocity "// &
+                         "is not consistent with the presence of different thermal regions. "// &
                          "The temperature of different regions is rescaled separatedly.")
          END IF
          CALL section_vals_val_get(thermal_region_section, "FORCE_RESCALING", &
@@ -180,7 +180,7 @@ CONTAINS
                      END IF
                   ELSE
                      CALL cp_warn(__LOCATION__, &
-                                  "You provided NOISY_GAMMA_REGION but the Langevin Ensamble is not selected"// &
+                                  "You provided NOISY_GAMMA_REGION but the Langevin Ensamble is not selected "// &
                                   "NOISY_GAMMA_REGION will be ignored and its value discarded!")
                   END IF
                ELSE

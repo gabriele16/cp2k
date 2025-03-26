@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -328,7 +328,7 @@ CONTAINS
                              "In particular a molecule defined from index ("//cp_to_string(first)//") to ("// &
                              cp_to_string(last)//") contains other molecules, not connected! "// &
                              "Too late at this stage everything should be already ordered! "// &
-                             "If you have not yet employed the REORDERING keyword, please do so."// &
+                             "If you have not yet employed the REORDERING keyword, please do so. "// &
                              "It may help to fix this issue.")
             END IF
             istart = i
@@ -346,7 +346,7 @@ CONTAINS
                        "In particular a molecule defined from index ("//cp_to_string(first)//") to ("// &
                        cp_to_string(last)//") contains other molecules, not connected! "// &
                        "Too late at this stage everything should be already ordered! "// &
-                       "If you have not yet employed the REORDERING keyword, please do so."// &
+                       "If you have not yet employed the REORDERING keyword, please do so. "// &
                        "It may help to fix this issue.")
       END IF
       DEALLOCATE (wrk1)
@@ -662,7 +662,7 @@ CONTAINS
                " The THRESHOLD to select possible bonds is larger than the max. bondlength", &
                " used to build the neighbors lists. Increase the BONDLENGTH_MAX parameter"
             WRITE (output_unit, '(T2,"GENERATE|",2(A,F11.6),A)') &
-               " Present THRESHOLD (", my_maxrad*bondparm_factor, " ). "// &
+               " Present THRESHOLD (", my_maxrad*bondparm_factor, " )."// &
                " Present BONDLENGTH_MAX (", r_max(1, 1), " )"
          END IF
          CPABORT("")
@@ -852,7 +852,7 @@ CONTAINS
                   " The THRESHOLD to select possible bonds is bigger than the MAX bondlength", &
                   " used to build the neighbors lists. Increase the BONDLENGTH_MAX patameter"
                WRITE (output_unit, '(T2,"GENERATE|",2(A,F11.6),A)') &
-                  " Present THRESHOLD (", my_maxrad*bondparm_factor, " ). "// &
+                  " Present THRESHOLD (", my_maxrad*bondparm_factor, " )."// &
                   " Present BONDLENGTH_MAX (", r_max(1, 1), " )"
             END IF
             CPABORT("")

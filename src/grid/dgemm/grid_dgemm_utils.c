@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -211,7 +211,7 @@ void extract_sub_grid(const int *lower_corner, const int *upper_corner,
 #ifdef __LIBXSMM
       LIBXSMM_PRAGMA_SIMD
 #else
-      //#pragma omp simd linear(dst, src) simdlen(8)
+      // #pragma omp simd linear(dst, src) simdlen(8)
       GRID_PRAGMA_SIMD((dst, src), 8)
 #endif
       for (int x = 0; x < sizex; x++) {
@@ -247,7 +247,7 @@ void add_sub_grid(const int *lower_corner, const int *upper_corner,
 #ifdef __LIBXSMM
       LIBXSMM_PRAGMA_SIMD
 #else
-      //#pragma omp simd linear(dst, src) simdlen(8)
+      // #pragma omp simd linear(dst, src) simdlen(8)
       GRID_PRAGMA_SIMD((dst, src), 8)
 #endif
       for (int x = 0; x < sizex; x++) {
@@ -258,7 +258,7 @@ void add_sub_grid(const int *lower_corner, const int *upper_corner,
       src += subgrid->ld_;
     }
 
-    //#pragma omp simd linear(dst, src) simdlen(8)
+    // #pragma omp simd linear(dst, src) simdlen(8)
     GRID_PRAGMA_SIMD((dst, src), 8)
     for (int x = 0; x < sizex; x++) {
       dst[x] += src[x];

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -87,7 +87,7 @@ CONTAINS
             WRITE (scr, '(A)') "  Atom     |    Charge | Spin diff charge"
          END SELECT
          total_charge = 0.0_dp
-         WRITE (scr, '(A)') ""
+         !WRITE (scr, '(A)') ""
          DO iatom = 1, natom
             CALL get_atomic_kind(atomic_kind=particle_set(iatom)%atomic_kind, &
                                  element_symbol=element_symbol, kind_number=ikind)

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -17,8 +17,7 @@ MODULE hirshfeld_types
    USE input_constants,                 ONLY: radius_default,&
                                               shape_function_gaussian
    USE kinds,                           ONLY: dp
-   USE pw_types,                        ONLY: pw_release,&
-                                              pw_type
+   USE pw_types,                        ONLY: pw_r3d_rs_type
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -35,24 +34,24 @@ MODULE hirshfeld_types
 !> \author JGH
 ! **************************************************************************************************
    TYPE hirshfeld_type
-      LOGICAL                       :: iterative, &
-                                       use_bohr
-      INTEGER                       :: shape_function_type
-      INTEGER                       :: ref_charge, &
-                                       radius_type
+      LOGICAL                       :: iterative = .FALSE., &
+                                       use_bohr = .FALSE.
+      INTEGER                       :: shape_function_type = -1
+      INTEGER                       :: ref_charge = -1, &
+                                       radius_type = -1
       TYPE(shape_fn), DIMENSION(:), &
-         POINTER                    :: kind_shape_fn
+         POINTER                    :: kind_shape_fn => NULL()
       REAL(KIND=dp), DIMENSION(:), &
-         POINTER                    :: charges
-      TYPE(pw_type), POINTER      :: fnorm
+         POINTER                    :: charges => NULL()
+      TYPE(pw_r3d_rs_type), POINTER      :: fnorm => NULL()
    END TYPE hirshfeld_type
 
    TYPE shape_fn
-      INTEGER                       :: numexp
+      INTEGER                       :: numexp = -1
       REAL(KIND=dp), DIMENSION(:), &
-         POINTER                    :: zet
+         POINTER                    :: zet => NULL()
       REAL(KIND=dp), DIMENSION(:), &
-         POINTER                    :: coef
+         POINTER                    :: coef => NULL()
    END TYPE shape_fn
 
 ! **************************************************************************************************
@@ -112,7 +111,7 @@ CONTAINS
          END IF
 
          IF (ASSOCIATED(hirshfeld_env%fnorm)) THEN
-            CALL pw_release(hirshfeld_env%fnorm)
+            CALL hirshfeld_env%fnorm%release()
             DEALLOCATE (hirshfeld_env%fnorm)
          END IF
 
@@ -139,7 +138,7 @@ CONTAINS
       INTEGER, INTENT(OUT), OPTIONAL                     :: shape_function_type
       LOGICAL, INTENT(OUT), OPTIONAL                     :: iterative
       INTEGER, INTENT(OUT), OPTIONAL                     :: ref_charge
-      TYPE(pw_type), OPTIONAL, POINTER                   :: fnorm
+      TYPE(pw_r3d_rs_type), OPTIONAL, POINTER            :: fnorm
       INTEGER, INTENT(OUT), OPTIONAL                     :: radius_type
       LOGICAL, INTENT(OUT), OPTIONAL                     :: use_bohr
 
@@ -183,7 +182,7 @@ CONTAINS
       INTEGER, INTENT(IN), OPTIONAL                      :: shape_function_type
       LOGICAL, INTENT(IN), OPTIONAL                      :: iterative
       INTEGER, INTENT(IN), OPTIONAL                      :: ref_charge
-      TYPE(pw_type), OPTIONAL, POINTER                   :: fnorm
+      TYPE(pw_r3d_rs_type), OPTIONAL, POINTER            :: fnorm
       INTEGER, INTENT(IN), OPTIONAL                      :: radius_type
       LOGICAL, INTENT(IN), OPTIONAL                      :: use_bohr
 

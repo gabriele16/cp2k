@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -12,15 +12,15 @@
 MODULE pao_main
    USE bibliography,                    ONLY: Schuett2018,&
                                               cite_reference
-   USE cp_external_control,             ONLY: external_control
-   USE dbcsr_api,                       ONLY: dbcsr_add,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_add,&
                                               dbcsr_copy,&
                                               dbcsr_create,&
                                               dbcsr_p_type,&
                                               dbcsr_release,&
-                                              dbcsr_reserve_diag_blocks,&
                                               dbcsr_set,&
                                               dbcsr_type
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_reserve_diag_blocks
+   USE cp_external_control,             ONLY: external_control
    USE dm_ls_scf_types,                 ONLY: ls_mstruct_type,&
                                               ls_scf_env_type
    USE input_section_types,             ONLY: section_vals_get_subs_vals,&
@@ -43,6 +43,7 @@ MODULE pao_main
         pao_print_atom_info, pao_store_P, pao_test_convergence
    USE pao_ml,                          ONLY: pao_ml_init,&
                                               pao_ml_predict
+   USE pao_model,                       ONLY: pao_model_predict
    USE pao_optimizer,                   ONLY: pao_opt_finalize,&
                                               pao_opt_init,&
                                               pao_opt_new_dir
@@ -146,12 +147,16 @@ CONTAINS
             CALL pao_read_restart(pao, qs_env)
          ELSE IF (SIZE(pao%ml_training_set) > 0) THEN
             CALL pao_ml_predict(pao, qs_env)
+         ELSE IF (ALLOCATED(pao%models)) THEN
+            CALL pao_model_predict(pao, qs_env)
          ELSE
             CALL pao_param_initial_guess(pao, qs_env)
          END IF
          pao%matrix_X_ready = .TRUE.
       ELSE IF (SIZE(pao%ml_training_set) > 0) THEN
          CALL pao_ml_predict(pao, qs_env)
+      ELSE IF (ALLOCATED(pao%models)) THEN
+         CALL pao_model_predict(pao, qs_env)
       ELSE
          IF (pao%iw > 0) WRITE (pao%iw, *) "PAO| reusing matrix_X from previous optimization"
       END IF
@@ -286,7 +291,7 @@ CONTAINS
          ! perform line-search step
          CALL linesearch_step(pao%linesearch, energy=energy, slope=pao%norm_G**2)
 
-         IF (pao%linesearch%step_size < 1e-10_dp) CPABORT("PAO gradient is wrong.")
+         IF (pao%linesearch%step_size < 1e-9_dp) CPABORT("PAO gradient is wrong.")
 
          CALL dbcsr_copy(pao%matrix_X, pao%matrix_X_orig) !restore X
          CALL dbcsr_add(pao%matrix_X, pao%matrix_D, 1.0_dp, pao%linesearch%step_size)

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -370,7 +370,7 @@ CONTAINS
                ALLOCATE (rc(3, nshell), at_name_c(nshell), at_index_c(nshell))
                CALL cp_warn(__LOCATION__, &
                             "Overwriting cores coordinates. "// &
-                            " Active coordinates READ from &CORE_COORD section. ")
+                            "Active coordinates READ from &CORE_COORD section. ")
                CALL section_vals_list_get(core_coord_section, "_DEFAULT_KEYWORD_", list=list)
                DO ishell = 1, nshell
                   ! we use only the first default_string_length characters of each line
@@ -451,7 +451,7 @@ CONTAINS
                dab = SQRT(rab(1)*rab(1) + rab(2)*rab(2) + rab(3)*rab(3))
                IF (shell%max_dist > 0.0_dp .AND. shell%max_dist < dab) THEN
                   IF (output_unit > 0) THEN
-                     WRITE (output_unit, *) "WARNING : shell and core for atom ", at_index(ishell), " seem to be too distant. "
+                     WRITE (output_unit, *) "WARNING : shell and core for atom ", at_index(ishell), " seem to be too distant."
                   END IF
                END IF
 

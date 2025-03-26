@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -20,14 +20,7 @@ MODULE hfx_exx
                                               admm_type,&
                                               get_admm_env
    USE cp_control_types,                ONLY: dft_control_type
-   USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
-                                              copy_fm_to_dbcsr,&
-                                              dbcsr_allocate_matrix_set,&
-                                              dbcsr_deallocate_matrix_set
-   USE cp_log_handling,                 ONLY: cp_get_default_logger,&
-                                              cp_logger_get_default_unit_nr,&
-                                              cp_logger_type
-   USE dbcsr_api,                       ONLY: dbcsr_add,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_add,&
                                               dbcsr_copy,&
                                               dbcsr_create,&
                                               dbcsr_p_type,&
@@ -35,6 +28,13 @@ MODULE hfx_exx
                                               dbcsr_scale,&
                                               dbcsr_set,&
                                               dbcsr_type
+   USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
+                                              copy_fm_to_dbcsr,&
+                                              dbcsr_allocate_matrix_set,&
+                                              dbcsr_deallocate_matrix_set
+   USE cp_log_handling,                 ONLY: cp_get_default_logger,&
+                                              cp_logger_get_default_unit_nr,&
+                                              cp_logger_type
    USE hfx_admm_utils,                  ONLY: create_admm_xc_section,&
                                               tddft_hfx_matrix
    USE hfx_derivatives,                 ONLY: derivatives_four_center
@@ -58,9 +58,8 @@ MODULE hfx_exx
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_type
    USE pw_methods,                      ONLY: pw_scale
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_r3d_rs_type
    USE qs_energy_types,                 ONLY: qs_energy_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -346,8 +345,8 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: vh_rspace
-      TYPE(pw_type), DIMENSION(:), POINTER               :: vadmm_rspace, vtau_rspace, vxc_rspace
+      TYPE(pw_r3d_rs_type)                               :: vh_rspace
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: vadmm_rspace, vtau_rspace, vxc_rspace
       TYPE(qs_rho_type), POINTER                         :: rho, rho_aux_fit
       TYPE(section_vals_type), POINTER                   :: hfx_section
       TYPE(task_list_type), POINTER                      :: task_list_aux_fit
@@ -474,11 +473,11 @@ CONTAINS
 
       ! Clean
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, vh_rspace)
+      CALL auxbas_pw_pool%give_back_pw(vh_rspace)
       DO ispin = 1, nspins
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_rspace(ispin))
+         CALL auxbas_pw_pool%give_back_pw(vxc_rspace(ispin))
          IF (ASSOCIATED(vtau_rspace)) THEN
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, vtau_rspace(ispin))
+            CALL auxbas_pw_pool%give_back_pw(vtau_rspace(ispin))
          END IF
       END DO
       DEALLOCATE (vxc_rspace)
@@ -487,7 +486,7 @@ CONTAINS
       IF (dft_control%do_admm) THEN
          DO ispin = 1, nspins
             IF (ASSOCIATED(vadmm_rspace)) THEN
-               CALL pw_pool_give_back_pw(auxbas_pw_pool, vadmm_rspace(ispin))
+               CALL auxbas_pw_pool%give_back_pw(vadmm_rspace(ispin))
             END IF
          END DO
          IF (ASSOCIATED(vadmm_rspace)) DEALLOCATE (vadmm_rspace)
@@ -640,7 +639,7 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), DIMENSION(:), POINTER               :: v_dummy, v_rspace, v_rspace_aux_fit
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: v_dummy, v_rspace, v_rspace_aux_fit
       TYPE(qs_rho_type), POINTER                         :: rho, rho_aux_fit
       TYPE(section_vals_type), POINTER                   :: xc_section_aux, xc_section_primary
       TYPE(virial_type), POINTER                         :: virial
@@ -680,13 +679,13 @@ CONTAINS
 
       IF (ASSOCIATED(v_rspace_aux_fit)) THEN
          DO ispin = 1, nspins
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, v_rspace_aux_fit(ispin))
+            CALL auxbas_pw_pool%give_back_pw(v_rspace_aux_fit(ispin))
          END DO
          DEALLOCATE (v_rspace_aux_fit)
       END IF
       IF (ASSOCIATED(v_dummy)) THEN
          DO ispin = 1, nspins
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, v_dummy(ispin))
+            CALL auxbas_pw_pool%give_back_pw(v_dummy(ispin))
          END DO
          DEALLOCATE (v_dummy)
       END IF
@@ -712,13 +711,13 @@ CONTAINS
 
       IF (ASSOCIATED(v_rspace)) THEN
          DO ispin = 1, nspins
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, v_rspace(ispin))
+            CALL auxbas_pw_pool%give_back_pw(v_rspace(ispin))
          END DO
          DEALLOCATE (v_rspace)
       END IF
       IF (ASSOCIATED(v_dummy)) THEN
          DO ispin = 1, nspins
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, v_dummy(ispin))
+            CALL auxbas_pw_pool%give_back_pw(v_dummy(ispin))
          END DO
          DEALLOCATE (v_dummy)
       END IF

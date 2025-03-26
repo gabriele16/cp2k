@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -1332,7 +1332,7 @@ CONTAINS
                k = const_mol(i)
                IF (k > SIZE(molecule_kind_set)) &
                   CALL cp_abort(__LOCATION__, &
-                                "A constraint has been specified providing the molecule index. But the "// &
+                                "A constraint has been specified providing the molecule index. But the"// &
                                 " molecule index ("//cp_to_string(k)//") is out of range of the possible"// &
                                 " molecule kinds ("//cp_to_string(SIZE(molecule_kind_set))//").")
                isize = SIZE(constr_x_mol(k)%constr)

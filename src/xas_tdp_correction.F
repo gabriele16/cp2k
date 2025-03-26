@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -25,6 +25,10 @@ MODULE xas_tdp_correction
                                               cp_cfm_type,&
                                               cp_fm_to_cfm
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_copy, dbcsr_create, dbcsr_distribution_get, dbcsr_distribution_new, &
+        dbcsr_distribution_release, dbcsr_distribution_type, dbcsr_get_info, dbcsr_p_type, &
+        dbcsr_release, dbcsr_type
    USE cp_dbcsr_operations,             ONLY: copy_fm_to_dbcsr,&
                                               cp_dbcsr_sm_fm_multiply,&
                                               dbcsr_deallocate_matrix_set
@@ -41,10 +45,6 @@ MODULE xas_tdp_correction
                                               cp_fm_to_fm_submat,&
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_logger_get_default_io_unit
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_copy, dbcsr_create, dbcsr_distribution_get, dbcsr_distribution_new, &
-        dbcsr_distribution_release, dbcsr_distribution_type, dbcsr_get_info, dbcsr_p_type, &
-        dbcsr_release, dbcsr_type
    USE dbt_api,                         ONLY: &
         dbt_contract, dbt_copy, dbt_copy_matrix_to_tensor, dbt_create, dbt_default_distvec, &
         dbt_destroy, dbt_distribution_destroy, dbt_distribution_new, dbt_distribution_type, &
@@ -60,7 +60,7 @@ MODULE xas_tdp_correction
                                               section_vals_type
    USE kinds,                           ONLY: dp
    USE machine,                         ONLY: m_flush
-   USE mathlib,                         ONLY: complex_diag
+   USE mathlib,                         ONLY: diag_complex
    USE message_passing,                 ONLY: mp_para_env_type
    USE parallel_gemm_api,               ONLY: parallel_gemm
    USE physcon,                         ONLY: evolt
@@ -1875,7 +1875,7 @@ CONTAINS
       ! And diagonalize. Since tiny matrix (6x6), diagonalize locally
       ALLOCATE (evals(ndo_so), evecs(ndo_so, ndo_so), hami(ndo_so, ndo_so))
       CALL cp_cfm_get_submatrix(hami_cfm, hami)
-      CALL complex_diag(hami, evecs, evals)
+      CALL diag_complex(hami, evecs, evals)
 
       !The SOC corrected KS eigenvalues
       ALLOCATE (tmp_shifts(ndo_mo, 2))

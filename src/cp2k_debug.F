@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -90,8 +90,8 @@ CONTAINS
       LOGICAL, ALLOCATABLE, DIMENSION(:, :)              :: do_dof_atom_coor
       LOGICAL, DIMENSION(3)                              :: do_dof_dipole
       REAL(KIND=dp)                                      :: amplitude, dd, de, derr, difference, dx, &
-                                                            eps_no_error_check, maxerr, std_value, &
-                                                            sum_of_differences
+                                                            eps_no_error_check, errmax, maxerr, &
+                                                            std_value, sum_of_differences
       REAL(KIND=dp), DIMENSION(2)                        :: numer_energy
       REAL(KIND=dp), DIMENSION(3)                        :: dipole_moment, dipole_numer, err, &
                                                             my_maxerr, poldir
@@ -384,6 +384,7 @@ CONTAINS
                "DEBUG|======================== BEGIN OF SUMMARY ===============================", &
                "DEBUG| Atom  Coordinate   f(numerical)   f(analytical)   Difference   Error [%]"
             sum_of_differences = 0.0_dp
+            errmax = 0.0_dp
             DO ip = 1, np
                err(1:3) = 0.0_dp
                DO k = 1, 3
@@ -391,6 +392,7 @@ CONTAINS
                      difference = analyt_forces(ip, k) - numer_forces(ip, k)
                      IF (ABS(analyt_forces(ip, k)) >= eps_no_error_check) THEN
                         err(k) = 100_dp*(numer_forces(ip, k) - analyt_forces(ip, k))/analyt_forces(ip, k)
+                        errmax = MAX(errmax, ABS(err(k)))
                         WRITE (UNIT=iw, FMT="(T2,A,I5,T19,A1,T26,F14.8,T42,F14.8,T57,F12.8,T71,F10.2)") &
                            "DEBUG|", ip, ACHAR(119 + k), numer_forces(ip, k), analyt_forces(ip, k), difference, err(k)
                      ELSE
@@ -401,8 +403,8 @@ CONTAINS
                   END IF
                END DO
             END DO
-            WRITE (UNIT=iw, FMT="(T2,A,T57,F12.8)") &
-               "DEBUG| Sum of differences:", sum_of_differences
+            WRITE (UNIT=iw, FMT="(T2,A,T57,F12.8,T71,F10.2)") &
+               "DEBUG| Sum of differences:", sum_of_differences, errmax
             WRITE (UNIT=iw, FMT="(T2,A)") &
                "DEBUG|======================== END OF SUMMARY ================================="
          END IF
@@ -453,17 +455,17 @@ CONTAINS
                      dd = dipole_moment(k) - dipole_numer(k)
                      IF (ABS(dipole_moment(k)) > eps_no_error_check) THEN
                         derr = 100._dp*dd/dipole_moment(k)
-                        WRITE (UNIT=iw, FMT="(T13,A1,T21,F16.8,T38,F16.8,T56,G12.3,T72,F9.3)") &
-                           ACHAR(119 + k), dipole_numer(k), dipole_moment(k), dd, derr
+                        WRITE (UNIT=iw, FMT="(T2,A,T13,A1,T21,F16.8,T38,F16.8,T56,G12.3,T72,F9.3)") &
+                           "DEBUG|", ACHAR(119 + k), dipole_numer(k), dipole_moment(k), dd, derr
                      ELSE
                         derr = 0.0_dp
-                        WRITE (UNIT=iw, FMT="(T13,A1,T21,F16.8,T38,F16.8,T56,G12.3)") &
-                           ACHAR(119 + k), dipole_numer(k), dipole_moment(k), dd
+                        WRITE (UNIT=iw, FMT="(T2,A,T13,A1,T21,F16.8,T38,F16.8,T56,G12.3)") &
+                           "DEBUG|", ACHAR(119 + k), dipole_numer(k), dipole_moment(k), dd
                      END IF
                      err(k) = derr
                   ELSE
-                     WRITE (UNIT=iw, FMT="(T13,A1,T21,A16,T38,F16.8)") &
-                        ACHAR(119 + k), "         skipped", dipole_moment(k)
+                     WRITE (UNIT=iw, FMT="(T2,A,T13,A1,T21,A16,T38,F16.8)") &
+                        "DEBUG|", ACHAR(119 + k), "         skipped", dipole_moment(k)
                   END IF
                END DO
                WRITE (UNIT=iw, FMT="((T2,A))") &
@@ -528,11 +530,11 @@ CONTAINS
                      dd = polar_analytic(k, j) - polar_numeric(k, j)
                      IF (ABS(polar_analytic(k, j)) > eps_no_error_check) THEN
                         derr = 100._dp*dd/polar_analytic(k, j)
-                        WRITE (UNIT=iw, FMT="(T12,A1,A1,T21,F16.8,T38,F16.8,T56,G12.3,T72,F9.3)") &
-                           ACHAR(119 + k), ACHAR(119 + j), polar_numeric(k, j), polar_analytic(k, j), dd, derr
+                        WRITE (UNIT=iw, FMT="(T2,A,T12,A1,A1,T21,F16.8,T38,F16.8,T56,G12.3,T72,F9.3)") &
+                           "DEBUG|", ACHAR(119 + k), ACHAR(119 + j), polar_numeric(k, j), polar_analytic(k, j), dd, derr
                      ELSE
-                        WRITE (UNIT=iw, FMT="(T12,A1,A1,T21,F16.8,T38,F16.8,T56,G12.3)") &
-                           ACHAR(119 + k), ACHAR(119 + j), polar_numeric(k, j), polar_analytic(k, j), dd
+                        WRITE (UNIT=iw, FMT="(T2,A,T12,A1,A1,T21,F16.8,T38,F16.8,T56,G12.3)") &
+                           "DEBUG|", ACHAR(119 + k), ACHAR(119 + j), polar_numeric(k, j), polar_analytic(k, j), dd
                      END IF
                   END DO
                END DO

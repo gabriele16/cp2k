@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -12,56 +12,57 @@
 !> \author MI
 ! **************************************************************************************************
 MODULE input_cp2k_properties_dft
-
-   USE bibliography,                    ONLY: Futera2017,&
-                                              Iannuzzi2005,&
-                                              Kondov2007,&
-                                              Luber2014,&
-                                              Putrino2000,&
-                                              Putrino2002,&
-                                              Sebastiani2001,&
-                                              Weber2009
-   USE cp_output_handling,              ONLY: add_last_numeric,&
-                                              cp_print_key_section_create,&
-                                              debug_print_level,&
-                                              high_print_level,&
-                                              low_print_level,&
-                                              medium_print_level,&
-                                              silent_print_level
-   USE cp_units,                        ONLY: cp_unit_to_cp2k
-   USE input_constants,                 ONLY: &
-        current_gauge_atom, current_gauge_r, current_gauge_r_and_step_func, &
-        current_orb_center_atom, current_orb_center_box, current_orb_center_common, &
-        current_orb_center_wannier, do_et_ddapc, do_full_density, do_no_et, do_spin_density, &
-        gto_cartesian, gto_spherical, oe_gllb, oe_lb, oe_none, oe_saop, oe_shift, &
-        ot_precond_full_all, ot_precond_full_kinetic, ot_precond_full_single, &
-        ot_precond_full_single_inverse, ot_precond_none, ot_precond_s_inverse, scan_x, scan_xy, &
-        scan_xyz, scan_xz, scan_y, scan_yz, scan_z, tddfpt_dipole_berry, tddfpt_dipole_length, &
-        tddfpt_dipole_velocity, tddfpt_kernel_full, tddfpt_kernel_none, tddfpt_kernel_stda, &
-        use_mom_ref_coac, use_mom_ref_com, use_mom_ref_user, use_mom_ref_zero
-   USE input_cp2k_atprop,               ONLY: create_atprop_section
-   USE input_cp2k_dft,                  ONLY: create_ddapc_restraint_section,&
-                                              create_interp_section,&
-                                              create_lrigpw_section,&
-                                              create_mgrid_section
-   USE input_cp2k_loc,                  ONLY: create_localize_section
-   USE input_cp2k_resp,                 ONLY: create_resp_section
-   USE input_cp2k_xc,                   ONLY: create_xc_section
-   USE input_keyword_types,             ONLY: keyword_create,&
-                                              keyword_release,&
-                                              keyword_type
-   USE input_section_types,             ONLY: section_add_keyword,&
-                                              section_add_subsection,&
-                                              section_create,&
-                                              section_release,&
-                                              section_type
-   USE input_val_types,                 ONLY: char_t,&
-                                              integer_t,&
-                                              lchar_t,&
-                                              logical_t,&
-                                              real_t
-   USE kinds,                           ONLY: dp
-   USE string_utilities,                ONLY: s2a
+   USE bibliography, ONLY: Futera2017, &
+                           Iannuzzi2005, &
+                           Kondov2007, &
+                           Luber2014, &
+                           Putrino2000, &
+                           Putrino2002, &
+                           Sebastiani2001, &
+                           Weber2009
+   USE cp_output_handling, ONLY: add_last_numeric, &
+                                 cp_print_key_section_create, &
+                                 debug_print_level, &
+                                 high_print_level, &
+                                 low_print_level, &
+                                 medium_print_level, &
+                                 silent_print_level
+   USE cp_units, ONLY: cp_unit_to_cp2k
+   USE input_constants, ONLY: &
+      current_gauge_atom, current_gauge_r, current_gauge_r_and_step_func, &
+      current_orb_center_atom, current_orb_center_box, current_orb_center_common, &
+      current_orb_center_wannier, do_et_ddapc, do_full_density, do_no_et, do_spin_density, &
+      gto_cartesian, gto_spherical, int_ldos_none, int_ldos_x, int_ldos_y, int_ldos_z, oe_gllb, &
+      oe_lb, oe_none, oe_saop, oe_shift, ot_precond_full_all, ot_precond_full_kinetic, &
+      ot_precond_full_single, ot_precond_full_single_inverse, ot_precond_none, &
+      ot_precond_s_inverse, scan_x, scan_xy, scan_xyz, scan_xz, scan_y, scan_yz, scan_z, &
+      tddfpt_dipole_berry, tddfpt_dipole_length, tddfpt_dipole_velocity, tddfpt_kernel_full, &
+      tddfpt_kernel_none, tddfpt_kernel_stda, use_mom_ref_coac, use_mom_ref_com, &
+      use_mom_ref_user, use_mom_ref_zero
+   USE input_cp2k_atprop, ONLY: create_atprop_section
+   USE input_cp2k_dft, ONLY: create_interp_section, &
+                             create_mgrid_section
+   USE input_cp2k_qs, ONLY: create_ddapc_restraint_section, &
+                            create_lrigpw_section
+   USE input_cp2k_kpoints, ONLY: create_kpoint_set_section
+   USE input_cp2k_loc, ONLY: create_localize_section
+   USE input_cp2k_resp, ONLY: create_resp_section
+   USE input_cp2k_xc, ONLY: create_xc_section
+   USE input_keyword_types, ONLY: keyword_create, &
+                                  keyword_release, &
+                                  keyword_type
+   USE input_section_types, ONLY: section_add_keyword, &
+                                  section_add_subsection, &
+                                  section_create, &
+                                  section_release, &
+                                  section_type
+   USE input_val_types, ONLY: char_t, &
+                              integer_t, &
+                              lchar_t, &
+                              logical_t, &
+                              real_t
+   USE kinds, ONLY: dp
+   USE string_utilities, ONLY: s2a
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -92,7 +93,7 @@ CONTAINS
 
       NULLIFY (subsection, keyword)
 
-      CALL create_linres_section(subsection)
+      CALL create_linres_section(subsection, create_subsections=.TRUE.)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
@@ -109,7 +110,7 @@ CONTAINS
       CALL section_release(subsection)
 
       CALL cp_print_key_section_create(subsection, __LOCATION__, name="FIT_CHARGE", &
-                                       description="This section is used to print the density derived atomic point charges."// &
+                                       description="This section is used to print the density derived atomic point charges. "// &
                                        "The fit of the charges is controlled through the DENSITY_FITTING section", &
                                        print_level=high_print_level, filename="__STD_OUT__")
       CALL keyword_create(keyword, __LOCATION__, name="TYPE_OF_DENSITY", &
@@ -143,38 +144,58 @@ CONTAINS
 !>      a linear response calculation
 !>      Available properties : none
 !> \param section the section to create
+!> \param create_subsections indicates whether or not subsections should be created
+!> \param default_set_tdlr default parameters to be used if called from TDDFPT
 !> \author MI
 ! **************************************************************************************************
-   SUBROUTINE create_linres_section(section)
+   SUBROUTINE create_linres_section(section, create_subsections, default_set_tdlr)
       TYPE(section_type), POINTER                        :: section
+      LOGICAL, INTENT(in)                                :: create_subsections
+      LOGICAL, INTENT(IN), OPTIONAL                      :: default_set_tdlr
 
+      INTEGER                                            :: def_max_iter, def_precond
+      REAL(KIND=DP)                                      :: def_egap, def_eps, def_eps_filter
       TYPE(keyword_type), POINTER                        :: keyword
       TYPE(section_type), POINTER                        :: print_key, subsection
 
-      NULLIFY (keyword, subsection, print_key)
+      NULLIFY (keyword, print_key)
+
+      IF (PRESENT(default_set_tdlr)) THEN
+         def_egap = 0.02_dp
+         def_eps = 1.0e-10_dp
+         def_eps_filter = 1.0e-15_dp
+         def_max_iter = 100
+         def_precond = ot_precond_full_single_inverse
+      ELSE
+         def_egap = 0.2_dp
+         def_eps = 1.e-6_dp
+         def_eps_filter = 0.0_dp
+         def_max_iter = 50
+         def_precond = ot_precond_none
+      END IF
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="linres", &
                           description="The linear response is used to calculate one of the "// &
-                          " following properties: nmr, epr, raman, ... ", &
+                          "following properties: nmr, epr, raman, ... ", &
                           n_keywords=5, n_subsections=2, repeats=.FALSE., &
                           citations=(/Putrino2000/))
 
       CALL keyword_create(keyword, __LOCATION__, name="EPS", &
                           description="target accuracy for the convergence of the conjugate gradient.", &
-                          usage="EPS 1.e-6", default_r_val=1.e-6_dp)
+                          usage="EPS 1.e-6", default_r_val=def_eps)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="EPS_FILTER", &
                           description="Filter threshold for response density matrix.", &
-                          usage="EPS 1.e-8", default_r_val=0.0_dp)
+                          usage="EPS_FILTER 1.e-8", default_r_val=def_eps_filter)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="MAX_ITER", &
                           description="Maximum number of conjugate gradient iteration to be performed for one optimization.", &
-                          usage="MAX_ITER 200", default_i_val=50)
+                          usage="MAX_ITER 200", default_i_val=def_max_iter)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -190,7 +211,7 @@ CONTAINS
          "They differ in effectiveness, cost of construction, cost of application. "// &
          "Properly preconditioned minimization can be orders of magnitude faster than doing nothing.", &
          usage="PRECONDITIONER FULL_ALL", &
-         default_i_val=ot_precond_none, &
+         default_i_val=def_precond, &
          enum_c_vals=s2a("FULL_ALL", "FULL_SINGLE_INVERSE", "FULL_SINGLE", "FULL_KINETIC", "FULL_S_INVERSE", &
                          "NONE"), &
          enum_desc=s2a("Most effective state selective preconditioner based on diagonalization, "// &
@@ -213,7 +234,13 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="ENERGY_GAP", &
                           description="Energy gap estimate [a.u.] for preconditioning", &
                           usage="ENERGY_GAP 0.1", &
-                          default_r_val=0.2_dp)
+                          default_r_val=def_egap)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="EVERY_N_STEP", &
+                          description="Perform a linear response calculation every N-th step for MD run", &
+                          usage="EVERY_N_STEP 50", default_i_val=1)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -226,69 +253,74 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="WFN_RESTART_FILE_NAME", &
                           variants=(/"RESTART_FILE_NAME"/), &
-                          description="Root of the file names where to read the response functions from"// &
+                          description="Root of the file names where to read the response functions from "// &
                           "which to restart the calculation of the linear response", &
                           usage="WFN_RESTART_FILE_NAME <FILENAME>", &
                           type_of_var=lchar_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL create_localize_section(subsection)
-      CALL section_add_subsection(section, subsection)
-      CALL section_release(subsection)
+      IF (create_subsections) THEN
+         NULLIFY (subsection)
 
-      CALL create_current_section(subsection)
-      CALL section_add_subsection(section, subsection)
-      CALL section_release(subsection)
+         CALL create_localize_section(subsection)
+         CALL section_add_subsection(section, subsection)
+         CALL section_release(subsection)
 
-      CALL create_nmr_section(subsection)
-      CALL section_add_subsection(section, subsection)
-      CALL section_release(subsection)
+         CALL create_current_section(subsection)
+         CALL section_add_subsection(section, subsection)
+         CALL section_release(subsection)
 
-      CALL create_spin_spin_section(subsection)
-      CALL section_add_subsection(section, subsection)
-      CALL section_release(subsection)
+         CALL create_nmr_section(subsection)
+         CALL section_add_subsection(section, subsection)
+         CALL section_release(subsection)
 
-      CALL create_epr_section(subsection)
-      CALL section_add_subsection(section, subsection)
-      CALL section_release(subsection)
+         CALL create_spin_spin_section(subsection)
+         CALL section_add_subsection(section, subsection)
+         CALL section_release(subsection)
 
-      CALL create_polarizability_section(subsection)
-      CALL section_add_subsection(section, subsection)
-      CALL section_release(subsection)
+         CALL create_epr_section(subsection)
+         CALL section_add_subsection(section, subsection)
+         CALL section_release(subsection)
 
-      CALL create_dcdr_section(subsection)
-      CALL section_add_subsection(section, subsection)
-      CALL section_release(subsection)
+         CALL create_polarizability_section(subsection)
+         CALL section_add_subsection(section, subsection)
+         CALL section_release(subsection)
 
-      CALL create_vcd_section(subsection)
-      CALL section_add_subsection(section, subsection)
-      CALL section_release(subsection)
+         CALL create_dcdr_section(subsection)
+         CALL section_add_subsection(section, subsection)
+         CALL section_release(subsection)
 
-      CALL section_create(subsection, __LOCATION__, name="PRINT", &
-                          description="printing of information during the linear response calculation", &
-                          repeats=.FALSE.)
+         CALL create_vcd_section(subsection)
+         CALL section_add_subsection(section, subsection)
+         CALL section_release(subsection)
 
-      CALL cp_print_key_section_create( &
-         print_key, __LOCATION__, "program_run_info", &
-         description="Controls the printing of basic iteration information during the LINRES calculation", &
-         print_level=low_print_level, add_last=add_last_numeric, filename="__STD_OUT__")
-      CALL section_add_subsection(subsection, print_key)
-      CALL section_release(print_key)
+         CALL section_create(subsection, __LOCATION__, name="PRINT", &
+                             description="printing of information during the linear response calculation", &
+                             repeats=.FALSE.)
 
-      CALL cp_print_key_section_create(print_key, __LOCATION__, "RESTART", &
-                                       description="Controls the dumping of restart file of the response wavefunction."// &
-                                       "For each set of response functions, i.e. for each perturbation,"// &
-                                       "one different restart file is dumped. These restart files should be"// &
-                                       "employed only to restart the same type of LINRES calculation, "// &
-                                       "i.e. with the same perturbation.", &
-                                       print_level=low_print_level, common_iter_levels=3, each_iter_names=s2a("ITER"), &
-                                       add_last=add_last_numeric, each_iter_values=(/3/), filename="")
-      CALL section_add_subsection(subsection, print_key)
-      CALL section_release(print_key)
+         CALL cp_print_key_section_create( &
+            print_key, __LOCATION__, "program_run_info", &
+            description="Controls the printing of basic iteration information during the LINRES calculation", &
+            print_level=low_print_level, add_last=add_last_numeric, filename="__STD_OUT__")
+         CALL section_add_subsection(subsection, print_key)
+         CALL section_release(print_key)
 
-      CALL section_add_subsection(section, subsection)
-      CALL section_release(subsection)
+         CALL cp_print_key_section_create(print_key, __LOCATION__, "RESTART", &
+                                          description="Controls the dumping of restart file of the response wavefunction. "// &
+                                          "For each set of response functions, i.e. for each perturbation, "// &
+                                          "one different restart file is dumped. These restart files should be "// &
+                                          "employed only to restart the same type of LINRES calculation, "// &
+                                          "i.e. with the same perturbation.", &
+                                          print_level=low_print_level, common_iter_levels=3, each_iter_names=s2a("ITER"), &
+                                          add_last=add_last_numeric, each_iter_values=(/3/), filename="")
+         CALL section_add_subsection(subsection, print_key)
+         CALL section_release(print_key)
+
+         CALL section_add_subsection(section, subsection)
+         CALL section_release(subsection)
+
+      END IF
 
    END SUBROUTINE create_linres_section
 
@@ -326,7 +358,7 @@ CONTAINS
 
          CALL keyword_create(keyword, __LOCATION__, name="LIST_OF_ATOMS", &
                              description="Specifies a list of atoms.", &
-                             usage="LIST {integer} {integer} .. {integer}", repeats=.TRUE., &
+                             usage="LIST_OF_ATOMS {integer} {integer} .. {integer}", repeats=.TRUE., &
                              n_var=-1, type_of_var=integer_t)
          CALL section_add_keyword(section, keyword)
          CALL keyword_release(keyword)
@@ -372,6 +404,13 @@ CONTAINS
                              description="User-defined reference point of the velocity gauge factor.", &
                              usage="REFERENCE_POINT x y z", &
                              repeats=.FALSE., n_var=3, type_of_var=real_t, unit_str='bohr')
+         CALL section_add_keyword(section, keyword)
+         CALL keyword_release(keyword)
+
+         CALL keyword_create(keyword, __LOCATION__, name="Z_MATRIX_METHOD", &
+                             description="Use Z_matrix method to solve the response equation", &
+                             usage="Z_MATRIX_METHOD T", &
+                             default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
          CALL section_add_keyword(section, keyword)
          CALL keyword_release(keyword)
 
@@ -429,7 +468,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="LIST_OF_ATOMS", &
                           description="Specifies a list of atoms.", &
-                          usage="LIST {integer} {integer} .. {integer}", repeats=.TRUE., &
+                          usage="LIST_OF_ATOMS {integer} {integer} .. {integer}", repeats=.TRUE., &
                           n_var=-1, type_of_var=integer_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -481,7 +520,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="MAGNETIC_ORIGIN_REFERENCE", &
                           description="User-defined reference point of the magnetic dipole operator.", &
-                          usage="REFERENCE_POINT x y z", &
+                          usage="MAGNETIC_ORIGIN_REFERENCE x y z", &
                           repeats=.FALSE., n_var=3, type_of_var=real_t, unit_str='bohr')
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -504,7 +543,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="SPATIAL_ORIGIN_REFERENCE", &
                           description="User-defined reference point of the velocity gauge factor/spatial origin.", &
-                          usage="REFERENCE_POINT x y z", &
+                          usage="SPATIAL_ORIGIN_REFERENCE x y z", &
                           repeats=.FALSE., n_var=3, type_of_var=real_t, unit_str='bohr')
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -699,8 +738,8 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="CUBES_LIST", &
-                          description="Indexes of the states to be printed as cube files"// &
-                          "This keyword can be repeated several times"// &
+                          description="Indexes of the states to be printed as cube files "// &
+                          "This keyword can be repeated several times "// &
                           "(useful if you have to specify many indexes) (not working yet).", &
                           usage="CUBES_LIST 1 2", &
                           n_var=-1, type_of_var=integer_t, repeats=.TRUE.)
@@ -763,7 +802,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="NICS", &
-                          description="Calculate the chemical shift in a set of points  "// &
+                          description="Calculate the chemical shift in a set of points"// &
                           " given from an external file", usage="NICS", &
                           default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -818,8 +857,8 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="CUBES_LIST", &
-                          description="Indexes of the states to be printed as cube files"// &
-                          "This keyword can be repeated several times"// &
+                          description="Indexes of the states to be printed as cube files "// &
+                          "This keyword can be repeated several times "// &
                           "(useful if you have to specify many indexes).", &
                           usage="CUBES_LIST 1 2", &
                           n_var=-1, type_of_var=integer_t, repeats=.TRUE.)
@@ -854,7 +893,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="ATOMS_LIST", &
                           description="list of atoms for which the shift is printed into a file ", &
-                          usage="LIST_ATOMS 1 2", n_var=-1, &
+                          usage="ATOMS_LIST 1 2", n_var=-1, &
                           type_of_var=integer_t, repeats=.TRUE.)
       CALL section_add_keyword(print_key, keyword)
       CALL keyword_release(keyword)
@@ -953,7 +992,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="ATOMS_LIST", &
                           description="list of atoms for which the indirect spin-spin is printed into a file ", &
-                          usage="LIST_ATOMS 1 2", n_var=-1, &
+                          usage="ATOMS_LIST 1 2", n_var=-1, &
                           type_of_var=integer_t, repeats=.TRUE.)
       CALL section_add_keyword(print_key, keyword)
       CALL keyword_release(keyword)
@@ -1075,8 +1114,8 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="CUBES_LIST", &
-                          description="Indexes of the states to be printed as cube files"// &
-                          "This keyword can be repeated several times"// &
+                          description="Indexes of the states to be printed as cube files "// &
+                          "This keyword can be repeated several times "// &
                           "(useful if you have to specify many indexes).", &
                           usage="CUBES_LIST 1 2", &
                           n_var=-1, type_of_var=integer_t, repeats=.TRUE.)
@@ -1425,7 +1464,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="NLUMO", &
                           description="Number of unoccupied orbitals to consider. "// &
-                          " Default is to use all unoccupied orbitals (-1).", &
+                          "Default is to use all unoccupied orbitals (-1).", &
                           n_var=1, type_of_var=integer_t, &
                           default_i_val=-1)
       CALL section_add_keyword(section, keyword)
@@ -1433,7 +1472,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="NPROC_STATE", &
                           description="Number of MPI processes to be used per excited state. "// &
-                          " Default is to use all processors (0).", &
+                          "Default is to use all processors (0).", &
                           n_var=1, type_of_var=integer_t, &
                           default_i_val=0)
       CALL section_add_keyword(section, keyword)
@@ -1524,7 +1563,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="ADMM_KERNEL_XC_CORRECTION", &
-                          description="Use/Ignore ADMM correction xc functional for TD kernel."// &
+                          description="Use/Ignore ADMM correction xc functional for TD kernel. "// &
                           "XC correction functional is defined in ground state XC section.", &
                           n_var=1, type_of_var=logical_t, &
                           default_l_val=.TRUE., lone_keyword_l_val=.TRUE.)
@@ -1532,10 +1571,10 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="ADMM_KERNEL_CORRECTION_SYMMETRIC", &
-                          description="ADMM correction functional in kernel is applied symmetrically."// &
+                          description="ADMM correction functional in kernel is applied symmetrically. "// &
                           "Original implementation is using a non-symmetric formula.", &
                           n_var=1, type_of_var=logical_t, &
-                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+                          default_l_val=.TRUE., lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -1551,6 +1590,28 @@ CONTAINS
                           "Options={small,medium,large,huge}", &
                           usage="AUTO_BASIS {basis_type} {basis_size}", &
                           type_of_var=char_t, repeats=.TRUE., n_var=-1, default_c_vals=(/"X", "X"/))
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="DO_SMEARING", &
+                          description="Implying smeared occupation. ", &
+                          n_var=1, type_of_var=logical_t, &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="EXCITON_DESCRIPTORS", &
+                          description="Compute exciton descriptors. "// &
+                          "Details given in Manual section about Bethe Salpeter equation.", &
+                          n_var=1, type_of_var=logical_t, &
+                          default_l_val=.FALSE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="DIRECTIONAL_EXCITON_DESCRIPTORS", &
+                          description="Print cartesian components of exciton descriptors.", &
+                          n_var=1, type_of_var=logical_t, &
+                          default_l_val=.FALSE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -1652,6 +1713,11 @@ CONTAINS
 
       ! LRI subsection
       CALL create_lrigpw_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      ! LINRES section
+      CALL create_linres_section(subsection, create_subsections=.FALSE., default_set_tdlr=.TRUE.)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
@@ -1823,8 +1889,8 @@ CONTAINS
       CALL section_release(print_key)
 
       CALL cp_print_key_section_create(print_key, __LOCATION__, name="FORCES", &
-                                       description="Controls the calculation and printing of excited state forces."// &
-                                       "Prints difference in forces between excited state and ground state!", &
+                                       description="Controls the calculation and printing of excited state forces. "// &
+                                       "This needs a RUN_TYPE that includes force evaluation, e.g. ENERGY_FORCE", &
                                        print_level=debug_print_level, filename="TDFORCE")
       CALL keyword_create(keyword, __LOCATION__, name="LIST", &
                           description="Specifies a list of states for the force calculations.", &
@@ -1935,7 +2001,19 @@ CONTAINS
       CALL section_create(section, __LOCATION__, name="BANDSTRUCTURE", &
                           description="Parameters needed to set up a calculation for "// &
                           "electronic level energies of molecules and the electronic band "// &
-                          "structure of materials from post-SCF schemes.", &
+                          "structure of materials from post-SCF schemes (GW, perturbative "// &
+                          "spin-orbit coupling). Also, the density of states (DOS), "// &
+                          "projected density of states (PDOS), local density of states (LDOS), "// &
+                          "local valence band maximum (LVBM), local conduction band minimum "// &
+                          "(LCBM) and local band gap can be calculated. Please note that "// &
+                          "all methods in this section start from a Gamma-only DFT SCF. "// &
+                          "You need to make sure that the cell chosen in the DFT SCF is "// &
+                          "converged in the cell size. Band structures are computed "// &
+                          "for the primitive cell (i.e. the smallest possible unit cell of "// &
+                          "the input structure which is detected automatically). Moreover, "// &
+                          "spin-orbit coupling (SOC) on eigenvalues and band structures is "// &
+                          "available using Hartwigsen-Goedecker-Hutter "// &
+                          "pseudopotentials.", &
                           n_keywords=1, n_subsections=1, repeats=.FALSE.)
 
       NULLIFY (keyword, subsection)
@@ -1947,7 +2025,20 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      ! here we generate a subsection for getting a k-point path for the bandstructure
+      CALL create_kpoint_set_section(subsection, "BANDSTRUCTURE_PATH")
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
       CALL create_gw_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      CALL create_soc_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      CALL create_dos_section(subsection)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
@@ -1963,14 +2054,19 @@ CONTAINS
       TYPE(section_type), POINTER                        :: section
 
       TYPE(keyword_type), POINTER                        :: keyword
+      TYPE(section_type), POINTER                        :: print_key, subsection
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="GW", &
                           description="Parameters needed to set up a GW calculation for "// &
-                          "electronic level energies of molecules and the band structure of "// &
-                          "materials (currently only 2D materials tested). For the GW algorithm "// &
-                          "for molecules, see [https://doi.org/10.1021/acs.jctc.0c01282]. "// &
-                          "For 2D materials, see [http://arxiv.org/abs/2306.16066].", &
+                          "electronic level energies $\varepsilon_{n\mathbf{k}}^{G_0W_0}$ "// &
+                          "of molecules and the band structure of materials: "// &
+                          "$\varepsilon_{n\mathbf{k}}^{G_0W_0}=  "// &
+                          "\varepsilon_{n\mathbf{k}}^\text{DFT}+\Sigma_{n\mathbf{k}} "// &
+                          "-v^\text{xc}_{n\mathbf{k}}$. "// &
+                          "For the GW algorithm for molecules, see "// &
+                          "<https://doi.org/10.1021/acs.jctc.0c01282>. "// &
+                          "For 2D materials, see <https://doi.org/10.1021/acs.jctc.3c01230>.", &
                           n_keywords=1, n_subsections=1, repeats=.FALSE.)
 
       NULLIFY (keyword)
@@ -1983,74 +2079,344 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="NUM_TIME_FREQ_POINTS", &
-                          description="Number of discrete points for the imaginary-time grid and "// &
-                          "the imaginary-frequency grid. The more points, the more precise is "// &
-                          "the calculation. Typically, 10 points are good for 0.1 eV precision "// &
-                          "of band structures and molecular energy levels, 20 points for 0.03 eV "// &
-                          "precision, and 30 points for 0.01 eV precision, see Table I in "// &
-                          "[https://doi.org/10.1021/acs.jctc.0c01282]. GW computation time "// &
-                          "increases roughly linearly with NUM_TIME_FREQ_POINTS.", &
+                          description="Number of discrete points for the imaginary-time "// &
+                          "grid and the imaginary-frequency grid. The more points, the more "// &
+                          "precise is the calculation. Typically, 10 points are good "// &
+                          "for 0.1 eV precision of band structures and molecular energy "// &
+                          "levels, 20 points for 0.03 eV precision, "// &
+                          "and 30 points for 0.01 eV precision, see Table I in "// &
+                          "<https://doi.org/10.1021/acs.jctc.0c01282>. GW computation time "// &
+                          "increases linearly with `NUM_TIME_FREQ_POINTS`.", &
                           usage="NUM_TIME_FREQ_POINTS 30", &
                           default_i_val=30)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="EPS_FILTER", &
-                          description="Determines a threshold for the DBCSR based "// &
-                          "sparse multiplications. Normally, this EPS_FILTER determines accuracy "// &
-                          "and timing of low-scaling GW calculations. (Lower filter means higher "// &
-                          "numerical precision, but higher computational cost.)", &
-                          usage="EPS_FILTER 1.0E-6_dp", &
+                          description="Determines a threshold for the DBCSR based sparse "// &
+                          "multiplications. Normally, `EPS_FILTER` determines accuracy "// &
+                          "and timing of low-scaling GW calculations. (Lower filter means "// &
+                          "higher numerical precision, but higher computational cost.)", &
+                          usage="EPS_FILTER 1.0E-6", &
                           default_r_val=1.0E-8_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="EPS_3C_INT", &
-                          description="Determines threshold for computing three-center "// &
-                          "integrals of the truncated Coulomb operator. "// &
-                          "(Lower filter means more integrals are computed (= higher "// &
-                          "numerical precision), but higher computational cost.)", &
-                          usage="EPS_3C_INT 1.0E-6_dp", &
-                          default_r_val=1.0E-8_dp)
+      CALL keyword_create(keyword, __LOCATION__, name="REGULARIZATION_RI", &
+                          description="Parameter for RI regularization, setting a negative "// &
+                          "value triggers the default value. Affects RI basis set convergence "// &
+                          "but in any case large RI basis will give RI basis set convergence.", &
+                          usage="REGULARIZATION_RI 1.0E-4", &
+                          default_r_val=-1.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="SIZE_LATTICE_SUM_V", &
-                          description="Determines number of cells used for summing the  "// &
-                          "cells R in the Coulomb matrix, "// &
-                          "V_PQ(k) = \sum_R <P,cell=0 | 1/r | Q,cell=R>. ", &
-                          usage="SIZE_LATTICE_SUM_V 4", &
-                          default_i_val=5)
+      CALL keyword_create(keyword, __LOCATION__, name="CUTOFF_RADIUS_RI", &
+                          description="The cutoff radius (in Angstrom) for the truncated  "// &
+                          "Coulomb operator. The larger the cutoff radius, the faster "// &
+                          "converges the resolution of the identity (RI) with respect to the "// &
+                          "RI basis set size. Larger cutoff radius means higher computational "// &
+                          "cost.", &
+                          usage="CUTOFF_RADIUS_RI 3.0", &
+                          default_r_val=cp_unit_to_cp2k(value=3.0_dp, unit_str="angstrom"), &
+                          type_of_var=real_t, unit_str="angstrom")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="MEMORY_PER_PROC", &
+                          description="Specify the available memory per MPI process. Set "// &
+                          "`MEMORY_PER_PROC` as accurately as possible for good performance. If "// &
+                          "`MEMORY_PER_PROC` is set lower as the actually available "// &
+                          "memory per MPI process, the performance will be "// &
+                          "bad; if `MEMORY_PER_PROC` is set higher as the actually "// &
+                          "available memory per MPI process, the program might run out of "// &
+                          "memory. You can calculate `MEMORY_PER_PROC` as follows: "// &
+                          "Get the memory per node on your machine, mem_per_node "// &
+                          "(for example, from a supercomputer website, typically between "// &
+                          "100 GB and 2 TB), get the number of "// &
+                          "MPI processes per node, n_MPI_proc_per_node"// &
+                          " (for example from your run-script; if you "// &
+                          "use slurm, the number behind '--ntasks-per-node' is the number "// &
+                          "of MPI processes per node). Then calculate "// &
+                          "`MEMORY_PER_PROC` = mem_per_node / n_MPI_proc_per_node "// &
+                          "(typically between 2 GB and 50 GB). Unit of keyword: Gigabyte (GB).", &
+                          usage="MEMORY_PER_PROC 16", &
+                          default_r_val=2.0_dp)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="APPROX_KP_EXTRAPOL", &
+                          description="If true, use only a 4x4 kpoint mesh for frequency "// &
+                          "points $\omega_j, j \ge 2$ (instead of a 4x4 and 6x6 k-point mesh). "// &
+                          "The k-point extrapolation of $W_{PQ}(i\omega_j,\mathbf{q})$ "// &
+                          "is done approximately from $W_{PQ}(i\omega_1,\mathbf{q})$.", &
+                          usage="APPROX_KP_EXTRAPOL", &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="SIZE_LATTICE_SUM", &
+                          description="Parameter determines how many neighbor cells $\mathbf{R}$ "// &
+                          "are used for computing "// &
+                          "$V_{PQ}(\mathbf{k}) = "// &
+                          "\sum_{\mathbf{R}} e^{i\mathbf{k}\cdot\mathbf{R}}\,\langle P, "// &
+                          "\text{cell}{=}\mathbf{0}|1/r|Q,\text{cell}{=}\mathbf{R}\rangle$. "// &
+                          "Normally, parameter does not need to be touched.", &
+                          usage="SIZE_LATTICE_SUM 4", &
+                          default_i_val=3)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create( &
-         keyword, __LOCATION__, name="KPOINTS_CHI_EPS_W", &
-         description="Monkhorst-Pack k-point mesh of size N_x, N_y, N_z. Only even"// &
-         "meshes implemented. For non-periodic directions α, choose N_α = 1. "// &
-         "The N_x, N_y, N_z mesh and a N_x+2, N_y+2, N_z+2 mesh is used for "// &
-         "extrapolating the k-point integration of the screened Coulomb "// &
-         "interaction. Automatic choice of the k-point mesh for negative "// &
-         "values, e.g. KPOINTS_CHI_EPS_W -1 -1 -1.", &
-         usage="KPOINTS_CHI_EPS_W  N_x  N_y  N_z", &
-         n_var=3, type_of_var=integer_t, default_i_vals=(/-1, -1, -1/))
-      CALL section_add_keyword(section, keyword)
-      CALL keyword_release(keyword)
-
-      CALL keyword_create( &
-         keyword, __LOCATION__, name="KPOINTS_SIGMA", &
-         description="Monkhorst-Pack k-point mesh of size N_x, N_y, N_z. "// &
+         keyword, __LOCATION__, name="KPOINTS_W", &
+         description="Monkhorst-Pack k-point mesh of size N_x, N_y, N_z for calculating "// &
+         "$W_{PQ}^\mathbf{R}=\int_\text{BZ}\frac{d\mathbf{k}}{\Omega_\text{BZ}}\, "// &
+         "e^{-i\mathbf{k}\cdot\mathbf{R}}\,W_{PQ}(\mathbf{k})$. "// &
          "For non-periodic directions α, choose N_α = 1. "// &
          "Automatic choice of the k-point mesh for negative "// &
-         "values, e.g. KPOINTS_SELF_ENERGY -1 -1 -1. If you like to compute GW "// &
-         "quasiparticle energies along a k-path, you can specify the k-path in "// &
-         "&DFT/&PRINT/&BAND_STRUCTURE/&KPOINT_SET.", &
-         usage="KPOINTS_SIGMA N_x  N_y  N_z", &
+         "values, i.e. KPOINTS_W -1 -1 -1. "// &
+         "K-point extrapolation of W is automatically switched on.", &
+         usage="KPOINTS_W N_x  N_y  N_z", &
          n_var=3, type_of_var=integer_t, default_i_vals=(/-1, -1, -1/))
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="HEDIN_SHIFT", &
+                          description="If true, use Hedin's shift in G0W0, evGW and evGW0. "// &
+                          "Details see in Li et al. JCTC 18, 7570 "// &
+                          "(2022), Figure 1. G0W0 with Hedin's shift should give "// &
+                          "similar GW eigenvalues as evGW0; at a lower "// &
+                          "computational cost.", &
+                          usage="HEDIN_SHIFT", &
+                          default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="FREQ_MAX_FIT", &
+                          description="For analytic continuation, a fit on Σ(iω) is performed. "// &
+                          "This fit is then evaluated at a real frequency, Σ(ω), which is used "// &
+                          "in the quasiparticle equation "// &
+                          "$\varepsilon_{n\mathbf{k}}^{G_0W_0}=  "// &
+                          "\varepsilon_{n\mathbf{k}}^\text{DFT}+\Sigma_{n\mathbf{k}} "// &
+                          "-v^\text{xc}_{n\mathbf{k}}$. The keyword FREQ_MAX_FIT "// &
+                          "determines fitting range for the self-energy Σ(iω) on "// &
+                          "imaginary axis: i*[0, ω_max] for empty orbitals/bands, i*[-ω_max,0] "// &
+                          "for occ orbitals. A smaller ω_max might lead to better numerical "// &
+                          "stability (i.e., if you observe clearly wrong GW eigenvalues/bands "// &
+                          "around HOMO/LUMO, decreasing ω_max might fix this issue). "// &
+                          "A small benchmark of ω_max is contained in Fig. 5 of "// &
+                          "J. Wilhelm et al., JCTC 12, 3623-3635 (2016). "// &
+                          "Note that we used ω_max = 1 Ha = 27.211 eV in the benchmark "// &
+                          "M. Azizi et al., PRB 109, 245101 (2024).", &
+                          unit_str="eV", &
+                          usage="FREQ_MAX_FIT 20.0", &
+                          default_r_val=cp_unit_to_cp2k(value=10.0_dp, unit_str="eV"))
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      NULLIFY (subsection, print_key)
+      CALL section_create(subsection, __LOCATION__, name="PRINT", &
+                          description="Printing of GW restarts.", &
+                          n_keywords=0, n_subsections=1, repeats=.FALSE.)
+      CALL cp_print_key_section_create(print_key, __LOCATION__, "RESTART", &
+                                       description="Controls the printing of restart files "// &
+                                       "for χ, W, Σ.", &
+                                       filename="", print_level=low_print_level, &
+                                       common_iter_levels=3)
+      CALL section_add_subsection(subsection, print_key)
+      CALL section_release(print_key)
+
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
    END SUBROUTINE create_gw_section
+
+! **************************************************************************************************
+!> \brief creates an input section for calculation SOC for the electronic band structure
+!> \param section section to create
+!> \par History
+!>    * 09.2023 created [Jan Wilhelm]
+! **************************************************************************************************
+   SUBROUTINE create_soc_section(section)
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(keyword_type), POINTER                        :: keyword
+
+      CPASSERT(.NOT. ASSOCIATED(section))
+      CALL section_create(section, __LOCATION__, name="SOC", &
+                          description="Switch on or off spin-orbit coupling. Use SOC "// &
+                          "parameters from non-local pseudopotentials as given in "// &
+                          "Hartwigsen, Goedecker, Hutter, Eq.(18), (19), "// &
+                          "<https://doi.org/10.1103/PhysRevB.58.3641>, "// &
+                          "$V_{\mu\nu}^{\mathrm{SOC}, (\alpha)} = "// &
+                          "(\hbar/2) \langle \phi_\mu | \sum_l \Delta "// &
+                          "V_l^\mathrm{SO}(\mathbf{r},\mathbf{r}') "// &
+                          "L^{(\alpha)} | \phi_\nu \rangle, "// &
+                          "\alpha = x, y, z$.", &
+                          n_keywords=1, n_subsections=1, repeats=.FALSE.)
+
+      NULLIFY (keyword)
+      CALL keyword_create(keyword, __LOCATION__, &
+                          name="_SECTION_PARAMETERS_", &
+                          description="Controls the activation of the SOC calculation.", &
+                          default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="ENERGY_WINDOW", &
+                          description="Apply SOC only for states with eigenvalues in the "// &
+                          "interval $[\varepsilon_\mathrm{VBM}-E_\mathrm{window}/2, "// &
+                          "\varepsilon_\mathrm{CBM}+E_\mathrm{window}/2]$. Might be necessary "// &
+                          "to use for large systems to prevent numerical instabilities.", &
+                          usage="ENERGY_WINDOW 5.0", &
+                          default_r_val=cp_unit_to_cp2k(value=40.0_dp, unit_str="eV"), &
+                          unit_str="eV")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+   END SUBROUTINE create_soc_section
+
+! **************************************************************************************************
+!> \brief input section for computing the density of states and the projected density of states
+!> \param section section to create
+!> \par History
+!>    * 09.2023 created [Jan Wilhelm]
+! **************************************************************************************************
+   SUBROUTINE create_dos_section(section)
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(keyword_type), POINTER                        :: keyword
+      TYPE(section_type), POINTER                        :: subsection
+
+      CPASSERT(.NOT. ASSOCIATED(section))
+      CALL section_create(section, __LOCATION__, name="DOS", &
+                          description="Parameters needed to calculate the density of states "// &
+                          "(DOS) and the projected density of states (PDOS).", &
+                          n_keywords=1, n_subsections=1, repeats=.FALSE.)
+
+      NULLIFY (keyword)
+      CALL keyword_create(keyword, __LOCATION__, &
+                          name="_SECTION_PARAMETERS_", &
+                          description="Controls the activation of the DOS calculation.", &
+                          default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="ENERGY_WINDOW", &
+                          description="Print DOS and PDOS in the energy window "// &
+                          "$[\varepsilon_\mathrm{VBM}-E_\mathrm{window}/2,  "// &
+                          "\varepsilon_\mathrm{CBM}+E_\mathrm{window}/2]$,"// &
+                          " where VBM is the valence "// &
+                          "band maximum (or highest occupied molecular orbital, HOMO, for "// &
+                          "molecules) and CBM the conduction band minimum (or lowest "// &
+                          "unoccupied molecular orbital, LUMO, for molecules).", &
+                          usage="ENERGY_WINDOW 5.0", &
+                          default_r_val=cp_unit_to_cp2k(value=10.0_dp, unit_str="eV"), &
+                          unit_str="eV")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="ENERGY_STEP", &
+                          description="Resolution of the energy E when computing the $\rho(E)$.", &
+                          usage="ENERGY_STEP 0.01", &
+                          default_r_val=cp_unit_to_cp2k(value=0.01_dp, unit_str="eV"), &
+                          unit_str="eV")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="BROADENING", &
+                          description="Broadening α in Gaussians used in the DOS; "// &
+                          "$\rho(E) = \sum_n \exp(((E-\varepsilon_n)/\alpha)^2)/("// &
+                          " \sqrt{2\pi} \alpha)$.", &
+                          usage="BROADENING 0.01", &
+                          default_r_val=cp_unit_to_cp2k(value=0.01_dp, unit_str="eV"), &
+                          unit_str="eV")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create( &
+         keyword, __LOCATION__, name="KPOINTS", &
+         description="Monkhorst-Pack k-point mesh of size N_x, N_y, N_z for calculating "// &
+         "the density of states (DOS). In GW, the KPOINT_DOS mesh is thus used as k-point "// &
+         "mesh for the self-energy. For non-periodic directions α, choose N_α = 1. "// &
+         "Automatic choice of the k-point mesh for negative "// &
+         "values, i.e. KPOINTS_DOS -1 -1 -1 (automatic choice: N_α = 1 in non-periodic "// &
+         "direction, 8 k-points in periodic direction). If you like to compute a "// &
+         "band structure along a k-path, you can specify the k-path in "// &
+         "&KPOINT_SET.", &
+         usage="KPOINTS N_x  N_y  N_z", &
+         n_var=3, type_of_var=integer_t, default_i_vals=(/-1, -1, -1/))
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      NULLIFY (subsection)
+      CALL create_ldos_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+   END SUBROUTINE create_dos_section
+
+! **************************************************************************************************
+!> \brief ...
+!> \param section ...
+! **************************************************************************************************
+   SUBROUTINE create_ldos_section(section)
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(keyword_type), POINTER                        :: keyword
+
+      CPASSERT(.NOT. ASSOCIATED(section))
+      CALL section_create(section, __LOCATION__, name="LDOS", &
+                          description="Parameters needed to calculate the local density "// &
+                          "of states (LDOS).  "// &
+                          "The LDOS is computed as $\rho(\mathbf{r},E) = "// &
+                          "\sum\limits_{n,\mathbf{k}}"// &
+                          " |\psi_{n\mathbf{k}}(r)|^2\, w_\mathbf{k}\, g(E-\varepsilon_{n\mathbf{k}})$ "// &
+                          "using the Gaussian weight function "// &
+                          "$g(x) = \exp(x^2/\alpha^2)/(\sqrt{2\pi}\alpha)$, $\alpha$ is the broadening "// &
+                          "from the &DOS section, and the k-point weight "// &
+                          "$w_\mathbf{k}$. The k-mesh is taken from the &DOS section.", &
+                          n_keywords=2, repeats=.FALSE.)
+
+      NULLIFY (keyword)
+      CALL keyword_create(keyword, __LOCATION__, &
+                          name="_SECTION_PARAMETERS_", &
+                          description="Activates the local VBM CBM gap calculation.", &
+                          default_l_val=.FALSE., &
+                          lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="INTEGRATION", &
+                          description="Defines whether the LDOS is integrated along a "// &
+                          "coordinate. As an example, for INTEGRATION Z, the LDOS "// &
+                          "$\rho(x,y,E) = \int dz\, \rho(x,y,z,E)$ is computed.", &
+                          usage="INTEGRATION Z", &
+                          enum_c_vals=s2a("X", "Y", "Z", "NONE"), &
+                          enum_i_vals=(/int_ldos_x, int_ldos_y, int_ldos_z, int_ldos_none/), &
+                          enum_desc=s2a("Integrate over x coordinate (not yet implemented).", &
+                                        "Integrate over y coordinate (not yet implemented).", &
+                                        "Integrate over z coordinate.", &
+                                        "No integration, print cube file as function "// &
+                                        "of x,y,z (not yet implemented)."), &
+                          default_i_val=int_ldos_z)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create( &
+         keyword, __LOCATION__, name="BIN_MESH", &
+         description="Mesh of size n x m for binning the space coordinates x and y of "// &
+         "the LDOS $\rho(x,y,E)$. If -1, no binning is performed and the "// &
+         "fine x, y resolution of the electron density from SCF is used.", &
+         usage="BIN_MESH  n m", &
+         n_var=2, type_of_var=integer_t, default_i_vals=(/10, 10/))
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+   END SUBROUTINE create_ldos_section
 
 ! **************************************************************************************************
 !> \brief creates an input section for a tip scan calculation
@@ -2065,7 +2431,7 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="TIP_SCAN", &
-                          description="Parameters needed to set up a Tip Scan."// &
+                          description="Parameters needed to set up a Tip Scan. "// &
                           "Needs external definition of tip induced field.", &
                           n_keywords=1, n_subsections=1, repeats=.FALSE.)
 

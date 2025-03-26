@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -86,7 +86,9 @@ MODULE integrator
    USE qmmm_util,                       ONLY: apply_qmmm_walls_reflective
    USE qmmmx_update,                    ONLY: qmmmx_update_force_env
    USE qs_environment_types,            ONLY: get_qs_env
-   USE reftraj_types,                   ONLY: reftraj_type
+   USE reftraj_types,                   ONLY: REFTRAJ_EVAL_ENERGY_FORCES,&
+                                              REFTRAJ_EVAL_NONE,&
+                                              reftraj_type
    USE reftraj_util,                    ONLY: compute_msd_reftraj
    USE rt_propagation_methods,          ONLY: propagation_step
    USE rt_propagation_output,           ONLY: rt_prop_output
@@ -1502,7 +1504,8 @@ CONTAINS
    SUBROUTINE reftraj(md_env)
       TYPE(md_environment_type), POINTER                 :: md_env
 
-      CHARACTER(LEN=2)                                   :: element_symbol, element_symbol_ref0
+      CHARACTER(LEN=2)                                   :: element_kind_ref0, element_symbol, &
+                                                            element_symbol_ref0
       CHARACTER(LEN=max_line_length)                     :: errmsg
       INTEGER                                            :: cell_itimes, i, nparticle, Nread, &
                                                             trj_itimes
@@ -1578,11 +1581,16 @@ CONTAINS
             element_symbol, particle_set(i)%r
          CALL uppercase(element_symbol)
          element_symbol_ref0 = particle_set(i)%atomic_kind%element_symbol
+         element_kind_ref0 = particle_set(i)%atomic_kind%name
          CALL uppercase(element_symbol_ref0)
+         CALL uppercase(element_kind_ref0)
          IF (element_symbol /= element_symbol_ref0) THEN
-            errmsg = "Atomic configuration from trajectory file does not match the reference configuration: Check atom "// &
-                     TRIM(ADJUSTL(cp_to_string(i)))//" of step "//TRIM(ADJUSTL(cp_to_string(trj_itimes)))
-            CPABORT(errmsg)
+            ! Make sure the kind also does not match a potential alias name
+            IF (element_symbol /= element_kind_ref0) THEN
+               errmsg = "Atomic configuration from trajectory file does not match the reference configuration: Check atom "// &
+                        TRIM(ADJUSTL(cp_to_string(i)))//" of step "//TRIM(ADJUSTL(cp_to_string(trj_itimes)))
+               CPABORT(errmsg)
+            END IF
          END IF
          particle_set(i)%r(1) = cp_unit_to_cp2k(particle_set(i)%r(1), "angstrom")
          particle_set(i)%r(2) = cp_unit_to_cp2k(particle_set(i)%r(2), "angstrom")
@@ -1595,11 +1603,16 @@ CONTAINS
       READ (UNIT=reftraj_env%info%traj_parser%input_line, FMT=*) element_symbol, particle_set(i)%r
       CALL uppercase(element_symbol)
       element_symbol_ref0 = particle_set(i)%atomic_kind%element_symbol
+      element_kind_ref0 = particle_set(i)%atomic_kind%name
       CALL uppercase(element_symbol_ref0)
+      CALL uppercase(element_kind_ref0)
       IF (element_symbol /= element_symbol_ref0) THEN
-         errmsg = "Atomic configuration from trajectory file does not match the reference configuration: Check atom "// &
-                  TRIM(ADJUSTL(cp_to_string(i)))//" of step "//TRIM(ADJUSTL(cp_to_string(trj_itimes)))
-         CPABORT(errmsg)
+         ! Make sure the kind also does not match a potential alias name
+         IF (element_symbol /= element_kind_ref0) THEN
+            errmsg = "Atomic configuration from trajectory file does not match the reference configuration: Check atom "// &
+                     TRIM(ADJUSTL(cp_to_string(i)))//" of step "//TRIM(ADJUSTL(cp_to_string(trj_itimes)))
+            CPABORT(errmsg)
+         END IF
       END IF
       particle_set(i)%r(1) = cp_unit_to_cp2k(particle_set(i)%r(1), "angstrom")
       particle_set(i)%r(2) = cp_unit_to_cp2k(particle_set(i)%r(2), "angstrom")
@@ -1655,7 +1668,9 @@ CONTAINS
       ! Task to perform on the reference trajectory
       ! Compute energy and forces
       ![NB] let reftraj work with force mixing which does not have consistent energies and forces
- CALL force_env_calc_energy_force(force_env, calc_force=reftraj_env%info%eval_forces, eval_energy_forces=reftraj_env%info%eval_EF, &
+      CALL force_env_calc_energy_force(force_env, &
+                                       calc_force=(reftraj_env%info%eval == REFTRAJ_EVAL_ENERGY_FORCES), &
+                                       eval_energy_forces=(reftraj_env%info%eval /= REFTRAJ_EVAL_NONE), &
                                        require_consistent_energy_force=.FALSE.)
 
       ! Metadynamics
@@ -2331,7 +2346,7 @@ CONTAINS
          !
 
          CALL diagonalise(matrix=npt(:, :)%v, mysize=3, &
-                          storageform="UPPER", eigenvalues=tmp%e_val, eigenvectors=tmp%u)
+                          uplo="U", eigenvalues=tmp%e_val, eigenvectors=tmp%u)
 
          tmp%arg_r(:) = 0.5_dp*tmp%e_val(:)*dt* &
                         0.5_dp*tmp%e_val(:)*dt

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -96,8 +96,7 @@ CONTAINS
       CALL cite_reference(Proynov2007)
       IF (PRESENT(reference)) THEN
          reference = "A.D. Becke, M.R. Roussel, "// &
-                     "Phys. Rev. A, vol. 39, n 8, pp. 3761-3767, (1989)"// &
-                     "{spin unpolarized}"
+                     "Phys. Rev. A, vol. 39, n 8, pp. 3761-3767, (1989) {spin unpolarized}"
       END IF
       IF (PRESENT(shortform)) THEN
          shortform = "Becke-Roussel exchange hole (spin unpolarized)"
@@ -133,8 +132,7 @@ CONTAINS
       CALL cite_reference(Proynov2007)
       IF (PRESENT(reference)) THEN
          reference = "A.D. Becke, M.R. Roussel, "// &
-                     "Phys. Rev. A, vol. 39, n 8, pp. 3761-3767, (1989)"// &
-                     "{spin polarized}"
+                     "Phys. Rev. A, vol. 39, n 8, pp. 3761-3767, (1989) {spin polarized}"
       END IF
       IF (PRESENT(shortform)) THEN
          shortform = "Becke-Roussel exchange hole (spin polarized)"

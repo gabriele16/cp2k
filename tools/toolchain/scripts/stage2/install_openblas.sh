@@ -6,8 +6,8 @@
 [ "${BASH_SOURCE[0]}" ] && SCRIPT_NAME="${BASH_SOURCE[0]}" || SCRIPT_NAME=$0
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_NAME")/.." && pwd -P)"
 
-openblas_ver="0.3.23" # Keep in sync with get_openblas_arch.sh
-openblas_sha256="5d9491d07168a5d00116cdc068a40022c3455bf9293c7cb86a65b1054d7e5114"
+openblas_ver="0.3.28" # Keep in sync with get_openblas_arch.sh
+openblas_sha256="f1003466ad074e9b0c8d421a204121100b0751c96fc6fcf3d1456bd12f8a00a1"
 openblas_pkg="OpenBLAS-${openblas_ver}.tar.gz"
 
 source "${SCRIPT_DIR}"/common_vars.sh
@@ -44,72 +44,54 @@ case "${with_openblas}" in
       tar -zxf ${openblas_pkg}
       cd OpenBLAS-${openblas_ver}
 
-      # First attempt to make openblas using auto detected
-      # TARGET, if this fails, then make with forced
-      # TARGET=NEHALEM
+      # Build OpenBLAS with DYNAMIC_ARCH unless native architecture is requested.
+      # If the latter fails, then build with DYNAMIC_ARCH. Relying on DYNAMIC_ARCH
+      # is more flexible and more reliable on ARM64. However, it increaes the time
+      # needed to build OpenBLAS.
+      # It is supported to omit the PREFIX when building OpenBLAS as well as
+      # omitting build-keys for the install target.
       #
-      # wrt NUM_THREADS=64: this is what the most common Linux distros seem to choose atm
-      #                     for a good compromise between memory usage and scalability
+      # NUM_THREADS=128: this is what the most common Linux distros seem to choose atm
+      #                  for a good compromise between memory usage and scalability
+      # USE_THREADS=1: is not needed since CP2K's ARCH-files do not rely on
+      #                plain PThread based OpenBLAS (OpenMP is used).
       #
       # Unfortunately, NO_SHARED=1 breaks ScaLAPACK build.
-      case "${TARGET_CPU}" in
-        "generic")
-          TARGET="NEHALEM"
-          ;;
-        "native")
-          TARGET=${OPENBLAS_LIBCORE}
-          ;;
-        "broadwell" | "skylake")
-          TARGET="HASWELL"
-          ;;
-        "skylake-avx512")
-          TARGET="SKYLAKEX"
-          ;;
-        "znver*")
-          TARGET="ZEN"
-          ;;
-        *)
-          TARGET=${TARGET_CPU}
-          ;;
-      esac
-      TARGET=$(echo ${TARGET} | tr '[:lower:]' '[:upper:]')
-      echo "Installing OpenBLAS library for target ${TARGET}"
-      (
-        make -j $(get_nprocs) \
-          MAKE_NB_JOBS=0 \
+      BUILD_DYNAMIC=0
+      if [ "native" != "${TARGET_CPU}" ] || [ ! "${OPENBLAS_LIBCORE}" ]; then
+        BUILD_DYNAMIC=1
+      fi
+      if [ "0" = "${BUILD_DYNAMIC}" ]; then
+        TARGET=$(tr '[:lower:]' '[:upper:]' <<< "${OPENBLAS_LIBCORE}")
+        echo "Installing OpenBLAS library for target ${TARGET}"
+        if ! make -j $(get_nprocs) \
           TARGET=${TARGET} \
-          NUM_THREADS=64 \
-          USE_THREAD=1 \
+          MAKE_NB_JOBS=0 \
+          NUM_THREADS=128 \
+          USE_OPENMP=1 \
+          NO_AFFINITY=1 \
+          CC="${CC}" \
+          FC="${FC}" \
+          PREFIX="${pkg_install_dir}" \
+          > make.${OPENBLAS_LIBCORE}.log 2>&1; then
+          tail -n ${LOG_LINES} make.${OPENBLAS_LIBCORE}.log
+          BUILD_DYNAMIC=1
+        fi
+      fi
+      if [ "0" != "${BUILD_DYNAMIC}" ]; then
+        echo "Installing OpenBLAS library for dynamic target"
+        make -j $(get_nprocs) \
+          DYNAMIC_ARCH=1 \
+          MAKE_NB_JOBS=0 \
+          NUM_THREADS=128 \
           USE_OPENMP=1 \
           NO_AFFINITY=1 \
           CC="${CC}" \
           FC="${FC}" \
           PREFIX="${pkg_install_dir}" \
           > make.log 2>&1 || tail -n ${LOG_LINES} make.log
-      ) || (
-        make -j $(get_nprocs) \
-          MAKE_NB_JOBS=0 \
-          TARGET=NEHALEM \
-          NUM_THREADS=64 \
-          USE_THREAD=1 \
-          USE_OPENMP=1 \
-          NO_AFFINITY=1 \
-          CC="${CC}" \
-          FC="${FC}" \
-          PREFIX="${pkg_install_dir}" \
-          > make.nehalem.log 2>&1 || tail -n ${LOG_LINES} make.nehalem.log
-      )
-      make -j $(get_nprocs) \
-        MAKE_NB_JOBS=0 \
-        TARGET=${TARGET} \
-        NUM_THREADS=64 \
-        USE_THREAD=1 \
-        USE_OPENMP=1 \
-        NO_AFFINITY=1 \
-        CC="${CC}" \
-        FC="${FC}" \
-        PREFIX="${pkg_install_dir}" \
-        install > install.log 2>&1 || tail -n ${LOG_LINES} install.log
+      fi
+      make MAKE_NB_JOBS=0 PREFIX="${pkg_install_dir}" install > install.log 2>&1 || tail -n ${LOG_LINES} install.log
       cd ..
       write_checksums "${install_lock_file}" "${SCRIPT_DIR}/stage2/$(basename ${SCRIPT_NAME})"
     fi
@@ -124,7 +106,7 @@ case "${with_openblas}" in
     fi
     ;;
   __SYSTEM__)
-    echo "==================== Finding LAPACK from system paths ===================="
+    echo "==================== Finding OpenBLAS from system paths ===================="
     # assume that system openblas is threaded
     check_lib -lopenblas "OpenBLAS"
     OPENBLAS_LIBS="-lopenblas"
@@ -137,7 +119,7 @@ case "${with_openblas}" in
   __DONTUSE__) ;;
 
   *)
-    echo "==================== Linking LAPACK to user paths ===================="
+    echo "==================== Linking OpenBLAS to user paths ===================="
     pkg_install_dir="$with_openblas"
     check_dir "${pkg_install_dir}/include"
     check_dir "${pkg_install_dir}/lib"
@@ -162,9 +144,9 @@ prepend_path CMAKE_PREFIX_PATH "$pkg_install_dir"
 prepend_path CPATH "$pkg_install_dir/include"
 export OPENBLAS_ROOT=${pkg_install_dir}
 EOF
-    cat "${BUILDDIR}/setup_openblas" >> $SETUPFILE
   fi
   cat << EOF >> "${BUILDDIR}/setup_openblas"
+export OPENBLAS_VER="${openblas_ver}"
 export OPENBLAS_ROOT="${pkg_install_dir}"
 export OPENBLAS_CFLAGS="${OPENBLAS_CFLAGS}"
 export OPENBLAS_LDFLAGS="${OPENBLAS_LDFLAGS}"
@@ -172,9 +154,10 @@ export OPENBLAS_LIBS="${OPENBLAS_LIBS}"
 export MATH_CFLAGS="\${MATH_CFLAGS} ${OPENBLAS_CFLAGS}"
 export MATH_LDFLAGS="\${MATH_LDFLAGS} ${OPENBLAS_LDFLAGS}"
 export MATH_LIBS="\${MATH_LIBS} ${OPENBLAS_LIBS}"
-prepend_path PKG_CONFIG_PATH "$pkg_install_dir/lib/pkgconfig"
-prepend_path CMAKE_PREFIX_PATH "$pkg_install_dir"
+prepend_path PKG_CONFIG_PATH "${pkg_install_dir}/lib/pkgconfig"
+prepend_path CMAKE_PREFIX_PATH "${pkg_install_dir}"
 EOF
+  cat "${BUILDDIR}/setup_openblas" >> $SETUPFILE
 fi
 
 load "${BUILDDIR}/setup_openblas"

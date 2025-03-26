@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -20,13 +20,13 @@ MODULE mixed_energy_types
 
 ! **************************************************************************************************
    TYPE mixed_energy_type
-      REAL(kind=dp) :: pot
-      REAL(kind=dp) :: kin
+      REAL(kind=dp) :: pot = 0.0_dp
+      REAL(kind=dp) :: kin = 0.0_dp
    END TYPE mixed_energy_type
 
 ! **************************************************************************************************
    TYPE mixed_force_type
-      REAL(KIND=dp), DIMENSION(:, :), POINTER         :: forces
+      REAL(KIND=dp), DIMENSION(:, :), POINTER         :: forces => NULL()
    END TYPE mixed_force_type
 
 ! Public data types

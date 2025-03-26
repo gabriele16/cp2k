@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -30,15 +30,10 @@ MODULE localization_tb
    USE particle_types,                  ONLY: particle_type
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_type
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_p_type,&
+   USE pw_pool_types,                   ONLY: pw_pool_p_type,&
                                               pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type,&
                                               set_qs_env
@@ -98,10 +93,11 @@ CONTAINS
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(particle_list_type), POINTER                  :: particles
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pw_c1d_gs_type)                               :: wf_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_p_type), DIMENSION(:), POINTER        :: pw_pools
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: wf_g, wf_r
+      TYPE(pw_r3d_rs_type)                               :: wf_r
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_loc_env_type), POINTER                     :: qs_loc_env_homo
       TYPE(qs_subsys_type), POINTER                      :: subsys
@@ -130,17 +126,11 @@ CONTAINS
 
       IF (loc_explicit) THEN
          CALL section_vals_val_get(localize_section, "LIST", explicit=explicit)
-         IF (explicit) THEN
-            CPWARN("Localization using LIST of states not implemented for TB methods")
-         END IF
+         CPWARN_IF(explicit, "Localization using LIST of states not implemented for TB methods")
          CALL section_vals_val_get(localize_section, "ENERGY_RANGE", explicit=explicit)
-         IF (explicit) THEN
-            CPWARN("Localization using energy range not implemented for TB methods")
-         END IF
+         CPWARN_IF(explicit, "Localization using energy range not implemented for TB methods")
          CALL section_vals_val_get(localize_section, "LIST_UNOCCUPIED", explicit=explicit)
-         IF (explicit) THEN
-            CPWARN("Localization of unoccupied states not implemented for TB methods")
-         END IF
+         CPWARN_IF(explicit, "Localization of unoccupied states not implemented for TB methods")
          ! localize all occupied states
          IF (iounit > 0) THEN
             WRITE (iounit, "(/,T11,A)") " +++++++++++++ Start Localization of Orbitals +++++++++++++"
@@ -156,7 +146,7 @@ CONTAINS
          CALL qs_subsys_get(subsys, particles=particles)
 
          IF (do_kpoints) THEN
-            CPWARN("Localization not implemented for k-point calculations!!")
+            CPWARN("Localization not implemented for k-point calculations!")
          ELSEIF (dft_control%restricted) THEN
             IF (iounit > 0) WRITE (iounit, *) &
                " Unclear how we define MOs / localization in the restricted case ... skipping"
@@ -180,12 +170,8 @@ CONTAINS
 
             CALL get_qs_env(qs_env=qs_env, pw_env=pw_env)
             CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, pw_pools=pw_pools)
-            CALL pw_pool_create_pw(auxbas_pw_pool, wf_r, &
-                                   use_data=REALDATA3D, &
-                                   in_space=REALSPACE)
-            CALL pw_pool_create_pw(auxbas_pw_pool, wf_g, &
-                                   use_data=COMPLEXDATA1D, &
-                                   in_space=RECIPROCALSPACE)
+            CALL auxbas_pw_pool%create_pw(wf_r)
+            CALL auxbas_pw_pool%create_pw(wf_g)
 
             NULLIFY (marked_states, qs_loc_env_homo)
             ALLOCATE (qs_loc_env_homo)
@@ -212,8 +198,8 @@ CONTAINS
             IF (qs_loc_env_homo%do_localize) THEN
                CALL loc_dipole(qs_env%input, dft_control, qs_loc_env_homo, logger, qs_env)
             END IF
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_g)
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_r)
+            CALL auxbas_pw_pool%give_back_pw(wf_g)
+            CALL auxbas_pw_pool%give_back_pw(wf_r)
             CALL qs_loc_env_release(qs_loc_env_homo)
             DEALLOCATE (qs_loc_env_homo)
             IF (ASSOCIATED(marked_states)) THEN

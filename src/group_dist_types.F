@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -255,9 +255,9 @@ CONTAINS
    PURE SUBROUTINE release_group_dist_d1(this)
       TYPE(group_dist_d1_type), INTENT(INOUT)            :: this
 
-      DEALLOCATE (this%starts)
-      DEALLOCATE (this%ends)
-      DEALLOCATE (this%sizes)
+      IF (ALLOCATED(this%starts)) DEALLOCATE (this%starts)
+      IF (ALLOCATED(this%ends)) DEALLOCATE (this%ends)
+      IF (ALLOCATED(this%sizes)) DEALLOCATE (this%sizes)
 
    END SUBROUTINE release_group_dist_d1
 

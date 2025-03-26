@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -28,12 +28,12 @@ MODULE ec_environment
    USE dm_ls_scf_types,                 ONLY: ls_scf_env_type
    USE ec_env_types,                    ONLY: energy_correction_type
    USE input_constants,                 ONLY: &
-        ec_diagonalization, ec_functional_dc, ec_functional_harris, ec_matrix_sign, ec_matrix_tc2, &
-        ec_matrix_trs4, ec_ot_atomic, ec_ot_diag, ec_ot_gs, kg_cholesky, ls_cluster_atomic, &
-        ls_cluster_molecular, ls_s_inversion_hotelling, ls_s_inversion_none, &
-        ls_s_inversion_sign_sqrt, ls_s_preconditioner_atomic, ls_s_preconditioner_molecular, &
-        ls_s_preconditioner_none, ls_s_sqrt_ns, ls_s_sqrt_proot, xc_vdw_fun_nonloc, &
-        xc_vdw_fun_pairpot
+        ec_diagonalization, ec_functional_dc, ec_functional_ext, ec_functional_harris, &
+        ec_matrix_sign, ec_matrix_tc2, ec_matrix_trs4, ec_ot_atomic, ec_ot_diag, ec_ot_gs, &
+        kg_cholesky, ls_cluster_atomic, ls_cluster_molecular, ls_s_inversion_hotelling, &
+        ls_s_inversion_none, ls_s_inversion_sign_sqrt, ls_s_preconditioner_atomic, &
+        ls_s_preconditioner_molecular, ls_s_preconditioner_none, ls_s_sqrt_ns, ls_s_sqrt_proot, &
+        xc_vdw_fun_nonloc, xc_vdw_fun_pairpot
    USE input_cp2k_check,                ONLY: xc_functionals_expand
    USE input_section_types,             ONLY: section_get_ival,&
                                               section_vals_get,&
@@ -198,8 +198,17 @@ CONTAINS
                                    l_val=ec_env%debug_forces)
          CALL section_vals_val_get(ec_section, "DEBUG_STRESS", &
                                    l_val=ec_env%debug_stress)
+         CALL section_vals_val_get(ec_section, "DEBUG_EXTERNAL_METHOD", &
+                                   l_val=ec_env%debug_external)
          ! ADMM
          CALL section_vals_val_get(ec_section, "ADMM", l_val=ec_env%do_ec_admm)
+         ! EXTERNAL
+         CALL section_vals_val_get(ec_section, "EXTERNAL_RESPONSE_FILENAME", &
+                                   c_val=ec_env%exresp_fn)
+         CALL section_vals_val_get(ec_section, "EXTERNAL_RESULT_FILENAME", &
+                                   c_val=ec_env%exresult_fn)
+         CALL section_vals_val_get(ec_section, "ERROR_ESTIMATION", &
+                                   l_val=ec_env%do_error)
 
          ec_env%do_skip = .FALSE.
 
@@ -278,7 +287,12 @@ CONTAINS
          !Density-corrected DFT must be performed with the same basis as ground-state
          IF (ec_env%energy_functional == ec_functional_dc .AND. ec_env%basis_inconsistent) THEN
             CALL cp_abort(__LOCATION__, &
-                          "DC-DFT: Correction and ground state need to use the same basis."// &
+                          "DC-DFT: Correction and ground state need to use the same basis. "// &
+                          "Checked by comparing basis set names only.")
+         END IF
+         IF (ec_env%energy_functional == ec_functional_ext .AND. ec_env%basis_inconsistent) THEN
+            CALL cp_abort(__LOCATION__, &
+                          "Exteranl Energy: Correction and ground state need to use the same basis. "// &
                           "Checked by comparing basis set names only.")
          END IF
          !
@@ -288,6 +302,8 @@ CONTAINS
             ec_env%ec_name = "Harris"
          CASE (ec_functional_dc)
             ec_env%ec_name = "DC-DFT"
+         CASE (ec_functional_ext)
+            ec_env%ec_name = "External Energy"
          CASE DEFAULT
             CPABORT("unknown energy correction")
          END SELECT
@@ -323,6 +339,7 @@ CONTAINS
             pp_section => section_vals_get_subs_vals(xc_section, "VDW_POTENTIAL%PAIR_POTENTIAL")
             CALL qs_dispersion_pairpot_init(atomic_kind_set, qs_kind_set, dispersion_env, pp_section, para_env)
          ELSE IF (dispersion_env%type == xc_vdw_fun_nonloc) THEN
+            CPABORT("nl-vdW functionals not available for EC calculations")
             NULLIFY (nl_section)
             nl_section => section_vals_get_subs_vals(xc_section, "VDW_POTENTIAL%NON_LOCAL")
             CALL qs_dispersion_nonloc_init(dispersion_env, para_env)
@@ -409,7 +426,6 @@ CONTAINS
       ls_env%mu_spin = mu
       CALL section_vals_val_get(ec_section, "S_PRECONDITIONER", i_val=ls_env%s_preconditioner_type)
       CALL section_vals_val_get(ec_section, "MATRIX_CLUSTER_TYPE", i_val=ls_env%ls_mstruct%cluster_type)
-      CALL section_vals_val_get(ec_section, "SINGLE_PRECISION_MATRICES", l_val=ls_env%ls_mstruct%single_precision)
       CALL section_vals_val_get(ec_section, "S_INVERSION", i_val=ls_env%s_inversion_type)
       CALL section_vals_val_get(ec_section, "CHECK_S_INV", l_val=ls_env%check_s_inv)
       CALL section_vals_val_get(ec_section, "REPORT_ALL_SPARSITIES", l_val=ls_env%report_all_sparsities)
@@ -502,6 +518,8 @@ CONTAINS
             WRITE (unit_nr, '(T2,A,T61,A20)') "Energy Correction: ", "HARRIS FUNCTIONAL"
          CASE (ec_functional_dc)
             WRITE (unit_nr, '(T2,A,T61,A20)') "Energy Correction: ", "DC-DFT"
+         CASE (ec_functional_ext)
+            WRITE (unit_nr, '(T2,A,T61,A20)') "Energy Correction: ", "External"
          END SELECT
          WRITE (unit_nr, '()')
 
@@ -599,8 +617,6 @@ CONTAINS
                WRITE (unit_nr, '(T2,A,T61,L20)') "Computing inv(S):", ls_env%needs_s_inv
                WRITE (unit_nr, '(T2,A,T61,L20)') "Computing sqrt(S):", ls_env%use_s_sqrt
                WRITE (unit_nr, '(T2,A,T61,L20)') "Computing S preconditioner ", ls_env%has_s_preconditioner
-               WRITE (unit_nr, '(T2,A,T61,L20)') "Use single precision matrices", &
-                  ls_env%ls_mstruct%single_precision
 
                IF (ls_env%use_s_sqrt) THEN
                   SELECT CASE (ls_env%s_sqrt_method)

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -18,14 +18,26 @@ MODULE rpa_im_time_force_methods
                                               get_atomic_kind_set
    USE basis_set_types,                 ONLY: gto_basis_set_p_type,&
                                               gto_basis_set_type
+   USE bibliography,                    ONLY: Bussy2023,&
+                                              cite_reference
    USE cell_types,                      ONLY: cell_type,&
                                               pbc
+   USE core_ae,                         ONLY: build_core_ae
    USE core_ppl,                        ONLY: build_core_ppl
    USE core_ppnl,                       ONLY: build_core_ppnl
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_add, dbcsr_clear, dbcsr_complete_redistribute, dbcsr_copy, dbcsr_create, &
+        dbcsr_distribution_new, dbcsr_distribution_release, dbcsr_distribution_type, &
+        dbcsr_get_block_p, dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, &
+        dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, &
+        dbcsr_p_type, dbcsr_release, dbcsr_scale, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, &
+        dbcsr_type_no_symmetry, dbcsr_type_symmetric
    USE cp_dbcsr_cholesky,               ONLY: cp_dbcsr_cholesky_decompose,&
                                               cp_dbcsr_cholesky_invert
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_add_on_diag,&
+                                              dbcsr_frobenius_norm
    USE cp_dbcsr_diag,                   ONLY: cp_dbcsr_power
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr,&
@@ -42,13 +54,6 @@ MODULE rpa_im_time_force_methods
                                               cp_fm_set_all,&
                                               cp_fm_to_fm,&
                                               cp_fm_type
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add, dbcsr_add_on_diag, dbcsr_clear, dbcsr_complete_redistribute, dbcsr_copy, &
-        dbcsr_create, dbcsr_distribution_new, dbcsr_distribution_release, dbcsr_distribution_type, &
-        dbcsr_frobenius_norm, dbcsr_get_block_p, dbcsr_iterator_blocks_left, &
-        dbcsr_iterator_next_block, dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, &
-        dbcsr_multiply, dbcsr_p_type, dbcsr_release, dbcsr_scale, dbcsr_set, dbcsr_type, &
-        dbcsr_type_antisymmetric, dbcsr_type_no_symmetry, dbcsr_type_symmetric
    USE dbt_api,                         ONLY: &
         dbt_batched_contract_finalize, dbt_batched_contract_init, dbt_clear, dbt_contract, &
         dbt_copy, dbt_copy_matrix_to_tensor, dbt_copy_tensor_to_matrix, dbt_create, dbt_destroy, &
@@ -108,18 +113,12 @@ MODULE rpa_im_time_force_methods
                                               pw_zero
    USE pw_poisson_methods,              ONLY: pw_poisson_solve
    USE pw_poisson_types,                ONLY: pw_poisson_type
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_rho_elec,&
-                                              calculate_wavefunction
+                                              collocate_function
    USE qs_density_matrices,             ONLY: calculate_whz_matrix
-   USE qs_energy_matrix_w,              ONLY: qs_energies_compute_w
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type,&
                                               set_qs_env
@@ -135,6 +134,7 @@ MODULE rpa_im_time_force_methods
    USE qs_ks_reference,                 ONLY: ks_ref_potential
    USE qs_ks_types,                     ONLY: set_ks_env
    USE qs_linres_types,                 ONLY: linres_control_type
+   USE qs_matrix_w,                     ONLY: compute_matrix_w
    USE qs_mo_types,                     ONLY: get_mo_set,&
                                               mo_set_type
    USE qs_neighbor_list_types,          ONLY: neighbor_list_set_p_type,&
@@ -241,6 +241,8 @@ CONTAINS
 
       NULLIFY (dft_control, para_env, particle_set, qs_kind_set, dist_2d, nl_2c, blacs_env, matrix_s, &
                rho, rho_ao, cell, qs_section, orb_basis, ri_basis, virial)
+
+      CALL cite_reference(Bussy2023)
 
       CALL timeset(routineN, handle)
 
@@ -491,7 +493,7 @@ CONTAINS
 
       CALL dbcsr_copy(dbcsr_work, t_2c_int_tmp(1))
       CALL cp_dbcsr_cholesky_decompose(dbcsr_work, para_env=para_env, blacs_env=blacs_env)
-      CALL cp_dbcsr_cholesky_invert(dbcsr_work, para_env=para_env, blacs_env=blacs_env, upper_to_full=.TRUE.)
+      CALL cp_dbcsr_cholesky_invert(dbcsr_work, para_env=para_env, blacs_env=blacs_env, uplo_to_full=.TRUE.)
 
       CALL dbt_create(dbcsr_work, t_2c_tmp)
       CALL dbt_copy_matrix_to_tensor(dbcsr_work, t_2c_tmp)
@@ -558,7 +560,7 @@ CONTAINS
       CALL dbcsr_create(force_data%inv_ovlp, template=matrix_s(1)%matrix)
       CALL dbcsr_copy(force_data%inv_ovlp, matrix_s(1)%matrix)
       CALL cp_dbcsr_cholesky_decompose(force_data%inv_ovlp, para_env=para_env, blacs_env=blacs_env)
-      CALL cp_dbcsr_cholesky_invert(force_data%inv_ovlp, para_env=para_env, blacs_env=blacs_env, upper_to_full=.TRUE.)
+      CALL cp_dbcsr_cholesky_invert(force_data%inv_ovlp, para_env=para_env, blacs_env=blacs_env, uplo_to_full=.TRUE.)
 
       DO i_xyz = 1, 3
          CALL dbt_create(t_2c_der_tmp(1, i_xyz), t_2c_tmp)
@@ -680,7 +682,7 @@ CONTAINS
                                                             ends_array_mc_block
       INTEGER, INTENT(IN)                                :: num_integ_points, nmo
       REAL(KIND=dp), DIMENSION(:, :), INTENT(IN)         :: Eigenval
-      REAL(KIND=dp), DIMENSION(0:num_integ_points), &
+      REAL(KIND=dp), DIMENSION(num_integ_points), &
          INTENT(IN)                                      :: tau_tj
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:), &
          INTENT(IN)                                      :: tau_wj
@@ -1237,7 +1239,7 @@ CONTAINS
                                                             weights_cos_tf_w_to_t
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:), &
          INTENT(IN)                                      :: tj, wj
-      REAL(KIND=dp), DIMENSION(0:num_integ_points), &
+      REAL(KIND=dp), DIMENSION(num_integ_points), &
          INTENT(IN)                                      :: tau_tj
       INTEGER, INTENT(IN)                                :: cut_memory, ispin
       LOGICAL, INTENT(IN)                                :: open_shell
@@ -1423,7 +1425,7 @@ CONTAINS
          CALL dbcsr_add_on_diag(dbcsr_work_symm, 1.0_dp)
 
          CALL cp_dbcsr_cholesky_decompose(dbcsr_work_symm, para_env=para_env, blacs_env=blacs_env)
-         CALL cp_dbcsr_cholesky_invert(dbcsr_work_symm, para_env=para_env, blacs_env=blacs_env, upper_to_full=.TRUE.)
+         CALL cp_dbcsr_cholesky_invert(dbcsr_work_symm, para_env=para_env, blacs_env=blacs_env, uplo_to_full=.TRUE.)
 
          CALL dbcsr_add_on_diag(dbcsr_work_symm, -1.0_dp)
 
@@ -2418,17 +2420,18 @@ CONTAINS
                                                             matrix_s_aux, work_admm
       TYPE(dbcsr_type)                                   :: dbcsr_work
       TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(pw_c1d_gs_type)                               :: rhoz_tot_gspace, zv_hartree_gspace
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rhoz_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rhoz_tot_gspace, zv_hartree_gspace, &
-                                                            zv_hartree_rspace
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rhoz_g, rhoz_r, tauz_r, v_xc, v_xc_tau
+      TYPE(pw_r3d_rs_type)                               :: zv_hartree_rspace
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rhoz_r, tauz_r, v_xc, v_xc_tau
       TYPE(qs_rho_type), POINTER                         :: rho, rho_aux_fit
       TYPE(section_vals_type), POINTER                   :: hfx_section, xc_section
       TYPE(task_list_type), POINTER                      :: task_list_aux_fit
 
-      NULLIFY (pw_env, rhoz_g, rhoz_r, tauz_r, v_xc, v_xc_tau, &
+      NULLIFY (pw_env, rhoz_r, rhoz_g, tauz_r, v_xc, v_xc_tau, &
                poisson_env, auxbas_pw_pool, dft_control, admm_env, xc_section, rho, rho_aux_fit, &
                task_list_aux_fit, ker_tau_admm, work_admm, dbcsr_p_work, matrix_s, hfx_section)
 
@@ -2449,17 +2452,12 @@ CONTAINS
       !Apply the kernel on the density saved in force_data%sum_YP_tau
       ALLOCATE (rhoz_r(nspins), rhoz_g(nspins))
       DO ispin = 1, nspins
-         CALL pw_pool_create_pw(auxbas_pw_pool, rhoz_r(ispin), &
-                                use_data=REALDATA3D, in_space=REALSPACE)
-         CALL pw_pool_create_pw(auxbas_pw_pool, rhoz_g(ispin), &
-                                use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+         CALL auxbas_pw_pool%create_pw(rhoz_r(ispin))
+         CALL auxbas_pw_pool%create_pw(rhoz_g(ispin))
       END DO
-      CALL pw_pool_create_pw(auxbas_pw_pool, rhoz_tot_gspace, &
-                             use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, zv_hartree_rspace, &
-                             use_data=REALDATA3D, in_space=REALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, zv_hartree_gspace, &
-                             use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(rhoz_tot_gspace)
+      CALL auxbas_pw_pool%create_pw(zv_hartree_rspace)
+      CALL auxbas_pw_pool%create_pw(zv_hartree_gspace)
 
       CALL pw_zero(rhoz_tot_gspace)
       DO ispin = 1, nspins
@@ -2477,18 +2475,16 @@ CONTAINS
       CALL qs_rho_get(rho, tau_r_valid=do_tau)
       IF (do_tau) THEN
          BLOCK
-            TYPE(pw_type) :: tauz_g
+            TYPE(pw_c1d_gs_type) :: tauz_g
             ALLOCATE (tauz_r(nspins))
-            CALL pw_pool_create_pw(auxbas_pw_pool, tauz_g, &
-                                   use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+            CALL auxbas_pw_pool%create_pw(tauz_g)
             DO ispin = 1, nspins
-               CALL pw_pool_create_pw(auxbas_pw_pool, tauz_r(ispin), &
-                                      use_data=REALDATA3D, in_space=REALSPACE)
+               CALL auxbas_pw_pool%create_pw(tauz_r(ispin))
 
                CALL calculate_rho_elec(ks_env=qs_env%ks_env, matrix_p=force_data%sum_YP_tau(ispin)%matrix, &
                                        rho=tauz_r(ispin), rho_gspace=tauz_g, compute_tau=.TRUE.)
             END DO
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, tauz_g)
+            CALL auxbas_pw_pool%give_back_pw(tauz_g)
          END BLOCK
       END IF
 
@@ -2510,11 +2506,11 @@ CONTAINS
                                  hmat=dbcsr_p_work(ispin), &
                                  calculate_forces=.FALSE.)
 
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc(ispin))
+         CALL auxbas_pw_pool%give_back_pw(v_xc(ispin))
       END DO
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, rhoz_tot_gspace)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, zv_hartree_rspace)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, zv_hartree_gspace)
+      CALL auxbas_pw_pool%give_back_pw(rhoz_tot_gspace)
+      CALL auxbas_pw_pool%give_back_pw(zv_hartree_rspace)
+      CALL auxbas_pw_pool%give_back_pw(zv_hartree_gspace)
       DEALLOCATE (v_xc)
 
       IF (do_tau) THEN
@@ -2525,7 +2521,7 @@ CONTAINS
                                     hmat=dbcsr_p_work(ispin), &
                                     compute_tau=.TRUE., &
                                     calculate_forces=.FALSE.)
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc_tau(ispin))
+            CALL auxbas_pw_pool%give_back_pw(v_xc_tau(ispin))
          END DO
          DEALLOCATE (v_xc_tau)
       END IF
@@ -2576,9 +2572,8 @@ CONTAINS
 
             IF (do_tau_admm) THEN
                BLOCK
-                  TYPE(pw_type) :: tauz_g
-                  CALL pw_pool_create_pw(auxbas_pw_pool, tauz_g, &
-                                         use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+                  TYPE(pw_c1d_gs_type) :: tauz_g
+                  CALL auxbas_pw_pool%create_pw(tauz_g)
                   DO ispin = 1, nspins
                      CALL pw_zero(tauz_r(ispin))
                      CALL calculate_rho_elec(ks_env=qs_env%ks_env, matrix_p=ker_tau_admm(ispin)%matrix, &
@@ -2586,7 +2581,7 @@ CONTAINS
                                              basis_type="AUX_FIT", task_list_external=task_list_aux_fit, &
                                              compute_tau=.TRUE.)
                   END DO
-                  CALL pw_pool_give_back_pw(auxbas_pw_pool, tauz_g)
+                  CALL auxbas_pw_pool%give_back_pw(tauz_g)
                END BLOCK
             END IF
 
@@ -2601,7 +2596,7 @@ CONTAINS
                                        calculate_forces=.FALSE., &
                                        basis_type="AUX_FIT", &
                                        task_list_external=task_list_aux_fit)
-               CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc(ispin))
+               CALL auxbas_pw_pool%give_back_pw(v_xc(ispin))
             END DO
             DEALLOCATE (v_xc)
 
@@ -2615,7 +2610,7 @@ CONTAINS
                                           basis_type="AUX_FIT", &
                                           task_list_external=task_list_aux_fit, &
                                           compute_tau=.TRUE.)
-                  CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc_tau(ispin))
+                  CALL auxbas_pw_pool%give_back_pw(v_xc_tau(ispin))
                END DO
                DEALLOCATE (v_xc_tau)
             END IF
@@ -2623,14 +2618,14 @@ CONTAINS
       END IF
 
       DO ispin = 1, nspins
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, rhoz_r(ispin))
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, rhoz_g(ispin))
+         CALL auxbas_pw_pool%give_back_pw(rhoz_r(ispin))
+         CALL auxbas_pw_pool%give_back_pw(rhoz_g(ispin))
       END DO
       DEALLOCATE (rhoz_r, rhoz_g)
 
       IF (do_tau) THEN
          DO ispin = 1, nspins
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, tauz_r(ispin))
+            CALL auxbas_pw_pool%give_back_pw(tauz_r(ispin))
          END DO
          DEALLOCATE (tauz_r)
       END IF
@@ -2720,11 +2715,11 @@ CONTAINS
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
          POINTER                                         :: sab_orb
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pw_c1d_gs_type)                               :: dvg(3), pot_g, rho_g, rho_g_copy
       TYPE(pw_env_type), POINTER                         :: pw_env_ext
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: dvg(3), pot_g, psi_L, rho_g, rho_g_copy, &
-                                                            rho_r
+      TYPE(pw_r3d_rs_type)                               :: psi_L, rho_r
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(realspace_grid_type), DIMENSION(:), POINTER   :: rs_v
       TYPE(task_list_type), POINTER                      :: task_list_ext
@@ -2806,13 +2801,9 @@ CONTAINS
                        auxbas_pw_pool, poisson_env, task_list_ext, rho_r, rho_g, pot_g, psi_L, sab_orb)
 
       IF (use_virial) THEN
-         CALL pw_pool_create_pw(auxbas_pw_pool, rho_g_copy, &
-                                use_data=COMPLEXDATA1D, &
-                                in_space=RECIPROCALSPACE)
+         CALL auxbas_pw_pool%create_pw(rho_g_copy)
          DO i_xyz = 1, 3
-            CALL pw_pool_create_pw(auxbas_pw_pool, dvg(i_xyz), &
-                                   use_data=COMPLEXDATA1D, &
-                                   in_space=RECIPROCALSPACE)
+            CALL auxbas_pw_pool%create_pw(dvg(i_xyz))
          END DO
       END IF
 
@@ -2843,9 +2834,9 @@ CONTAINS
             wf_vector = 0.0_dp
             wf_vector(j_RI) = 1.0_dp
 
-            CALL calculate_wavefunction(mos(1)%mo_coeff, 1, psi_L, rho_g, atomic_kind_set, &
-                                        qs_kind_set, cell, dft_control, particle_set, pw_env_ext, &
-                                        basis_type="RI_AUX", external_vector=wf_vector)
+            CALL collocate_function(wf_vector, psi_L, rho_g, atomic_kind_set, qs_kind_set, cell, &
+                                    particle_set, pw_env_ext, dft_control%qs_control%eps_rho_rspace, &
+                                    basis_type="RI_AUX")
 
             IF (use_virial) THEN
                CALL calc_potential_gpw(rho_r, rho_g, poisson_env, pot_g, mp2_env%potential_parameter, dvg)
@@ -2865,9 +2856,9 @@ CONTAINS
                END DO
 
                CALL pw_copy(rho_g, rho_g_copy)
-               CALL calculate_wavefunction(mos(1)%mo_coeff, 1, psi_L, rho_g, atomic_kind_set, &
-                                           qs_kind_set, cell, dft_control, particle_set, pw_env_ext, &
-                                           basis_type="RI_AUX", external_vector=wf_vector)
+               CALL collocate_function(wf_vector, psi_L, rho_g, atomic_kind_set, qs_kind_set, cell, &
+                                       particle_set, pw_env_ext, dft_control%qs_control%eps_rho_rspace, &
+                                       basis_type="RI_AUX")
 
                CALL calc_potential_gpw(psi_L, rho_g, poisson_env, pot_g, mp2_env%potential_parameter, &
                                        no_transfer=.TRUE.)
@@ -2970,9 +2961,9 @@ CONTAINS
       END DO !jatom
 
       IF (use_virial) THEN
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_g_copy)
+         CALL auxbas_pw_pool%give_back_pw(rho_g_copy)
          DO i_xyz = 1, 3
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, dvg(i_xyz))
+            CALL auxbas_pw_pool%give_back_pw(dvg(i_xyz))
          END DO
       END IF
 
@@ -3005,8 +2996,8 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'get_2c_mme_forces'
 
-      INTEGER :: atom_a, atom_b, blk, G_count, handle, i_xyz, iatom, ikind, iset, jatom, jkind, &
-         jset, natom, nkind, nseta, nsetb, offset_hab_a, offset_hab_b, R_count, sgfa, sgfb
+      INTEGER :: atom_a, atom_b, G_count, handle, i_xyz, iatom, ikind, iset, jatom, jkind, jset, &
+         natom, nkind, nseta, nsetb, offset_hab_a, offset_hab_b, R_count, sgfa, sgfb
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: atom_of_kind, kind_of
       INTEGER, DIMENSION(:), POINTER                     :: la_max, la_min, lb_max, lb_min, npgfa, &
                                                             npgfb, nsgfa, nsgfb
@@ -3048,7 +3039,7 @@ CONTAINS
       CALL dbcsr_iterator_start(iter, G_PQ)
       DO WHILE (dbcsr_iterator_blocks_left(iter))
 
-         CALL dbcsr_iterator_next_block(iter, row=iatom, column=jatom, blk=blk)
+         CALL dbcsr_iterator_next_block(iter, row=iatom, column=jatom)
          CALL dbcsr_get_block_p(G_PQ, iatom, jatom, pblock, found)
          IF (.NOT. found) CYCLE
          IF (iatom > jatom) CYCLE
@@ -3163,15 +3154,16 @@ CONTAINS
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
-         POINTER                                         :: sab_orb, sac_ppl, sap_ppnl
+         POINTER                                         :: sab_orb, sac_ae, sac_ppl, sap_ppnl
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pw_c1d_gs_type)                               :: rho_tot_gspace, rhoz_tot_gspace, &
+                                                            zv_hartree_gspace
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rhoz_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rho_tot_gspace, rhoz_tot_gspace, &
-                                                            vh_rspace, vhxc_rspace, &
-                                                            zv_hartree_gspace, zv_hartree_rspace
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rhoz_g, rhoz_r, tauz_r, v_xc, v_xc_tau, &
+      TYPE(pw_r3d_rs_type)                               :: vh_rspace, vhxc_rspace, zv_hartree_rspace
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rhoz_r, tauz_r, v_xc, v_xc_tau, &
                                                             vadmm_rspace, vtau_rspace, vxc_rspace
       TYPE(qs_force_type), DIMENSION(:), POINTER         :: force
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
@@ -3181,7 +3173,7 @@ CONTAINS
       TYPE(virial_type), POINTER                         :: virial
 
       NULLIFY (scrm, rho, dft_control, matrix_p_mp2, matrix_s, matrix_p_mp2_admm, admm_env, sab_orb, &
-               cell_to_index, dbcsr_work_p, dbcsr_work_h, sac_ppl, sap_ppnl, force, virial, &
+               cell_to_index, dbcsr_work_p, dbcsr_work_h, sac_ae, sac_ppl, sap_ppnl, force, virial, &
                qs_kind_set, atomic_kind_set, particle_set, pw_env, poisson_env, auxbas_pw_pool, &
                task_list_aux_fit, matrix_s_aux_fit, scrm_admm, rho_aux_fit, rho_ao_aux, x_data, &
                hfx_section, xc_section, para_env, rhoz_g, rhoz_r, tauz_r, v_xc, v_xc_tau, &
@@ -3190,9 +3182,9 @@ CONTAINS
       CALL timeset(routineN, handle)
 
       CALL get_qs_env(qs_env, rho=rho, dft_control=dft_control, matrix_s=matrix_s, admm_env=admm_env, &
-                      sab_orb=sab_orb, sac_ppl=sac_ppl, sap_ppnl=sap_ppnl, force=force, virial=virial, &
-                      particle_set=particle_set, qs_kind_set=qs_kind_set, atomic_kind_set=atomic_kind_set, &
-                      x_data=x_data, para_env=para_env)
+                      sab_orb=sab_orb, sac_ae=sac_ae, sac_ppl=sac_ppl, sap_ppnl=sap_ppnl, force=force, &
+                      virial=virial, particle_set=particle_set, qs_kind_set=qs_kind_set, &
+                      atomic_kind_set=atomic_kind_set, x_data=x_data, para_env=para_env)
       nspins = dft_control%nspins
 
       use_virial = virial%pv_availability .AND. (.NOT. virial%pv_numer)
@@ -3236,6 +3228,13 @@ CONTAINS
          dbcsr_work_p(ispin, 1)%matrix => matrix_p_mp2(ispin)%matrix
          dbcsr_work_h(ispin, 1)%matrix => scrm(ispin)%matrix
       END DO
+
+      IF (ASSOCIATED(sac_ae)) THEN
+         CALL build_core_ae(dbcsr_work_h, dbcsr_work_p, force, &
+                            virial, .TRUE., use_virial, nder, &
+                            qs_kind_set, atomic_kind_set, particle_set, &
+                            sab_orb, sac_ae, nimages, cell_to_index)
+      END IF
 
       IF (ASSOCIATED(sac_ppl)) THEN
          CALL build_core_ppl(dbcsr_work_h, dbcsr_work_p, force, &
@@ -3284,8 +3283,7 @@ CONTAINS
       CALL get_qs_env(qs_env, pw_env=pw_env)
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, &
                       poisson_env=poisson_env)
-      CALL pw_pool_create_pw(auxbas_pw_pool, vhxc_rspace, &
-                             use_data=REALDATA3D, in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(vhxc_rspace)
 
       IF (use_virial) pv_loc = virial%pv_virial
 
@@ -3322,7 +3320,7 @@ CONTAINS
             END IF
          END DO
       END IF
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, vhxc_rspace)
+      CALL auxbas_pw_pool%give_back_pw(vhxc_rspace)
 
       IF (use_virial) virial%pv_ehartree = virial%pv_ehartree + (virial%pv_virial - pv_loc)
 
@@ -3482,17 +3480,12 @@ CONTAINS
          !The core-denstiy derivative
          ALLOCATE (rhoz_r(nspins), rhoz_g(nspins))
          DO ispin = 1, nspins
-            CALL pw_pool_create_pw(auxbas_pw_pool, rhoz_r(ispin), &
-                                   use_data=REALDATA3D, in_space=REALSPACE)
-            CALL pw_pool_create_pw(auxbas_pw_pool, rhoz_g(ispin), &
-                                   use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+            CALL auxbas_pw_pool%create_pw(rhoz_r(ispin))
+            CALL auxbas_pw_pool%create_pw(rhoz_g(ispin))
          END DO
-         CALL pw_pool_create_pw(auxbas_pw_pool, rhoz_tot_gspace, &
-                                use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
-         CALL pw_pool_create_pw(auxbas_pw_pool, zv_hartree_rspace, &
-                                use_data=REALDATA3D, in_space=REALSPACE)
-         CALL pw_pool_create_pw(auxbas_pw_pool, zv_hartree_gspace, &
-                                use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+         CALL auxbas_pw_pool%create_pw(rhoz_tot_gspace)
+         CALL auxbas_pw_pool%create_pw(zv_hartree_rspace)
+         CALL auxbas_pw_pool%create_pw(zv_hartree_gspace)
 
          CALL pw_zero(rhoz_tot_gspace)
          DO ispin = 1, nspins
@@ -3504,8 +3497,7 @@ CONTAINS
          IF (use_virial) THEN
 
             CALL get_qs_env(qs_env, rho=rho)
-            CALL pw_pool_create_pw(auxbas_pw_pool, rho_tot_gspace, &
-                                   use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+            CALL auxbas_pw_pool%create_pw(rho_tot_gspace)
 
             CALL calc_rho_tot_gspace(rho_tot_gspace, qs_env, rho)
 
@@ -3517,7 +3509,7 @@ CONTAINS
                                   h_stress=h_stress, &
                                   aux_density=rho_tot_gspace)
 
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_tot_gspace)
+            CALL auxbas_pw_pool%give_back_pw(rho_tot_gspace)
 
             !Green contribution
             virial%pv_ehartree = virial%pv_ehartree + 2.0_dp*h_stress/REAL(para_env%num_pe, dp)
@@ -3534,18 +3526,16 @@ CONTAINS
 
          IF (do_tau) THEN
             BLOCK
-               TYPE(pw_type) :: tauz_g
-               CALL pw_pool_create_pw(auxbas_pw_pool, tauz_g, &
-                                      use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+               TYPE(pw_c1d_gs_type) :: tauz_g
+               CALL auxbas_pw_pool%create_pw(tauz_g)
                ALLOCATE (tauz_r(nspins))
                DO ispin = 1, nspins
-                  CALL pw_pool_create_pw(auxbas_pw_pool, tauz_r(ispin), &
-                                         use_data=REALDATA3D, in_space=REALSPACE)
+                  CALL auxbas_pw_pool%create_pw(tauz_r(ispin))
 
                   CALL calculate_rho_elec(ks_env=qs_env%ks_env, matrix_p=current_density(ispin)%matrix, &
                                           rho=tauz_r(ispin), rho_gspace=tauz_g, compute_tau=.TRUE.)
                END DO
-               CALL pw_pool_give_back_pw(auxbas_pw_pool, tauz_g)
+               CALL auxbas_pw_pool%give_back_pw(tauz_g)
             END BLOCK
          END IF
 
@@ -3608,11 +3598,11 @@ CONTAINS
                                     hmat=current_mat_h(ispin), &
                                     pmat=dbcsr_work_p(ispin, 1), &
                                     calculate_forces=.TRUE.)
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc(ispin))
+            CALL auxbas_pw_pool%give_back_pw(v_xc(ispin))
          END DO
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, rhoz_tot_gspace)
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, zv_hartree_rspace)
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, zv_hartree_gspace)
+         CALL auxbas_pw_pool%give_back_pw(rhoz_tot_gspace)
+         CALL auxbas_pw_pool%give_back_pw(zv_hartree_rspace)
+         CALL auxbas_pw_pool%give_back_pw(zv_hartree_gspace)
          DEALLOCATE (v_xc)
 
          IF (do_tau) THEN
@@ -3624,7 +3614,7 @@ CONTAINS
                                        pmat=dbcsr_work_p(ispin, 1), &
                                        compute_tau=.TRUE., &
                                        calculate_forces=.TRUE.)
-               CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc_tau(ispin))
+               CALL auxbas_pw_pool%give_back_pw(v_xc_tau(ispin))
             END DO
             DEALLOCATE (v_xc_tau)
          END IF
@@ -3650,9 +3640,8 @@ CONTAINS
 
                   IF (do_tau_admm) THEN
                      BLOCK
-                        TYPE(pw_type) :: tauz_g
-                        CALL pw_pool_create_pw(auxbas_pw_pool, tauz_g, &
-                                               use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+                        TYPE(pw_c1d_gs_type) :: tauz_g
+                        CALL auxbas_pw_pool%create_pw(tauz_g)
                         DO ispin = 1, nspins
                            CALL pw_zero(tauz_r(ispin))
                            CALL calculate_rho_elec(ks_env=qs_env%ks_env, matrix_p=current_density(ispin)%matrix, &
@@ -3660,7 +3649,7 @@ CONTAINS
                                                    basis_type="AUX_FIT", task_list_external=task_list_aux_fit, &
                                                    compute_tau=.TRUE.)
                         END DO
-                        CALL pw_pool_give_back_pw(auxbas_pw_pool, tauz_g)
+                        CALL auxbas_pw_pool%give_back_pw(tauz_g)
                      END BLOCK
                   END IF
 
@@ -3700,7 +3689,7 @@ CONTAINS
                                              calculate_forces=.TRUE., &
                                              basis_type="AUX_FIT", &
                                              task_list_external=task_list_aux_fit)
-                     CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc(ispin))
+                     CALL auxbas_pw_pool%give_back_pw(v_xc(ispin))
                   END DO
                   DEALLOCATE (v_xc)
 
@@ -3715,7 +3704,7 @@ CONTAINS
                                                 basis_type="AUX_FIT", &
                                                 task_list_external=task_list_aux_fit, &
                                                 compute_tau=.TRUE.)
-                        CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc_tau(ispin))
+                        CALL auxbas_pw_pool%give_back_pw(v_xc_tau(ispin))
                      END DO
                      DEALLOCATE (v_xc_tau)
                   END IF
@@ -3758,14 +3747,14 @@ CONTAINS
          END IF !do_hfx
 
          DO ispin = 1, nspins
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, rhoz_r(ispin))
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, rhoz_g(ispin))
+            CALL auxbas_pw_pool%give_back_pw(rhoz_r(ispin))
+            CALL auxbas_pw_pool%give_back_pw(rhoz_g(ispin))
          END DO
          DEALLOCATE (rhoz_r, rhoz_g)
 
          IF (do_tau) THEN
             DO ispin = 1, nspins
-               CALL pw_pool_give_back_pw(auxbas_pw_pool, tauz_r(ispin))
+               CALL auxbas_pw_pool%give_back_pw(tauz_r(ispin))
             END DO
             DEALLOCATE (tauz_r)
          END IF
@@ -3788,7 +3777,7 @@ CONTAINS
 
       !Add to it the SCF W matrix, except if EXX (because taken care of by HF response)
       IF (.NOT. do_exx) THEN
-         CALL qs_energies_compute_w(qs_env, calc_forces=.TRUE.)
+         CALL compute_matrix_w(qs_env, calc_forces=.TRUE.)
          CALL get_qs_env(qs_env, matrix_w=matrix_w)
          CALL dbcsr_add(p_env%w1(1)%matrix, matrix_w(1)%matrix, 1.0_dp, 1.0_dp)
          IF (nspins == 2) CALL dbcsr_add(p_env%w1(1)%matrix, matrix_w(2)%matrix, 1.0_dp, 1.0_dp)
@@ -3815,15 +3804,15 @@ CONTAINS
       IF (use_virial) virial%pv_calculate = .FALSE.
 
       !clean-up
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, vh_rspace)
+      CALL auxbas_pw_pool%give_back_pw(vh_rspace)
 
       DO ispin = 1, nspins
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_rspace(ispin))
+         CALL auxbas_pw_pool%give_back_pw(vxc_rspace(ispin))
          IF (ASSOCIATED(vtau_rspace)) THEN
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, vtau_rspace(ispin))
+            CALL auxbas_pw_pool%give_back_pw(vtau_rspace(ispin))
          END IF
          IF (ASSOCIATED(vadmm_rspace)) THEN
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, vadmm_rspace(ispin))
+            CALL auxbas_pw_pool%give_back_pw(vadmm_rspace(ispin))
          END IF
       END DO
       DEALLOCATE (vxc_rspace)
@@ -3952,7 +3941,7 @@ CONTAINS
 
       IF (do_laplace .OR. do_im_time) THEN
          IF (.NOT. ASSOCIATED(qs_env%mp2_env%ri_rpa_im_time%tau_tj)) THEN
-            ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%tau_tj(0:num_integ_points))
+            ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%tau_tj(num_integ_points))
             ALLOCATE (qs_env%mp2_env%ri_rpa_im_time%tau_wj(num_integ_points))
             qs_env%mp2_env%ri_rpa_im_time%tau_tj(:) = tau_tj(:)
             qs_env%mp2_env%ri_rpa_im_time%tau_wj(:) = tau_wj(:)

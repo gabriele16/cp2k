@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -20,6 +20,7 @@
 MODULE xas_restart
 
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_p_type
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply
    USE cp_files,                        ONLY: close_file,&
                                               open_file
@@ -39,7 +40,6 @@ MODULE xas_restart
                                               cp_print_key_generate_filename,&
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_p_type
    USE input_section_types,             ONLY: section_vals_type
    USE kinds,                           ONLY: default_path_length,&
                                               default_string_length,&
@@ -184,11 +184,11 @@ CONTAINS
             READ (rst_unit) xas_estate_read
 
             IF (xas_method_read /= xas_method) &
-               CPABORT(" READ XAS RESTART: restart with different XAS method is not possible. ")
+               CPABORT("READ XAS RESTART: restart with different XAS method is not possible.")
             IF (nexc_atoms_read /= nexc_atoms) &
                CALL cp_abort(__LOCATION__, &
-                             " READ XAS RESTART: restart with different excited atoms "// &
-                             " is not possible. Start instead a new XAS run with the new set of atoms. ")
+                             "READ XAS RESTART: restart with different excited atoms "// &
+                             "is not possible. Start instead a new XAS run with the new set of atoms.")
          END IF
 
          CALL para_env%bcast(xas_estate_read)

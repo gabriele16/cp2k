@@ -1,11 +1,12 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
 
 #include <assert.h>
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,11 +18,13 @@
  * \brief Check given MPI status and upon failure abort with a nice message.
  * \author Ole Schuett
  ******************************************************************************/
-#define CHECK(status)                                                          \
-  if (status != MPI_SUCCESS) {                                                 \
-    fprintf(stderr, "MPI error in %s:%i\n", __FILE__, __LINE__);               \
-    MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);                                   \
-  }
+#define CHECK(STATUS)                                                          \
+  do {                                                                         \
+    if (MPI_SUCCESS != (STATUS)) {                                             \
+      fprintf(stderr, "MPI error #%i in %s:%i\n", STATUS, __FILE__, __LINE__); \
+      MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);                                 \
+    }                                                                          \
+  } while (0)
 #endif
 
 /*******************************************************************************
@@ -210,7 +213,7 @@ void dbm_mpi_comm_free(dbm_mpi_comm_t *comm) {
 #if defined(__parallel)
   CHECK(MPI_Comm_free(comm));
 #else
-  (void)comm;  // mark used
+  (void)comm; // mark used
 #endif
 }
 
@@ -237,10 +240,35 @@ bool dbm_mpi_comms_are_similar(const dbm_mpi_comm_t comm1,
  ******************************************************************************/
 void dbm_mpi_max_int(int *values, const int count, const dbm_mpi_comm_t comm) {
 #if defined(__parallel)
-  int *recvbuf = malloc(count * sizeof(int));
+  int value = 0;
+  void *recvbuf = (1 < count ? dbm_mpi_alloc_mem(count * sizeof(int)) : &value);
   CHECK(MPI_Allreduce(values, recvbuf, count, MPI_INT, MPI_MAX, comm));
   memcpy(values, recvbuf, count * sizeof(int));
-  free(recvbuf);
+  if (1 < count) {
+    dbm_mpi_free_mem(recvbuf);
+  }
+#else
+  (void)comm; // mark used
+  (void)values;
+  (void)count;
+#endif
+}
+
+/*******************************************************************************
+ * \brief Wrapper around MPI_Allreduce for op MPI_MAX and datatype MPI_UINT64_T.
+ * \author Ole Schuett
+ ******************************************************************************/
+void dbm_mpi_max_uint64(uint64_t *values, const int count,
+                        const dbm_mpi_comm_t comm) {
+#if defined(__parallel)
+  uint64_t value = 0;
+  void *recvbuf =
+      (1 < count ? dbm_mpi_alloc_mem(count * sizeof(uint64_t)) : &value);
+  CHECK(MPI_Allreduce(values, recvbuf, count, MPI_UINT64_T, MPI_MAX, comm));
+  memcpy(values, recvbuf, count * sizeof(uint64_t));
+  if (1 < count) {
+    dbm_mpi_free_mem(recvbuf);
+  }
 #else
   (void)comm; // mark used
   (void)values;
@@ -255,10 +283,14 @@ void dbm_mpi_max_int(int *values, const int count, const dbm_mpi_comm_t comm) {
 void dbm_mpi_max_double(double *values, const int count,
                         const dbm_mpi_comm_t comm) {
 #if defined(__parallel)
-  double *recvbuf = malloc(count * sizeof(double));
+  double value = 0;
+  void *recvbuf =
+      (1 < count ? dbm_mpi_alloc_mem(count * sizeof(double)) : &value);
   CHECK(MPI_Allreduce(values, recvbuf, count, MPI_DOUBLE, MPI_MAX, comm));
   memcpy(values, recvbuf, count * sizeof(double));
-  free(recvbuf);
+  if (1 < count) {
+    dbm_mpi_free_mem(recvbuf);
+  }
 #else
   (void)comm; // mark used
   (void)values;
@@ -272,10 +304,13 @@ void dbm_mpi_max_double(double *values, const int count,
  ******************************************************************************/
 void dbm_mpi_sum_int(int *values, const int count, const dbm_mpi_comm_t comm) {
 #if defined(__parallel)
-  int *recvbuf = malloc(count * sizeof(int));
+  int value = 0;
+  void *recvbuf = (1 < count ? dbm_mpi_alloc_mem(count * sizeof(int)) : &value);
   CHECK(MPI_Allreduce(values, recvbuf, count, MPI_INT, MPI_SUM, comm));
   memcpy(values, recvbuf, count * sizeof(int));
-  free(recvbuf);
+  if (1 < count) {
+    dbm_mpi_free_mem(recvbuf);
+  }
 #else
   (void)comm; // mark used
   (void)values;
@@ -290,10 +325,14 @@ void dbm_mpi_sum_int(int *values, const int count, const dbm_mpi_comm_t comm) {
 void dbm_mpi_sum_int64(int64_t *values, const int count,
                        const dbm_mpi_comm_t comm) {
 #if defined(__parallel)
-  int64_t *recvbuf = malloc(count * sizeof(int64_t));
+  int64_t value = 0;
+  void *recvbuf =
+      (1 < count ? dbm_mpi_alloc_mem(count * sizeof(int64_t)) : &value);
   CHECK(MPI_Allreduce(values, recvbuf, count, MPI_INT64_T, MPI_SUM, comm));
   memcpy(values, recvbuf, count * sizeof(int64_t));
-  free(recvbuf);
+  if (1 < count) {
+    dbm_mpi_free_mem(recvbuf);
+  }
 #else
   (void)comm; // mark used
   (void)values;
@@ -308,10 +347,14 @@ void dbm_mpi_sum_int64(int64_t *values, const int count,
 void dbm_mpi_sum_double(double *values, const int count,
                         const dbm_mpi_comm_t comm) {
 #if defined(__parallel)
-  double *recvbuf = malloc(count * sizeof(double));
+  double value = 0;
+  void *recvbuf =
+      (1 < count ? dbm_mpi_alloc_mem(count * sizeof(double)) : &value);
   CHECK(MPI_Allreduce(values, recvbuf, count, MPI_DOUBLE, MPI_SUM, comm));
   memcpy(values, recvbuf, count * sizeof(double));
-  free(recvbuf);
+  if (1 < count) {
+    dbm_mpi_free_mem(recvbuf);
+  }
 #else
   (void)comm; // mark used
   (void)values;
@@ -330,7 +373,7 @@ int dbm_mpi_sendrecv_byte(const void *sendbuf, const int sendcount,
 #if defined(__parallel)
   MPI_Status status;
   CHECK(MPI_Sendrecv(sendbuf, sendcount, MPI_BYTE, dest, sendtag, recvbuf,
-                     recvcount, MPI_BYTE, source, recvtag, comm, &status))
+                     recvcount, MPI_BYTE, source, recvtag, comm, &status));
   int count_received;
   CHECK(MPI_Get_count(&status, MPI_BYTE, &count_received));
   return count_received;
@@ -360,7 +403,7 @@ int dbm_mpi_sendrecv_double(const double *sendbuf, const int sendcount,
 #if defined(__parallel)
   MPI_Status status;
   CHECK(MPI_Sendrecv(sendbuf, sendcount, MPI_DOUBLE, dest, sendtag, recvbuf,
-                     recvcount, MPI_DOUBLE, source, recvtag, comm, &status))
+                     recvcount, MPI_DOUBLE, source, recvtag, comm, &status));
   int count_received;
   CHECK(MPI_Get_count(&status, MPI_DOUBLE, &count_received));
   return count_received;
@@ -430,6 +473,36 @@ void dbm_mpi_alltoallv_double(const double *sendbuf, const int *sendcounts,
   assert(sendcounts[0] == recvcounts[0]);
   assert(sdispls[0] == 0 && rdispls[0] == 0);
   memcpy(recvbuf, sendbuf, sendcounts[0] * sizeof(double));
+#endif
+}
+
+/*******************************************************************************
+ * \brief Wrapper around MPI_Alloc_mem.
+ * \author Hans Pabst
+ ******************************************************************************/
+void *dbm_mpi_alloc_mem(size_t size) {
+  void *result = NULL;
+#if DBM_ALLOC_MPI && defined(__parallel)
+  CHECK(MPI_Alloc_mem((MPI_Aint)size, MPI_INFO_NULL, &result));
+#elif DBM_ALLOC_OPENMP && (201811 /*v5.0*/ <= _OPENMP)
+  result = omp_alloc(size, omp_null_allocator);
+#else
+  result = malloc(size);
+#endif
+  return result;
+}
+
+/*******************************************************************************
+ * \brief Wrapper around MPI_Free_mem.
+ * \author Hans Pabst
+ ******************************************************************************/
+void dbm_mpi_free_mem(void *mem) {
+#if DBM_ALLOC_MPI && defined(__parallel)
+  CHECK(MPI_Free_mem(mem));
+#elif DBM_ALLOC_OPENMP && (201811 /*v5.0*/ <= _OPENMP)
+  omp_free(mem, omp_null_allocator);
+#else
+  free(mem);
 #endif
 }
 

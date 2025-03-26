@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -18,6 +18,11 @@ MODULE qs_dftb_matrices
    USE block_p_types,                   ONLY: block_p_type
    USE cp_control_types,                ONLY: dft_control_type,&
                                               dftb_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_add, dbcsr_convert_offsets_to_sizes, dbcsr_copy, dbcsr_create, &
+        dbcsr_distribution_type, dbcsr_finalize, dbcsr_get_block_p, dbcsr_multiply, dbcsr_p_type, &
+        dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_symmetric
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_dot
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set
    USE cp_dbcsr_output,                 ONLY: cp_dbcsr_write_sparse_matrix
@@ -27,10 +32,6 @@ MODULE qs_dftb_matrices
                                               cp_print_key_finished_output,&
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add, dbcsr_convert_offsets_to_sizes, dbcsr_copy, dbcsr_create, &
-        dbcsr_distribution_type, dbcsr_dot, dbcsr_finalize, dbcsr_get_block_p, dbcsr_multiply, &
-        dbcsr_p_type, dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_symmetric
    USE efield_tb_methods,               ONLY: efield_tb_matrix
    USE input_section_types,             ONLY: section_vals_get_subs_vals,&
                                               section_vals_type,&
@@ -108,8 +109,8 @@ CONTAINS
       INTEGER, DIMENSION(3)                              :: cell
       INTEGER, DIMENSION(:, :, :), POINTER               :: cell_to_index
       LOGICAL                                            :: defined, found, omit_headers, use_virial
-      REAL(KIND=dp)                                      :: ddr, dgrd, dr, erep, erepij, f0, f1, &
-                                                            foab, fow, s_cut, urep_cut
+      REAL(KIND=dp)                                      :: ddr, dgrd, dr, erep, erepij, f0, foab, &
+                                                            fow, s_cut, urep_cut
       REAL(KIND=dp), DIMENSION(0:3)                      :: eta_a, eta_b, skself
       REAL(KIND=dp), DIMENSION(10)                       :: urep
       REAL(KIND=dp), DIMENSION(2)                        :: surr
@@ -363,18 +364,9 @@ CONTAINS
                      END IF
                   END DO
                   IF (use_virial) THEN
-!deb iatom=jatom f0=0.5*f0
                      IF (iatom == jatom) f0 = 0.5_dp*f0
-!deb
                      CALL virial_pair_force(virial%pv_virial, -f0, force_ab, rij)
                      CALL virial_pair_force(virial%pv_virial, -f0, force_w, rij)
-                     IF (atprop%stress) THEN
-                        f1 = 0.5_dp*f0
-                        CALL virial_pair_force(atprop%atstress(:, :, iatom), -f1, force_ab, rij)
-                        CALL virial_pair_force(atprop%atstress(:, :, iatom), -f1, force_w, rij)
-                        CALL virial_pair_force(atprop%atstress(:, :, jatom), -f1, force_ab, rij)
-                        CALL virial_pair_force(atprop%atstress(:, :, jatom), -f1, force_w, rij)
-                     END IF
                   END IF
                   DEALLOCATE (dfblock, dsblock)
                END IF
@@ -414,10 +406,6 @@ CONTAINS
                   f0 = -1.0_dp
                   IF (iatom == jatom) f0 = -0.5_dp
                   CALL virial_pair_force(virial%pv_virial, f0, force_rr, rij)
-                  IF (atprop%stress) THEN
-                     CALL virial_pair_force(atprop%atstress(:, :, iatom), f0*0.5_dp, force_rr, rij)
-                     CALL virial_pair_force(atprop%atstress(:, :, jatom), f0*0.5_dp, force_rr, rij)
-                  END IF
                END IF
             END IF
          END IF
@@ -610,29 +598,31 @@ CONTAINS
       energy%total = energy%core + energy%hartree + energy%qmmm_el + energy%efield + &
                      energy%repulsive + energy%dispersion + energy%dftb3
 
-      output_unit = cp_print_key_unit_nr(logger, scf_section, "PRINT%DETAILED_ENERGY", &
-                                         extension=".scfLog")
-      IF (output_unit > 0) THEN
-         WRITE (UNIT=output_unit, FMT="(/,(T9,A,T60,F20.10))") &
-            "Repulsive pair potential energy:               ", energy%repulsive, &
-            "Zeroth order Hamiltonian energy:               ", energy%core, &
-            "Charge fluctuation energy:                     ", energy%hartree, &
-            "London dispersion energy:                      ", energy%dispersion
-         IF (ABS(energy%efield) > 1.e-12_dp) THEN
-            WRITE (UNIT=output_unit, FMT="(T9,A,T60,F20.10)") &
-               "Electric field interaction energy:             ", energy%efield
+      IF (dft_control%qs_control%dftb_control%self_consistent) THEN
+         output_unit = cp_print_key_unit_nr(logger, scf_section, "PRINT%DETAILED_ENERGY", &
+                                            extension=".scfLog")
+         IF (output_unit > 0) THEN
+            WRITE (UNIT=output_unit, FMT="(/,(T9,A,T60,F20.10))") &
+               "Repulsive pair potential energy:               ", energy%repulsive, &
+               "Zeroth order Hamiltonian energy:               ", energy%core, &
+               "Charge fluctuation energy:                     ", energy%hartree, &
+               "London dispersion energy:                      ", energy%dispersion
+            IF (ABS(energy%efield) > 1.e-12_dp) THEN
+               WRITE (UNIT=output_unit, FMT="(T9,A,T60,F20.10)") &
+                  "Electric field interaction energy:             ", energy%efield
+            END IF
+            IF (dft_control%qs_control%dftb_control%dftb3_diagonal) THEN
+               WRITE (UNIT=output_unit, FMT="(T9,A,T60,F20.10)") &
+                  "DFTB3 3rd Order Energy Correction              ", energy%dftb3
+            END IF
+            IF (qs_env%qmmm) THEN
+               WRITE (UNIT=output_unit, FMT="(T9,A,T60,F20.10)") &
+                  "QM/MM Electrostatic energy:                    ", energy%qmmm_el
+            END IF
          END IF
-         IF (dft_control%qs_control%dftb_control%dftb3_diagonal) THEN
-            WRITE (UNIT=output_unit, FMT="(T9,A,T60,F20.10)") &
-               "DFTB3 3rd Order Energy Correction              ", energy%dftb3
-         END IF
-         IF (qs_env%qmmm) THEN
-            WRITE (UNIT=output_unit, FMT="(T9,A,T60,F20.10)") &
-               "QM/MM Electrostatic energy:                    ", energy%qmmm_el
-         END IF
+         CALL cp_print_key_finished_output(output_unit, logger, scf_section, &
+                                           "PRINT%DETAILED_ENERGY")
       END IF
-      CALL cp_print_key_finished_output(output_unit, logger, scf_section, &
-                                        "PRINT%DETAILED_ENERGY")
       ! here we compute dE/dC if needed. Assumes dE/dC is H_{ks}C (plus occupation numbers)
       IF (qs_env%requires_mo_derivs .AND. .NOT. just_energy) THEN
          CPASSERT(SIZE(ks_matrix, 2) == 1)
@@ -938,7 +928,7 @@ CONTAINS
                            name=TRIM(matnames), &
                            dist=dbcsr_dist, matrix_type=symmetry_type, &
                            row_blk_size=row_blk_sizes, col_blk_size=row_blk_sizes, &
-                           nze=0, mutable_work=.TRUE.)
+                           mutable_work=.TRUE.)
          CALL cp_dbcsr_alloc_block_from_nbl(matrices(i)%matrix, sab_nl)
       END DO
 
@@ -1026,7 +1016,7 @@ CONTAINS
                               name=TRIM(matnames), &
                               dist=dbcsr_dist, matrix_type=symmetry_type, &
                               row_blk_size=row_blk_sizes, col_blk_size=row_blk_sizes, &
-                              nze=0, mutable_work=.TRUE.)
+                              mutable_work=.TRUE.)
             CALL cp_dbcsr_alloc_block_from_nbl(matrices(i, img)%matrix, sab_nl)
          END DO
       END DO

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -23,18 +23,18 @@ MODULE lri_environment_methods
    USE cell_types,                      ONLY: cell_type
    USE core_ppl,                        ONLY: build_core_ppl_ri
    USE cp_control_types,                ONLY: dft_control_type
-   USE cp_log_handling,                 ONLY: cp_get_default_logger,&
-                                              cp_logger_type
-   USE cp_output_handling,              ONLY: cp_print_key_finished_output,&
-                                              cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_create,&
-                                              dbcsr_dot,&
-                                              dbcsr_get_block_diag,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_create,&
                                               dbcsr_get_block_p,&
                                               dbcsr_p_type,&
                                               dbcsr_release,&
                                               dbcsr_replicate_all,&
                                               dbcsr_type
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_dot,&
+                                              dbcsr_get_block_diag
+   USE cp_log_handling,                 ONLY: cp_get_default_logger,&
+                                              cp_logger_type
+   USE cp_output_handling,              ONLY: cp_print_key_finished_output,&
+                                              cp_print_key_unit_nr
    USE generic_os_integrals,            ONLY: int_overlap_aabb_os
    USE input_constants,                 ONLY: do_lri_inv,&
                                               do_lri_inv_auto,&
@@ -59,7 +59,8 @@ MODULE lri_environment_methods
                                               invmat_symm
    USE message_passing,                 ONLY: mp_para_env_type
    USE particle_types,                  ONLY: particle_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_lri_rho_elec
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -350,7 +351,8 @@ CONTAINS
       TYPE(dbcsr_type)                                   :: pmat_diag
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(mp_para_env_type), POINTER                    :: para_env
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_g, rho_r
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho_g
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
 
       CALL timeset(routineN, handle)
 
@@ -845,7 +847,8 @@ CONTAINS
          DIMENSION(:), POINTER                           :: nl_iterator
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
          POINTER                                         :: soo_list
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_g, rho_r
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho_g
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
       TYPE(qs_rho_type), POINTER                         :: rho
 
       CALL timeset(routineN, handle)
@@ -1037,7 +1040,7 @@ CONTAINS
             IF (LOG(1._dp/rcond) > lri_env%cond_max) THEN
                CALL get_pseudo_inverse_svd(s, sinv, rskip)
             ELSE
-               CALL invmat_symm(sinv, "U")
+               CALL invmat_symm(sinv, potrf=.FALSE.)
             END IF
          ELSE
             CALL get_pseudo_inverse_svd(s, sinv, rskip)

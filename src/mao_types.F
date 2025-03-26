@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -24,7 +24,7 @@ MODULE mao_types
 !> \author JGH
 ! **************************************************************************************************
    TYPE mao_type
-      INTEGER                       :: ref_basis
+      INTEGER                       :: ref_basis = -1
    END TYPE mao_type
 
 ! **************************************************************************************************

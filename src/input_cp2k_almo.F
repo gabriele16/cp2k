@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -178,7 +178,7 @@ CONTAINS
          description="Methods to reintroduce electron delocalization, which is excluded "// &
          "with the block-diagonal ALMO reference. Electron delocalization can "// &
          "be computed using either fully delocalized MOs or spatially restricted "// &
-         "ALMOs (called eXtended ALMOs or XALMOs). All methods below use either a PCG or trust-region"// &
+         "ALMOs (called eXtended ALMOs or XALMOs). All methods below use either a PCG or trust-region "// &
          "optimizers controlled by XALMO_OPTIMIZER_* subsections. The only exception is "// &
          "the non-iterative XALMO_1DIAG.", &
          usage="DELOCALIZE_METHOD XALMO_X", &
@@ -205,7 +205,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="RETURN_ORTHOGONALIZED_MOS", &
-                          description="Orthogonalize final ALMOs before they are returned"// &
+                          description="Orthogonalize final ALMOs before they are returned "// &
                           "to Quickstep (i.e. for calculation of properties)", &
                           usage="RETURN_ORTHOGONALIZED_MOS .TRUE.", default_l_val=.TRUE., &
                           lone_keyword_l_val=.TRUE.)
@@ -688,7 +688,7 @@ CONTAINS
                              description="Maximum number of iterations in the outer loop. "// &
                              "Use the outer loop to update the preconditioner and reset the conjugator. "// &
                              "This can speed up convergence significantly.", &
-                             usage="MAX_ITER 10", default_i_val=0)
+                             usage="MAX_ITER_OUTER_LOOP 10", default_i_val=0)
          CALL section_add_keyword(section, keyword)
          CALL keyword_release(keyword)
 

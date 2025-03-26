@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -15,6 +15,10 @@ MODULE mp2_gpw_method
    USE cell_types,                      ONLY: cell_type
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_create, dbcsr_get_info, dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, &
+        dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, &
+        dbcsr_p_type, dbcsr_release, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               cp_dbcsr_m_by_n_from_template
    USE cp_fm_struct,                    ONLY: cp_fm_struct_create,&
@@ -24,10 +28,6 @@ MODULE mp2_gpw_method
                                               cp_fm_get_info,&
                                               cp_fm_release,&
                                               cp_fm_type
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_create, dbcsr_get_info, dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, &
-        dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, &
-        dbcsr_p_type, dbcsr_release, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry
    USE group_dist_types,                ONLY: create_group_dist,&
                                               get_group_dist,&
                                               group_dist_d1_type,&
@@ -46,13 +46,10 @@ MODULE mp2_gpw_method
                                               pw_transfer,&
                                               pw_zero
    USE pw_poisson_types,                ONLY: pw_poisson_type
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: REALDATA3D,&
-                                              REALSPACE,&
-                                              pw_release,&
-                                              pw_type
-   USE qs_collocate_density,            ONLY: calculate_wavefunction
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
+   USE qs_collocate_density,            ONLY: collocate_function
    USE qs_environment_types,            ONLY: qs_environment_type
    USE qs_integrate_potential,          ONLY: integrate_v_rspace
    USE qs_kind_types,                   ONLY: qs_kind_type
@@ -83,7 +80,6 @@ CONTAINS
 !> \param particle_set ...
 !> \param atomic_kind_set ...
 !> \param qs_kind_set ...
-!> \param mo_coeff ...
 !> \param Eigenval ...
 !> \param nmo ...
 !> \param homo ...
@@ -96,17 +92,12 @@ CONTAINS
 !> \param mp2_memory ...
 !> \param calc_ex ...
 !> \param blacs_env_sub ...
-!> \param homo_beta ...
-!> \param mo_coeff_o_beta ...
-!> \param mo_coeff_v_beta ...
-!> \param Eigenval_beta ...
 !> \param Emp2_AB ...
 ! **************************************************************************************************
    SUBROUTINE mp2_gpw_compute(Emp2, Emp2_Cou, Emp2_EX, qs_env, para_env, para_env_sub, color_sub, &
-                              cell, particle_set, atomic_kind_set, qs_kind_set, mo_coeff, Eigenval, nmo, homo, &
+                              cell, particle_set, atomic_kind_set, qs_kind_set, Eigenval, nmo, homo, &
                               mat_munu, sab_orb_sub, mo_coeff_o, mo_coeff_v, eps_filter, unit_nr, &
-                              mp2_memory, calc_ex, blacs_env_sub, homo_beta, mo_coeff_o_beta, &
-                              mo_coeff_v_beta, Eigenval_beta, Emp2_AB)
+                              mp2_memory, calc_ex, blacs_env_sub, Emp2_AB)
 
       REAL(KIND=dp), INTENT(OUT)                         :: Emp2, Emp2_Cou, Emp2_EX
       TYPE(qs_environment_type), POINTER                 :: qs_env
@@ -116,40 +107,38 @@ CONTAINS
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
-      TYPE(cp_fm_type), INTENT(IN)                       :: mo_coeff
-      REAL(KIND=dp), DIMENSION(:), INTENT(IN)            :: Eigenval
-      INTEGER, INTENT(IN)                                :: nmo, homo
+      REAL(KIND=dp), DIMENSION(:, :), INTENT(IN)         :: Eigenval
+      INTEGER, INTENT(IN)                                :: nmo
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: homo
       TYPE(dbcsr_p_type), INTENT(INOUT)                  :: mat_munu
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
          POINTER                                         :: sab_orb_sub
-      TYPE(dbcsr_type), POINTER                          :: mo_coeff_o, mo_coeff_v
+      TYPE(dbcsr_p_type), DIMENSION(:), INTENT(IN)       :: mo_coeff_o, mo_coeff_v
       REAL(KIND=dp), INTENT(IN)                          :: eps_filter
       INTEGER, INTENT(IN)                                :: unit_nr
       REAL(KIND=dp), INTENT(IN)                          :: mp2_memory
       LOGICAL, INTENT(IN)                                :: calc_ex
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env_sub
-      INTEGER, INTENT(IN), OPTIONAL                      :: homo_beta
-      TYPE(dbcsr_type), OPTIONAL, POINTER                :: mo_coeff_o_beta, mo_coeff_v_beta
-      REAL(KIND=dp), DIMENSION(:), INTENT(IN), OPTIONAL  :: Eigenval_beta
       REAL(KIND=dp), INTENT(OUT), OPTIONAL               :: Emp2_AB
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'mp2_gpw_compute'
 
-      INTEGER :: a, a_group_counter, b, b_global, b_group_counter, blk, col, col_offset, col_size, &
+      INTEGER :: a, a_group_counter, b, b_global, b_group_counter, col, col_offset, col_size, &
          color_counter, EX_end, EX_end_send, EX_start, EX_start_send, group_counter, handle, &
-         handle2, handle3, i, i_counter, i_group_counter, index_proc_shift, j, max_b_size, &
+         handle2, handle3, i, i_counter, i_group_counter, index_proc_shift, ispin, j, max_b_size, &
          max_batch_size_A, max_batch_size_I, max_row_col_local, my_A_batch_size, my_A_virtual_end, &
          my_A_virtual_start, my_B_size, my_B_virtual_end, my_B_virtual_start, my_I_batch_size, &
          my_I_occupied_end, my_I_occupied_start, my_q_position, ncol_local, nfullcols_total, &
-         nfullrows_total, ngroup, nrow_local, p, p_best, proc_receive, proc_send, q
-      INTEGER :: q_best, row, row_offset, row_size, size_EX, size_EX_send, sub_sub_color, virtual, &
-         virtual_beta, wfn_calc, wfn_calc_best
+         nfullrows_total, ngroup, nrow_local, nspins, p, p_best, proc_receive
+      INTEGER :: proc_send, q, q_best, row, row_offset, row_size, size_EX, size_EX_send, &
+         sub_sub_color, wfn_calc, wfn_calc_best
       INTEGER(KIND=int_8)                                :: mem
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: vector_B_sizes, &
                                                             vector_batch_A_size_group, &
                                                             vector_batch_I_size_group
       INTEGER, ALLOCATABLE, DIMENSION(:, :)              :: color_array, local_col_row_info
       INTEGER, DIMENSION(:), POINTER                     :: col_indices, row_indices
+      INTEGER, DIMENSION(SIZE(homo))                     :: virtual
       LOGICAL                                            :: do_alpha_beta
       REAL(KIND=dp)                                      :: cutoff_old, mem_min, mem_real, mem_try, &
                                                             relative_cutoff_old, wfn_size
@@ -160,48 +149,49 @@ CONTAINS
       TYPE(cp_fm_struct_type), POINTER                   :: fm_struct
       TYPE(cp_fm_type)                                   :: fm_BIb_jb
       TYPE(dbcsr_iterator_type)                          :: iter
-      TYPE(dbcsr_type)                                   :: matrix_ia_jb, matrix_ia_jb_beta, &
-                                                            matrix_ia_jnu, matrix_ia_jnu_beta
+      TYPE(dbcsr_type), DIMENSION(SIZE(homo))            :: matrix_ia_jb, matrix_ia_jnu
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(group_dist_d1_type)                           :: gd_exchange
       TYPE(mp_comm_type)                                 :: comm_exchange
+      TYPE(pw_c1d_gs_type)                               :: pot_g, rho_g
       TYPE(pw_env_type), POINTER                         :: pw_env_sub
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: pot_g, psi_a, rho_g, rho_r
-      TYPE(pw_type), ALLOCATABLE, DIMENSION(:)           :: psi_i
+      TYPE(pw_r3d_rs_type)                               :: psi_a, rho_r
+      TYPE(pw_r3d_rs_type), ALLOCATABLE, DIMENSION(:)    :: psi_i
       TYPE(task_list_type), POINTER                      :: task_list_sub
 
       CALL timeset(routineN, handle)
 
       do_alpha_beta = .FALSE.
-      IF (PRESENT(homo_beta) .AND. &
-          PRESENT(mo_coeff_o_beta) .AND. &
-          PRESENT(mo_coeff_v_beta) .AND. &
-          PRESENT(Eigenval_beta) .AND. &
-          PRESENT(Emp2_AB)) do_alpha_beta = .TRUE.
+      IF (PRESENT(Emp2_AB)) do_alpha_beta = .TRUE.
 
-      ! initialize and create the matrix (ia|jnu)
-      CALL dbcsr_create(matrix_ia_jnu, template=mo_coeff_o)
+      nspins = SIZE(homo)
+      virtual = nmo - homo
 
-      ! Allocate Sparse matrices: (ia|jb)
-      CALL cp_dbcsr_m_by_n_from_template(matrix_ia_jb, template=mo_coeff_o, m=homo, n=nmo - homo, &
-                                         sym=dbcsr_type_no_symmetry)
+      DO ispin = 1, nspins
+         ! initialize and create the matrix (ia|jnu)
+         CALL dbcsr_create(matrix_ia_jnu(ispin), template=mo_coeff_o(ispin)%matrix)
 
-      ! set all to zero in such a way that the memory is actually allocated
-      CALL dbcsr_set(matrix_ia_jnu, 0.0_dp)
-      CALL dbcsr_set(matrix_ia_jb, 0.0_dp)
+         ! Allocate Sparse matrices: (ia|jb)
+    CALL cp_dbcsr_m_by_n_from_template(matrix_ia_jb(ispin), template=mo_coeff_o(ispin)%matrix, m=homo(ispin), n=nmo - homo(ispin), &
+                                            sym=dbcsr_type_no_symmetry)
+
+         ! set all to zero in such a way that the memory is actually allocated
+         CALL dbcsr_set(matrix_ia_jnu(ispin), 0.0_dp)
+         CALL dbcsr_set(matrix_ia_jb(ispin), 0.0_dp)
+      END DO
       CALL dbcsr_set(mat_munu%matrix, 0.0_dp)
 
       IF (calc_ex) THEN
          ! create the analogous of matrix_ia_jb in fm type
          NULLIFY (fm_struct)
-         CALL dbcsr_get_info(matrix_ia_jb, nfullrows_total=nfullrows_total, nfullcols_total=nfullcols_total)
+         CALL dbcsr_get_info(matrix_ia_jb(1), nfullrows_total=nfullrows_total, nfullcols_total=nfullcols_total)
          CALL cp_fm_struct_create(fm_struct, context=blacs_env_sub, nrow_global=nfullrows_total, &
                                   ncol_global=nfullcols_total, para_env=para_env_sub)
          CALL cp_fm_create(fm_BIb_jb, fm_struct, name="fm_BIb_jb")
 
-         CALL copy_dbcsr_to_fm(matrix_ia_jb, fm_BIb_jb)
+         CALL copy_dbcsr_to_fm(matrix_ia_jb(1), fm_BIb_jb)
          CALL cp_fm_struct_release(fm_struct)
 
          CALL cp_fm_get_info(matrix=fm_BIb_jb, &
@@ -223,27 +213,11 @@ CONTAINS
          local_col_row_info(1:ncol_local, 2) = col_indices(1:ncol_local)
       END IF
 
-      IF (do_alpha_beta) THEN
-         ! initialize and create the matrix (ia|jnu)
-         CALL dbcsr_create(matrix_ia_jnu_beta, template=mo_coeff_o_beta)
-
-         ! Allocate Sparse matrices: (ia|jb)
-         CALL cp_dbcsr_m_by_n_from_template(matrix_ia_jb_beta, template=mo_coeff_o_beta, m=homo_beta, n=nmo - homo_beta, &
-                                            sym=dbcsr_type_no_symmetry)
-
-         virtual_beta = nmo - homo_beta
-
-         CALL dbcsr_set(matrix_ia_jnu_beta, 0.0_dp)
-         CALL dbcsr_set(matrix_ia_jb_beta, 0.0_dp)
-      END IF
-
       ! Get everything for GPW calculations
       CALL prepare_gpw(qs_env, dft_control, e_cutoff_old, cutoff_old, relative_cutoff_old, para_env_sub, pw_env_sub, &
                        auxbas_pw_pool, poisson_env, task_list_sub, rho_r, rho_g, pot_g, psi_a, sab_orb_sub)
 
-      virtual = nmo - homo
-
-      wfn_size = REAL(SIZE(rho_r%cr3d), KIND=dp)
+      wfn_size = REAL(SIZE(rho_r%array), KIND=dp)
       CALL para_env%max(wfn_size)
 
       ngroup = para_env%num_pe/para_env_sub%num_pe
@@ -256,7 +230,7 @@ CONTAINS
          q = ngroup/p
          IF (p*q .NE. ngroup) CYCLE
 
-         CALL estimate_memory_usage(wfn_size, p, q, para_env_sub%num_pe, nmo, virtual, homo, calc_ex, mem_try)
+         CALL estimate_memory_usage(wfn_size, p, q, para_env_sub%num_pe, nmo, virtual(1), homo(1), calc_ex, mem_try)
 
          IF (mem_try <= mem_min) THEN
             mem_min = mem_try
@@ -281,10 +255,10 @@ CONTAINS
          q = ngroup/p
          IF (p*q .NE. ngroup) CYCLE
 
-         CALL estimate_memory_usage(wfn_size, p, q, para_env_sub%num_pe, nmo, virtual, homo, calc_ex, mem_try)
+         CALL estimate_memory_usage(wfn_size, p, q, para_env_sub%num_pe, nmo, virtual(1), homo(1), calc_ex, mem_try)
 
          IF (mem_try > mem_real) CYCLE
-         wfn_calc = ((homo + p - 1)/p) + ((virtual + q - 1)/q)
+         wfn_calc = ((homo(1) + p - 1)/p) + ((virtual(1) + q - 1)/q)
          IF (wfn_calc < wfn_calc_best) THEN
             wfn_calc_best = wfn_calc
             p_best = p
@@ -292,8 +266,8 @@ CONTAINS
          END IF
       END DO
 
-      max_batch_size_I = (homo + p_best - 1)/p_best
-      max_batch_size_A = (virtual + q_best - 1)/q_best
+      max_batch_size_I = (homo(1) + p_best - 1)/p_best
+      max_batch_size_A = (virtual(1) + q_best - 1)/q_best
 
       IF (unit_nr > 0) THEN
          WRITE (UNIT=unit_nr, FMT="(T3,A,T77,i4)") &
@@ -302,8 +276,8 @@ CONTAINS
             "MP2_GPW| max. batch size for the virtual states:", max_batch_size_A
       END IF
 
-      CALL get_vector_batch(vector_batch_I_size_group, p_best, max_batch_size_I, homo)
-      CALL get_vector_batch(vector_batch_A_size_group, q_best, max_batch_size_A, virtual)
+      CALL get_vector_batch(vector_batch_I_size_group, p_best, max_batch_size_I, homo(1))
+      CALL get_vector_batch(vector_batch_A_size_group, q_best, max_batch_size_A, virtual(1))
 
       !XXXXXXXXXXXXX inverse group distribution
       group_counter = 0
@@ -339,12 +313,12 @@ CONTAINS
       CALL grep_occ_virt_wavefunc(para_env_sub, nmo, &
                                   my_I_occupied_start, my_I_occupied_end, my_I_batch_size, &
                                   my_A_virtual_start, my_A_virtual_end, my_A_batch_size, &
-                                  mo_coeff_o, mo_coeff_v, my_Cocc, my_Cvirt)
+                                  mo_coeff_o(1)%matrix, mo_coeff_v(1)%matrix, my_Cocc, my_Cvirt)
 
       ! divide the b states in the sub_group in such a way to create
       ! b_start and b_end for each proc inside the sub_group
-      max_b_size = (virtual + para_env_sub%num_pe - 1)/para_env_sub%num_pe
-      CALL get_vector_batch(vector_B_sizes, para_env_sub%num_pe, max_b_size, virtual)
+      max_b_size = (virtual(1) + para_env_sub%num_pe - 1)/para_env_sub%num_pe
+      CALL get_vector_batch(vector_B_sizes, para_env_sub%num_pe, max_b_size, virtual(1))
 
       ! now give to each proc its b_start and b_end
       b_group_counter = 0
@@ -384,12 +358,10 @@ CONTAINS
 
       ALLOCATE (psi_i(my_I_occupied_start:my_I_occupied_end))
       DO i = my_I_occupied_start, my_I_occupied_end
-         CALL pw_pool_create_pw(auxbas_pw_pool, psi_i(i), &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
-         CALL calculate_wavefunction(mo_coeff, i, psi_i(i), rho_g, atomic_kind_set, &
-                                     qs_kind_set, cell, dft_control, particle_set, &
-                                     pw_env_sub, external_vector=my_Cocc(:, i - my_I_occupied_start + 1))
+         CALL auxbas_pw_pool%create_pw(psi_i(i))
+         CALL collocate_function(my_Cocc(:, i - my_I_occupied_start + 1), &
+                                 psi_i(i), rho_g, atomic_kind_set, qs_kind_set, cell, particle_set, &
+                                 pw_env_sub, dft_control%qs_control%eps_rho_rspace)
       END DO
 
       Emp2 = 0.0_dp
@@ -397,18 +369,18 @@ CONTAINS
       Emp2_EX = 0.0_dp
       IF (do_alpha_beta) Emp2_AB = 0.0_dp
       IF (calc_ex) THEN
-         ALLOCATE (BIb_C(my_B_size, homo, my_I_batch_size))
+         ALLOCATE (BIb_C(my_B_size, homo(1), my_I_batch_size))
       END IF
 
       CALL timeset(routineN//"_loop", handle2)
-      DO a = homo + my_A_virtual_start, homo + my_A_virtual_end
+      DO a = homo(1) + my_A_virtual_start, homo(1) + my_A_virtual_end
 
          IF (calc_ex) BIb_C = 0.0_dp
 
          ! psi_a
-         CALL calculate_wavefunction(mo_coeff, a, psi_a, rho_g, atomic_kind_set, &
-                                     qs_kind_set, cell, dft_control, particle_set, &
-                                     pw_env_sub, external_vector=my_Cvirt(:, a - (homo + my_A_virtual_start) + 1))
+         CALL collocate_function(my_Cvirt(:, a - (homo(1) + my_A_virtual_start) + 1), &
+                                 psi_a, rho_g, atomic_kind_set, qs_kind_set, cell, particle_set, &
+                                 pw_env_sub, dft_control%qs_control%eps_rho_rspace)
          i_counter = 0
          DO i = my_I_occupied_start, my_I_occupied_end
             i_counter = i_counter + 1
@@ -429,51 +401,45 @@ CONTAINS
 
             ! multiply and goooooooo ...
             CALL timeset(routineN//"_mult_o", handle3)
-            CALL dbcsr_multiply("N", "N", 1.0_dp, mat_munu%matrix, mo_coeff_o, &
-                                0.0_dp, matrix_ia_jnu, filter_eps=eps_filter)
-            IF (do_alpha_beta) THEN
-               ! transform orbitals using the beta coeff matrix
-               CALL dbcsr_multiply("N", "N", 1.0_dp, mat_munu%matrix, mo_coeff_o_beta, &
-                                   0.0_dp, matrix_ia_jnu_beta, filter_eps=eps_filter)
-            END IF
+            DO ispin = 1, nspins
+               CALL dbcsr_multiply("N", "N", 1.0_dp, mat_munu%matrix, mo_coeff_o(ispin)%matrix, &
+                                   0.0_dp, matrix_ia_jnu(ispin), filter_eps=eps_filter)
+            END DO
             CALL timestop(handle3)
             CALL timeset(routineN//"_mult_v", handle3)
-            CALL dbcsr_multiply("T", "N", 1.0_dp, matrix_ia_jnu, mo_coeff_v, &
-                                0.0_dp, matrix_ia_jb, filter_eps=eps_filter)
-            IF (do_alpha_beta) THEN
-               ! transform orbitals using the beta coeff matrix
-               CALL dbcsr_multiply("T", "N", 1.0_dp, matrix_ia_jnu_beta, mo_coeff_v_beta, &
-                                   0.0_dp, matrix_ia_jb_beta, filter_eps=eps_filter)
-            END IF
+            DO ispin = 1, nspins
+               CALL dbcsr_multiply("T", "N", 1.0_dp, matrix_ia_jnu(ispin), mo_coeff_v(ispin)%matrix, &
+                                   0.0_dp, matrix_ia_jb(ispin), filter_eps=eps_filter)
+            END DO
             CALL timestop(handle3)
 
             CALL timeset(routineN//"_E_Cou", handle3)
-            CALL dbcsr_iterator_start(iter, matrix_ia_jb)
+            CALL dbcsr_iterator_start(iter, matrix_ia_jb(1))
             DO WHILE (dbcsr_iterator_blocks_left(iter))
-               CALL dbcsr_iterator_next_block(iter, row, col, data_block, blk, &
+               CALL dbcsr_iterator_next_block(iter, row, col, data_block, &
                                               row_size=row_size, col_size=col_size, &
                                               row_offset=row_offset, col_offset=col_offset)
                DO b = 1, col_size
                DO j = 1, row_size
                   ! Compute the coulomb MP2 energy
                   Emp2_Cou = Emp2_Cou - 2.0_dp*data_block(j, b)**2/ &
-                             (Eigenval(a) + Eigenval(homo + col_offset + b - 1) - Eigenval(i) - Eigenval(row_offset + j - 1))
+                     (Eigenval(a, 1) + Eigenval(homo(1) + col_offset + b - 1, 1) - Eigenval(i, 1) - Eigenval(row_offset + j - 1, 1))
                END DO
                END DO
             END DO
             CALL dbcsr_iterator_stop(iter)
             IF (do_alpha_beta) THEN
                ! Compute the coulomb only= SO = MP2 alpha-beta  MP2 energy component
-               CALL dbcsr_iterator_start(iter, matrix_ia_jb_beta)
+               CALL dbcsr_iterator_start(iter, matrix_ia_jb(2))
                DO WHILE (dbcsr_iterator_blocks_left(iter))
-                  CALL dbcsr_iterator_next_block(iter, row, col, data_block, blk, &
+                  CALL dbcsr_iterator_next_block(iter, row, col, data_block, &
                                                  row_size=row_size, col_size=col_size, &
                                                  row_offset=row_offset, col_offset=col_offset)
                   DO b = 1, col_size
                   DO j = 1, row_size
                      ! Compute the coulomb MP2 energy alpha beta case
                      Emp2_AB = Emp2_AB - data_block(j, b)**2/ &
-                     (Eigenval(a) + Eigenval_beta(homo_beta + col_offset + b - 1) - Eigenval(i) - Eigenval_beta(row_offset + j - 1))
+                     (Eigenval(a, 1) + Eigenval(homo(2) + col_offset + b - 1, 2) - Eigenval(i, 1) - Eigenval(row_offset + j - 1, 2))
                   END DO
                   END DO
                END DO
@@ -485,8 +451,8 @@ CONTAINS
             ! b_start, b_end
             IF (calc_ex) THEN
                CALL timeset(routineN//"_E_Ex_1", handle3)
-               CALL copy_dbcsr_to_fm(matrix_ia_jb, fm_BIb_jb)
-               CALL grep_my_integrals(para_env_sub, fm_BIb_jb, BIb_C(1:my_B_size, 1:homo, i_counter), max_row_col_local, &
+               CALL copy_dbcsr_to_fm(matrix_ia_jb(1), fm_BIb_jb)
+               CALL grep_my_integrals(para_env_sub, fm_BIb_jb, BIb_C(1:my_B_size, 1:homo(1), i_counter), max_row_col_local, &
                                       local_col_row_info, my_B_virtual_end, my_B_virtual_start)
                CALL timestop(handle3)
             END IF
@@ -503,7 +469,7 @@ CONTAINS
                      DO b = 1, my_B_size
                         b_global = b - 1 + my_B_virtual_start
                         Emp2_EX = Emp2_EX + BIb_C(b, j, i)*BIb_C(b, i + my_I_occupied_start - 1, j - my_I_occupied_start + 1) &
-                                  /(Eigenval(a) + Eigenval(homo + b_global) - Eigenval(i + my_I_occupied_start - 1) - Eigenval(j))
+                     /(Eigenval(a, 1) + Eigenval(homo(1) + b_global, 1) - Eigenval(i + my_I_occupied_start - 1, 1) - Eigenval(j, 1))
                      END DO
                   END DO
                END DO
@@ -533,8 +499,8 @@ CONTAINS
                         DO b = 1, my_B_size
                            b_global = b - 1 + my_B_virtual_start
                            Emp2_EX = Emp2_EX + BIb_C(b, j + EX_start - 1, i)*BIb_EX(b, i, j) &
-                                     /(Eigenval(a) + Eigenval(homo + b_global) - Eigenval(i + my_I_occupied_start - 1) &
-                                       - Eigenval(j + EX_start - 1))
+                                     /(Eigenval(a, 1) + Eigenval(homo(1) + b_global, 1) - Eigenval(i + my_I_occupied_start - 1, 1) &
+                                       - Eigenval(j + EX_start - 1, 1))
                         END DO
                      END DO
                   END DO
@@ -567,15 +533,13 @@ CONTAINS
 
       CALL comm_exchange%free()
 
-      CALL dbcsr_release(matrix_ia_jnu)
-      CALL dbcsr_release(matrix_ia_jb)
-      IF (do_alpha_beta) THEN
-         CALL dbcsr_release(matrix_ia_jnu_beta)
-         CALL dbcsr_release(matrix_ia_jb_beta)
-      END IF
+      DO ispin = 1, nspins
+         CALL dbcsr_release(matrix_ia_jnu(ispin))
+         CALL dbcsr_release(matrix_ia_jb(ispin))
+      END DO
 
       DO i = my_I_occupied_start, my_I_occupied_end
-         CALL pw_release(psi_i(i))
+         CALL psi_i(i)%release()
       END DO
       DEALLOCATE (psi_i)
 
@@ -787,8 +751,8 @@ CONTAINS
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'grep_occ_virt_wavefunc'
 
-      INTEGER                                            :: blk, col, col_offset, col_size, handle, &
-                                                            i, i_global, j, j_global, row, &
+      INTEGER                                            :: col, col_offset, col_size, handle, i, &
+                                                            i_global, j, j_global, row, &
                                                             row_offset, row_size
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: data_block
       TYPE(dbcsr_iterator_type)                          :: iter
@@ -804,7 +768,7 @@ CONTAINS
       ! accumulate data from mo_coeff_o into Cocc
       CALL dbcsr_iterator_start(iter, mo_coeff_o)
       DO WHILE (dbcsr_iterator_blocks_left(iter))
-         CALL dbcsr_iterator_next_block(iter, row, col, data_block, blk, &
+         CALL dbcsr_iterator_next_block(iter, row, col, data_block, &
                                         row_size=row_size, col_size=col_size, &
                                         row_offset=row_offset, col_offset=col_offset)
          DO j = 1, col_size
@@ -824,7 +788,7 @@ CONTAINS
       ! accumulate data from mo_coeff_o into Cocc
       CALL dbcsr_iterator_start(iter, mo_coeff_v)
       DO WHILE (dbcsr_iterator_blocks_left(iter))
-         CALL dbcsr_iterator_next_block(iter, row, col, data_block, blk, &
+         CALL dbcsr_iterator_next_block(iter, row, col, data_block, &
                                         row_size=row_size, col_size=col_size, &
                                         row_offset=row_offset, col_offset=col_offset)
          DO j = 1, col_size

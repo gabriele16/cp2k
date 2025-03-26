@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -223,7 +223,7 @@ void extract_cube_within_spherical_cutoff_generic(
 
           const int sizex = upper_corner[2] - lower_corner[2];
 
-          //#pragma omp simd linear(dst, src) simdlen(8)
+          // #pragma omp simd linear(dst, src) simdlen(8)
           GRID_PRAGMA_SIMD((dst, src), 8)
           for (int x = 0; x < sizex; x++) {
             dst[x] = src[x];
@@ -1074,8 +1074,9 @@ void grid_dgemm_integrate_task_list(
 
   if (ctx->scratch == NULL)
     ctx->scratch = malloc(hab_blocks->size * max_threads);
+  assert(ctx->scratch != NULL);
 
-  //#pragma omp parallel for
+  // #pragma omp parallel for
   for (int level = 0; level < ctx->nlevels; level++) {
     const _layout *layout = &ctx->layouts[level];
     set_grid_parameters(&ctx->grid[level], ctx->orthorhombic,

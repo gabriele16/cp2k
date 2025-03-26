@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -623,10 +623,12 @@ CONTAINS
       pint_env%beadwise_constraints = .FALSE.
       CALL section_vals_val_get(constraint_section, "PIMD_BEADWISE_CONSTRAINT", &
                                 l_val=pint_env%beadwise_constraints)
-      IF (pint_env%beadwise_constraints) THEN
-         CALL pint_write_line("Using beadwise constraints")
-      ELSE
-         CALL pint_write_line("Using centroid constraints")
+      IF (pint_env%simpar%constraint) THEN
+         IF (pint_env%beadwise_constraints) THEN
+            CALL pint_write_line("Using beadwise constraints")
+         ELSE
+            CALL pint_write_line("Using centroid constraints")
+         END IF
       END IF
 
       IF (explicit) THEN

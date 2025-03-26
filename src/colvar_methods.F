@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -799,14 +799,12 @@ CONTAINS
          CALL section_vals_get(frame_section, n_repetition=nr_frame)
 
          colvar%rmsd_param%nr_frames = nr_frame
-         ! Calculation is aborted if reference frame are less than 2
+         ! Calculation is aborted if reference frame are less than 1 and more than 2
          CPASSERT(nr_frame >= 1 .AND. nr_frame <= 2)
          CALL read_frames(frame_section, para_env, nr_frame, colvar%rmsd_param%r_ref, &
                           colvar%rmsd_param%n_atoms)
-
          ALLOCATE (colvar%rmsd_param%weights(colvar%rmsd_param%n_atoms))
          colvar%rmsd_param%weights = 0.0_dp
-
          CALL section_vals_val_get(rmsd_section, "SUBSET_TYPE", i_val=colvar%rmsd_param%subset)
          IF (colvar%rmsd_param%subset == rmsd_all) THEN
             ALLOCATE (colvar%rmsd_param%i_rmsd(colvar%rmsd_param%n_atoms))
@@ -871,6 +869,7 @@ CONTAINS
          END IF
 
          CALL section_vals_val_get(rmsd_section, "ALIGN_FRAMES", l_val=colvar%rmsd_param%align_frames)
+
       ELSE IF (my_subsection(17)) THEN
          ! Work on XYZ positions of atoms
          wrk_section => xyz_diag_section
@@ -1217,9 +1216,9 @@ CONTAINS
             WRITE (iw, '( A,T71,G10.5)') ' COLVARS| DX', &
                colvar%combine_cvs_param%dx
          CASE (reaction_path_colvar_id)
-            CPWARN("Description header for REACTION_PATH COLVAR missing!!")
+            CPWARN("Description header for REACTION_PATH COLVAR missing!")
          CASE (distance_from_path_colvar_id)
-            CPWARN("Description header for REACTION_PATH COLVAR missing!!")
+            CPWARN("Description header for REACTION_PATH COLVAR missing!")
          CASE (hydronium_shell_colvar_id)
             WRITE (iw, '( A,T71,I10)') ' COLVARS| POH', colvar%hydronium_shell_param%poh
             WRITE (iw, '( A,T71,I10)') ' COLVARS| QOH', colvar%hydronium_shell_param%qoh
@@ -1268,7 +1267,7 @@ CONTAINS
             WRITE (iw, '( A,T71,F10.5)') ' COLVARS| NC', colvar%acid_hyd_shell_param%nc
             WRITE (iw, '( A,T71,F10.5)') ' COLVARS| LAMBDA', colvar%acid_hyd_shell_param%lambda
          CASE (rmsd_colvar_id)
-            CPWARN("Description header for RMSD COLVAR missing!!")
+            CPWARN("Description header for RMSD COLVAR missing!")
          CASE (xyz_diag_colvar_id)
             NULLIFY (section, keyword, enum)
             CALL create_colvar_xyz_d_section(section)
@@ -1410,7 +1409,7 @@ CONTAINS
       CALL section_vals_val_get(section, "OXYGENS", n_rep_val=n_var)
       ndim = 0
       DO k = 1, n_var
-         CALL section_vals_val_get(section, "OXYGENS", i_vals=iatms)
+         CALL section_vals_val_get(section, "OXYGENS", i_rep_val=k, i_vals=iatms)
          CALL reallocate(i_oxygens, 1, ndim + SIZE(iatms))
          i_oxygens(ndim + 1:ndim + SIZE(iatms)) = iatms
          ndim = ndim + SIZE(iatms)
@@ -1420,7 +1419,7 @@ CONTAINS
       CALL section_vals_val_get(section, "HYDROGENS", n_rep_val=n_var)
       ndim = 0
       DO k = 1, n_var
-         CALL section_vals_val_get(section, "HYDROGENS", i_vals=iatms)
+         CALL section_vals_val_get(section, "HYDROGENS", i_rep_val=k, i_vals=iatms)
          CALL reallocate(i_hydrogens, 1, ndim + SIZE(iatms))
          i_hydrogens(ndim + 1:ndim + SIZE(iatms)) = iatms
          ndim = ndim + SIZE(iatms)
@@ -1487,7 +1486,7 @@ CONTAINS
       CALL section_vals_val_get(section, "OXYGENS_WATER", n_rep_val=n_var)
       ndim = 0
       DO k = 1, n_var
-         CALL section_vals_val_get(section, "OXYGENS_WATER", i_vals=iatms)
+         CALL section_vals_val_get(section, "OXYGENS_WATER", i_rep_val=k, i_vals=iatms)
          CALL reallocate(i_oxygens_water, 1, ndim + SIZE(iatms))
          i_oxygens_water(ndim + 1:ndim + SIZE(iatms)) = iatms
          ndim = ndim + SIZE(iatms)
@@ -1497,7 +1496,7 @@ CONTAINS
       CALL section_vals_val_get(section, "OXYGENS_ACID", n_rep_val=n_var)
       ndim = 0
       DO k = 1, n_var
-         CALL section_vals_val_get(section, "OXYGENS_ACID", i_vals=iatms)
+         CALL section_vals_val_get(section, "OXYGENS_ACID", i_rep_val=k, i_vals=iatms)
          CALL reallocate(i_oxygens_acid, 1, ndim + SIZE(iatms))
          i_oxygens_acid(ndim + 1:ndim + SIZE(iatms)) = iatms
          ndim = ndim + SIZE(iatms)
@@ -1507,7 +1506,7 @@ CONTAINS
       CALL section_vals_val_get(section, "HYDROGENS", n_rep_val=n_var)
       ndim = 0
       DO k = 1, n_var
-         CALL section_vals_val_get(section, "HYDROGENS", i_vals=iatms)
+         CALL section_vals_val_get(section, "HYDROGENS", i_rep_val=k, i_vals=iatms)
          CALL reallocate(i_hydrogens, 1, ndim + SIZE(iatms))
          i_hydrogens(ndim + 1:ndim + SIZE(iatms)) = iatms
          ndim = ndim + SIZE(iatms)
@@ -3899,7 +3898,8 @@ CONTAINS
       fcut = num_cut*invden_cut
 
       !Final distance acid - hydronium
-      fbrace = rion_num/rion_den/2.0_dp
+!      fbrace = rion_num/rion_den/2.0_dp
+      fbrace = rion_num/rion_den/n_oxygens_acid
       rion = fcut*fbrace
       colvar%ss = rion
 
@@ -3922,14 +3922,18 @@ CONTAINS
       DO kk = 1, n_oxygens_acid
          DO ii = 1, n_oxygens_water
             colvar%dsdr(1:3, offsetO + kk) = colvar%dsdr(1:3, offsetO + kk) &
-                                             + fcut*ddist_rik(1:3, ii, kk)*expfac(ii)/rion_den/2.0_dp
+                                             + fcut*ddist_rik(1:3, ii, kk)*expfac(ii)/rion_den/n_oxygens_acid
+!                                             + fcut*ddist_rik(1:3, ii, kk)*expfac(ii)/rion_den/2.0_dp
             colvar%dsdr(1:3, ii) = colvar%dsdr(1:3, ii) &
-                                   - fcut*ddist_rik(1:3, ii, kk)*expfac(ii)/rion_den/2.0_dp
+                                   - fcut*ddist_rik(1:3, ii, kk)*expfac(ii)/rion_den/n_oxygens_acid
+!                                   - fcut*ddist_rik(1:3, ii, kk)*expfac(ii)/rion_den/2.0_dp
             DO jj = 1, n_hydrogens
                colvar%dsdr(1:3, ii) = colvar%dsdr(1:3, ii) &
-                                      + fcut*dexpfac_rik(ii, kk)*dnwoh(1:3, jj, ii)/rion_den/2.0_dp
+                                      + fcut*dexpfac_rik(ii, kk)*dnwoh(1:3, jj, ii)/rion_den/n_oxygens_acid
+!                                      + fcut*dexpfac_rik(ii, kk)*dnwoh(1:3, jj, ii)/rion_den/2.0_dp
                colvar%dsdr(1:3, offsetH + jj) = colvar%dsdr(1:3, offsetH + jj) &
-                                                - fcut*dexpfac_rik(ii, kk)*dnwoh(1:3, jj, ii)/rion_den/2.0_dp
+                                                - fcut*dexpfac_rik(ii, kk)*dnwoh(1:3, jj, ii)/rion_den/n_oxygens_acid
+!                                                - fcut*dexpfac_rik(ii, kk)*dnwoh(1:3, jj, ii)/rion_den/2.0_dp
             END DO
          END DO
       END DO
@@ -4378,9 +4382,6 @@ CONTAINS
             nLcoord(i) = nLcoord(i) + num_n*inv_den_n
          END DO
          expnL(i) = EXP(lambda*nLcoord(i))
-!dbg
-! write(*,*) ii,nLcoord(i),expnL(i)
-!dbg
          den_Q = den_Q + expnL(i)
       END DO
       inv_den_Q = 1.0_dp/den_Q
@@ -4399,9 +4400,6 @@ CONTAINS
             rij = pbc(rpj, rpi, cell)
             r12 = SQRT(rij(1)*rij(1) + rij(2)*rij(2) + rij(3)*rij(3))
 
-!dbg
-! write(*,*) ii,jj,rpi(1:3),rpj(1:3),rij(1:3),r12
-!dbg
             num_Q = num_Q + r12*expnL(j)
 
             sum_rij(j) = sum_rij(j) + r12
@@ -4417,10 +4415,6 @@ CONTAINS
       qfunc = num_Q*inv_den_Q
       dqfunc_dr = dqfunc_dr*inv_den_Q
       colvar%ss = qfunc
-!dbg
-!      write(*,*) ' ss ',  colvar%ss
-! stop
-!dbg
 
       DO i = 1, n_coord_from
          dqfunc_dnL(i) = lambda*expnL(i)*inv_den_Q*(sum_rij(i) - num_Q*inv_den_Q)

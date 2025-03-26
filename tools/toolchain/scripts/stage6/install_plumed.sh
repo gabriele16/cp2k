@@ -6,9 +6,9 @@
 [ "${BASH_SOURCE[0]}" ] && SCRIPT_NAME="${BASH_SOURCE[0]}" || SCRIPT_NAME=$0
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_NAME")/.." && pwd -P)"
 
-plumed_ver="2.8.2"
+plumed_ver="2.9.2"
 plumed_pkg="plumed-src-${plumed_ver}.tgz"
-plumed_sha256="59469456565853ee0103d1834e0f2dad675becee5d40f2d71529ddfa6ce27618"
+plumed_sha256="860e963e32b10a9edd932c33bb6a022975f45af74dc84b6afecd6242c45a0052"
 
 source "${SCRIPT_DIR}"/common_vars.sh
 source "${SCRIPT_DIR}"/tool_kit.sh
@@ -23,6 +23,12 @@ PLUMED_LIBS=''
 
 ! [ -d "${BUILDDIR}" ] && mkdir -p "${BUILDDIR}"
 cd "${BUILDDIR}"
+
+# PLUMED works only with MPI switched on
+if [ "${MPI_MODE}" = "no" ]; then
+  report_warning ${LINENO} "MPI is disabled, skipping PLUMED installation"
+  exit 0
+fi
 
 case "$with_plumed" in
   __INSTALL__)
@@ -47,18 +53,18 @@ case "$with_plumed" in
       # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=96354
       # note: some MPI wrappers carry a -g forward, thus stripping is not enough
 
-      libs=""
+      case "$(uname -s)" in
+        Darwin)
+          libs="-lgomp"
+          ;;
+        *)
+          libs=""
+          ;;
+      esac
       [ -n "${MKL_LIBS}" ] && libs+="$(resolve_string "${MKL_LIBS}" "MPI")"
 
       # Patch to include <limits> explicitly as required by gcc >= 11.
-      case "$(uname -s)" in
-        Darwin)
-          gsed -i '/^#include <algorithm>/a #include <limits>' ./src/lepton/Operation.h
-          ;;
-        *)
-          sed -i '/^#include <algorithm>/a #include <limits>' ./src/lepton/Operation.h
-          ;;
-      esac
+      sed -i'' -e '/^#include <algorithm>/a\'$'\n''#include <limits>' ./src/lepton/Operation.h
 
       ./configure \
         CXX="${MPICXX}" \
@@ -67,6 +73,7 @@ case "$with_plumed" in
         LIBS="${libs}" \
         --prefix=${pkg_install_dir} \
         --libdir="${pkg_install_dir}/lib" \
+        --enable-modules=all \
         > configure.log 2>&1 || tail -n ${LOG_LINES} configure.log
       make VERBOSE=1 -j $(get_nprocs) > make.log 2>&1 || tail -n ${LOG_LINES} make.log
       make install > install.log 2>&1 || tail -n ${LOG_LINES} install.log
@@ -96,8 +103,11 @@ if [ "$with_plumed" != "__DONTUSE__" ]; then
   else
     PLUMED_LIBS="-lplumed -ldl -lstdc++ -lz -ldl"
   fi
+  cat << EOF > "${BUILDDIR}/setup_plumed"
+export PLUMED_VER="${plumed_ver}"
+EOF
   if [ "$with_plumed" != "__SYSTEM__" ]; then
-    cat << EOF > "${BUILDDIR}/setup_plumed"
+    cat << EOF >> "${BUILDDIR}/setup_plumed"
 prepend_path LD_LIBRARY_PATH "$pkg_install_dir/lib"
 prepend_path LD_RUN_PATH "$pkg_install_dir/lib"
 prepend_path LIBRARY_PATH "$pkg_install_dir/lib"
@@ -106,14 +116,13 @@ prepend_path CMAKE_PREFIX_PATH "$pkg_install_dir"
 EOF
     cat "${BUILDDIR}/setup_plumed" >> $SETUPFILE
   fi
-
   cat << EOF >> "${BUILDDIR}/setup_plumed"
 export PLUMED_LDFLAGS="${PLUMED_LDFLAGS}"
 export PLUMED_LIBS="${PLUMED_LIBS}"
 export CP_DFLAGS="\${CP_DFLAGS} IF_MPI(-D__PLUMED2|)"
 export CP_LDFLAGS="\${CP_LDFLAGS} IF_MPI(${PLUMED_LDFLAGS}|)"
 export CP_LIBS="IF_MPI(${PLUMED_LIBS}|) \${CP_LIBS}"
-export PLUMED_ROOT=${pkg_install_dir}
+export PLUMED_ROOT="${pkg_install_dir}"
 EOF
 fi
 

@@ -2,12 +2,11 @@
 #
 # CP2K (GNU aarch64) arch file for a serial static ARM64 binary
 #
-# Tested with: GNU 12.3.0, FFTW 3.3.10, LIBINT 2.6.0, LIBVORI 220621,
-#              LIBXC 6.2.2, OpenBLAS 0.3.23, SPGLIB 1.16.2
+# Tested with: GNU 14.2.0
 #
 # Usage: Source this arch file and then run make as instructed.
 #
-# Last update: 21.06.2023
+# Last update: 12.02.2025
 #
 # \
    if [[ "${0}" == "${BASH_SOURCE}" ]]; then \
@@ -17,15 +16,16 @@
    fi; \
    this_file=${BASH_SOURCE##*/}; \
    cd tools/toolchain; \
+   rm -rf build; \
    [[ -z "${target_cpu}" ]] && target_cpu="native"; \
-   ./install_cp2k_toolchain.sh -j${maxtasks} --mpi-mode=no --no-arch-files --target-cpu=${target_cpu} --with-cmake=system --with-gcc=system --with-libxsmm=no; \
+   ./install_cp2k_toolchain.sh -j${maxtasks} --mpi-mode=no --no-arch-files --target-cpu=${target_cpu} --with-gcc --with-dftd4; \
    source ./install/setup; \
    cd ../..; \
    echo; \
    echo "Check the output above for error messages and consistency!"; \
    echo; \
    echo "If everything is OK, you can build a CP2K production binary with"; \
-   echo "   make -j ARCH=${this_file%.*} VERSION=${this_file##*.}"; \
+   echo "   make -j ARCH=${this_file%.*} VERSION=${this_file##*.} TARGET_CPU=${target_cpu}"; \
    echo "Further checks are performed, if DO_CHECKS=yes is added."; \
    echo; \
    return
@@ -33,12 +33,18 @@
 # Set options
 DO_CHECKS      := no
 TARGET_CPU     := native
-USE_FFTW       := 3.3.10
-USE_LIBINT     := 2.6.0
-USE_LIBVORI    := 220621
-USE_LIBXC      := 6.2.2
-USE_OPENBLAS   := 0.3.23
-USE_SPGLIB     := 1.16.2
+
+# Retrieve package versions
+GNU_VER        := $(shell gcc -dumpfullversion)
+USE_DFTD4      := $(DFTD4_VER)
+USE_FFTW       := $(FFTW_VER)
+USE_LIBGRPP    := $(LIBGRPP_VER)
+USE_LIBINT     := $(LIBINT_VER)
+USE_LIBVORI    := $(LIBVORI_VER)
+USE_LIBXC      := $(LIBXC_VER)
+USE_LIBXSMM    := $(LIBXSMM_VER)
+USE_OPENBLAS   := $(OPENBLAS_VER)
+USE_SPGLIB     := $(SPGLIB_VER)
 
 LMAX           := 5
 MAX_CONTR      := 4
@@ -101,6 +107,23 @@ ifneq ($(USE_LIBXC),)
    LIBS           += $(LIBXC_LIB)/libxc.a
 endif
 
+ifneq ($(USE_DFTD4),)
+   USE_DFTD4      := $(strip $(USE_DFTD4))
+   DFTD4_INC      := $(INSTALL_PATH)/dftd4-$(USE_DFTD4)/include
+   DFTD4_LIB      := $(INSTALL_PATH)/dftd4-$(USE_DFTD4)/lib
+   CFLAGS         += -I$(DFTD4_INC)/dftd4/GNU-$(GNU_VER)
+   DFLAGS         += -D__DFTD4
+   LIBS           += $(DFTD4_LIB)/libdftd4.a
+   LIBS           += $(DFTD4_LIB)/libmstore.a
+   LIBS           += $(DFTD4_LIB)/libmulticharge.a
+   LIBS           += $(DFTD4_LIB)/libmctc-lib.a
+endif
+
+ifneq ($(USE_LIBGRPP),)
+   USE_LIBGRPP    := $(strip $(USE_LIBGRPP))
+   DFLAGS         += -D__LIBGRPP
+endif
+
 ifneq ($(USE_LIBINT),)
    USE_LIBINT     := $(strip $(USE_LIBINT))
    LMAX           := $(strip $(LMAX))
@@ -119,6 +142,21 @@ ifneq ($(USE_SPGLIB),)
    CFLAGS         += -I$(SPGLIB_INC)
    DFLAGS         += -D__SPGLIB
    LIBS           += $(SPGLIB_LIB)/libsymspg.a
+endif
+
+ifneq ($(USE_LIBXSMM),)
+   USE_LIBXSMM    := $(strip $(USE_LIBXSMM))
+   LIBXSMM_INC    := $(INSTALL_PATH)/libxsmm-$(USE_LIBXSMM)/include
+   LIBXSMM_LIB    := $(INSTALL_PATH)/libxsmm-$(USE_LIBXSMM)/lib
+   CFLAGS         += -I$(LIBXSMM_INC)
+   DFLAGS         += -D__LIBXSMM
+   ifeq ($(SHARED), yes)
+      LIBS           += -Wl,-rpath=$(LIBXSMM_LIB) -L$(LIBXSMM_LIB) -lxsmmf -lxsmmext -lxsmm
+   else
+      LIBS           += $(LIBXSMM_LIB)/libxsmmf.a
+      LIBS           += $(LIBXSMM_LIB)/libxsmmext.a
+      LIBS           += $(LIBXSMM_LIB)/libxsmm.a
+   endif
 endif
 
 ifneq ($(USE_FFTW),)

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -14,6 +14,10 @@
 ! **************************************************************************************************
 MODULE qs_energy_window
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_add, dbcsr_copy, dbcsr_create, dbcsr_desymmetrize, dbcsr_get_info, dbcsr_multiply, &
+        dbcsr_p_type, dbcsr_release, dbcsr_type
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_frobenius_norm
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr
    USE cp_fm_basic_linalg,              ONLY: cp_fm_trace
@@ -32,10 +36,6 @@ MODULE qs_energy_window
                                               cp_print_key_finished_output,&
                                               cp_print_key_unit_nr
    USE cp_realspace_grid_cube,          ONLY: cp_pw_to_cube
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add, dbcsr_copy, dbcsr_copy_into_existing, dbcsr_create, dbcsr_desymmetrize, &
-        dbcsr_frobenius_norm, dbcsr_get_info, dbcsr_multiply, dbcsr_p_type, dbcsr_release, &
-        dbcsr_type
    USE input_section_types,             ONLY: section_get_ivals,&
                                               section_vals_get_subs_vals,&
                                               section_vals_type,&
@@ -47,14 +47,9 @@ MODULE qs_energy_window
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_type
    USE pw_methods,                      ONLY: pw_integrate_function
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_rho_elec
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -109,9 +104,10 @@ CONTAINS
                                                             tmp
       TYPE(dbcsr_type), POINTER                          :: rho_ao_ortho, window
       TYPE(particle_list_type), POINTER                  :: particles
+      TYPE(pw_c1d_gs_type)                               :: rho_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rho_g, rho_r
+      TYPE(pw_r3d_rs_type)                               :: rho_r
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(qs_subsys_type), POINTER                      :: subsys
@@ -160,8 +156,8 @@ CONTAINS
       CALL cp_fm_create(S_minus_half_fm, ao_ao_fmstruct)
       CALL cp_fm_create(eigenvectors, ao_ao_fmstruct)
       CALL cp_fm_create(eigenvectors_nonorth, ao_ao_fmstruct)
-      CALL pw_pool_create_pw(auxbas_pw_pool, rho_r, use_data=REALDATA3D, in_space=REALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, rho_g, use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(rho_r)
+      CALL auxbas_pw_pool%create_pw(rho_g)
 
       !calculate S_minus_half
       CALL matrix_sqrt_Newton_Schulz(S_half, S_minus_half, matrix_s(1)%matrix, filter_eps, &
@@ -207,7 +203,7 @@ CONTAINS
          !ensure the correct sparsity
          CALL copy_fm_to_dbcsr(P_window_fm, tmp)
          CALL dbcsr_copy(window, matrix_ks(1)%matrix)
-         CALL dbcsr_copy_into_existing(window, tmp)
+         CALL dbcsr_copy(window, tmp, keep_sparsity=.TRUE.)
          CALL calculate_rho_elec(matrix_p=window, &
                                  rho=rho_r, &
                                  rho_gspace=rho_g, &
@@ -274,7 +270,7 @@ CONTAINS
             CALL copy_fm_to_dbcsr(P_window_fm, tmp)
             !ensure the correct sparsity
             CALL dbcsr_copy(window, matrix_ks(1)%matrix)
-            CALL dbcsr_copy_into_existing(window, tmp)
+            CALL dbcsr_copy(window, tmp, keep_sparsity=.TRUE.)
             CALL calculate_rho_elec(matrix_p=window, &
                                     rho=rho_r, &
                                     rho_gspace=rho_g, &
@@ -317,8 +313,8 @@ CONTAINS
       CALL cp_fm_release(P_window_fm)
       CALL cp_fm_release(eigenvectors_nonorth)
       CALL cp_fm_release(S_minus_half_fm)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_r)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_g)
+      CALL auxbas_pw_pool%give_back_pw(rho_r)
+      CALL auxbas_pw_pool%give_back_pw(rho_g)
       DEALLOCATE (eigenvalues)
       DEALLOCATE (STRIDE)
 

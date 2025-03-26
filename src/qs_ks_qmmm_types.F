@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -11,17 +11,16 @@
 !> \author Teodoro Laino
 ! **************************************************************************************************
 MODULE qs_ks_qmmm_types
+   USE cp_dbcsr_api,                    ONLY: dbcsr_p_type
    USE cp_dbcsr_operations,             ONLY: dbcsr_deallocate_matrix_set
    USE cube_utils,                      ONLY: cube_info_type,&
                                               destroy_cube_info
-   USE dbcsr_api,                       ONLY: dbcsr_p_type
    USE kinds,                           ONLY: dp
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_release,&
                                               pw_env_type
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_r3d_rs_type
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -46,14 +45,14 @@ MODULE qs_ks_qmmm_types
 !> \author Teodoro Laino
 ! **************************************************************************************************
    TYPE qs_ks_qmmm_env_type
-      INTEGER :: n_evals
-      REAL(KIND=dp)                               :: pc_ener
-      TYPE(pw_env_type), POINTER                  :: pw_env
-      TYPE(pw_type)                             :: v_qmmm_rspace
-      TYPE(pw_type), POINTER                             :: v_metal_rspace
-      TYPE(cube_info_type), DIMENSION(:), POINTER  :: cube_info
+      INTEGER :: n_evals = -1
+      REAL(KIND=dp)                               :: pc_ener = -1.0_dp
+      TYPE(pw_env_type), POINTER                  :: pw_env => NULL()
+      TYPE(pw_r3d_rs_type)                             :: v_qmmm_rspace = pw_r3d_rs_type()
+      TYPE(pw_r3d_rs_type), POINTER                             :: v_metal_rspace => NULL()
+      TYPE(cube_info_type), DIMENSION(:), POINTER  :: cube_info => NULL()
       TYPE(dbcsr_p_type), DIMENSION(:), &
-         POINTER                                :: matrix_h
+         POINTER                                :: matrix_h => NULL()
    END TYPE qs_ks_qmmm_env_type
 
 CONTAINS
@@ -72,7 +71,7 @@ CONTAINS
       TYPE(pw_pool_type), POINTER                        :: pool
 
       CALL pw_env_get(ks_qmmm_env%pw_env, auxbas_pw_pool=pool)
-      CALL pw_pool_give_back_pw(pool, ks_qmmm_env%v_qmmm_rspace)
+      CALL pool%give_back_pw(ks_qmmm_env%v_qmmm_rspace)
       CALL pw_env_release(ks_qmmm_env%pw_env)
       IF (ASSOCIATED(ks_qmmm_env%cube_info)) THEN
          DO i = 1, SIZE(ks_qmmm_env%cube_info)

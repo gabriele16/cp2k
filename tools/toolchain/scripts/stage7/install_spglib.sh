@@ -5,8 +5,8 @@
 
 [ "${BASH_SOURCE[0]}" ] && SCRIPT_NAME="${BASH_SOURCE[0]}" || SCRIPT_NAME=$0
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_NAME")/.." && pwd -P)"
-spglib_ver="1.16.2"
-spglib_sha256="5723789bee7371ebba91d78c729d2a608f198fad5e1c95eebe18fda9f2914ec8"
+spglib_ver="2.5.0"
+spglib_sha256="b6026f5e85106c0c9ee57e54b9399890d0f29982e20e96ede0428b3efbe6b914"
 
 source "${SCRIPT_DIR}"/common_vars.sh
 source "${SCRIPT_DIR}"/tool_kit.sh
@@ -21,7 +21,7 @@ cd "${BUILDDIR}"
 
 case "$with_spglib" in
   __INSTALL__)
-    echo "==================== Installing spglib ===================="
+    echo "==================== Installing Spglib ===================="
     pkg_install_dir="${INSTALLDIR}/spglib-${spglib_ver}"
     install_lock_file="$pkg_install_dir/install_successful"
     if verify_checksums "${install_lock_file}"; then
@@ -42,14 +42,16 @@ case "$with_spglib" in
       cd build
       cmake \
         -DCMAKE_INSTALL_PREFIX="${pkg_install_dir}" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_SHARED_LIBS=NO \
+        -DCMAKE_BUILD_TYPE="RelWithDebInfo" \
+        -DCMAKE_INSTALL_LIBDIR=lib \
         -DCMAKE_VERBOSE_MAKEFILE=ON \
+        -DSPGLIB_SHARED_LIBS=OFF \
+        -DSPGLIB_USE_OMP=ON \
+        -DSPGLIB_WITH_Fortran=ON \
+        -DSPGLIB_WITH_TESTS=OFF \
         .. > configure.log 2>&1 || tail -n ${LOG_LINES} configure.log
-      make -j $(get_nprocs) symspg > make.log 2>&1 || tail -n ${LOG_LINES} make.log
-      make install >> install.log 2>&1 || tail -n ${LOG_LINES} install.log
-      # Despite -DBUILD_SHARED_LIBS=NO the shared library gets build and installed.
-      rm -f "${pkg_install_dir}"/lib*/*.so*
+      make -j $(get_nprocs) > make.log 2>&1 || tail -n ${LOG_LINES} make.log
+      make install > install.log 2>&1 || tail -n ${LOG_LINES} install.log
       write_checksums "${install_lock_file}" "${SCRIPT_DIR}/stage7/$(basename ${SCRIPT_NAME})"
     fi
 
@@ -61,7 +63,7 @@ case "$with_spglib" in
     fi
     ;;
   __SYSTEM__)
-    echo "==================== Finding spglib from system paths ===================="
+    echo "==================== Finding Spglib from system paths ===================="
     check_command pkg-config --modversion spglib
     add_include_from_paths SPGLIB_CFLAGS "spglib.h" $INCLUDE_PATHS
     add_lib_from_paths SPGLIB_LDFLAGS "libspglib.*" $LIB_PATHS
@@ -69,7 +71,7 @@ case "$with_spglib" in
   __DONTUSE__) ;;
 
   *)
-    echo "==================== Linking spglib to user paths ===================="
+    echo "==================== Linking Spglib to user paths ===================="
     pkg_install_dir="$with_spglib"
     check_dir "$pkg_install_dir/lib"
     check_dir "$pkg_install_dir/include"
@@ -90,14 +92,13 @@ prepend_path CMAKE_PREFIX_PATH "$pkg_install_dir"
 EOF
   fi
   cat << EOF >> "${BUILDDIR}/setup_spglib"
-export SPGLIB_CFLAGS="-I$pkg_install_dir/include ${SPGLIB_CFLAGS}"
+export SPGLIB_VER="${spglib_ver}"
+export SPGLIB_CFLAGS="-I${pkg_install_dir}/include ${SPGLIB_CFLAGS}"
 export SPGLIB_LDFLAGS="${SPGLIB_LDFLAGS}"
 export CP_DFLAGS="\${CP_DFLAGS} -D__SPGLIB"
 export CP_CFLAGS="\${CP_CFLAGS} ${SPGLIB_CFLAGS}"
 export CP_LDFLAGS="\${CP_LDFLAGS} ${SPGLIB_LDFLAGS}"
 export CP_LIBS="${SPGLIB_LIBS} \${CP_LIBS}"
-export LIBSPG_ROOT="$pkg_install_dir"
-export LIBSPG_INCLUDE_DIR="$pkg_install_dir/include"
 EOF
   cat "${BUILDDIR}/setup_spglib" >> $SETUPFILE
 fi

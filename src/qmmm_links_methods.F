@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -149,7 +149,7 @@ CONTAINS
 
       DO i = 1, added_charges%num_mm_atoms
          Index1 = added_charges%add_env(i)%Index1
-         Index2 = added_charges%add_env(i)%Index1
+         Index2 = added_charges%add_env(i)%Index2
          alpha = added_charges%add_env(i)%alpha
          added_charges%added_particles(i)%r = alpha*particles(Index1)%r + (1.0_dp - alpha)*particles(Index2)%r
       END DO
@@ -176,7 +176,7 @@ CONTAINS
 
       DO i = 1, added_charges%num_mm_atoms
          Index1 = added_charges%add_env(i)%Index1
-         Index2 = added_charges%add_env(i)%Index1
+         Index2 = added_charges%add_env(i)%Index2
          alpha = added_charges%add_env(i)%alpha
          particles(Index1)%f = particles(Index1)%f + alpha*added_charges%added_particles(i)%f
          particles(Index2)%f = particles(Index2)%f + (1.0_dp - alpha)*added_charges%added_particles(i)%f

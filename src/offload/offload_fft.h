@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -18,7 +18,11 @@
 #if defined(__OFFLOAD_CUDA)
 #include <cufft.h>
 #elif defined(__OFFLOAD_HIP)
+#if (HIP_VERSION < 50600000)
 #include <hipfft.h>
+#else
+#include <hipfft/hipfft.h>
+#endif
 #endif
 
 #if defined(__OFFLOAD_CUDA)

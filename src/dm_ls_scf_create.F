@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -22,10 +22,10 @@ MODULE dm_ls_scf_create
                                               VandeVondele2012,&
                                               cite_reference
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_p_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: dbcsr_p_type
    USE dm_ls_scf_types,                 ONLY: ls_scf_env_type
    USE input_constants,                 ONLY: &
         ls_cluster_atomic, ls_cluster_molecular, ls_s_inversion_hotelling, ls_s_inversion_none, &
@@ -91,6 +91,15 @@ CONTAINS
       TYPE(molecule_type), DIMENSION(:), POINTER         :: molecule_set
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(section_vals_type), POINTER                   :: input, mixing_section
+
+      NULLIFY (ls_scf_env)
+      CALL get_qs_env(qs_env, ls_scf_env=ls_scf_env)
+      ! we cannot rebuild ls_scf_env for each new optimization. It seems it holds some values
+      ! that need to be save between calls?
+      IF (ASSOCIATED(ls_scf_env)) RETURN
+!     IF(ASSOCIATED(ls_scf_env)) THEN
+!        CALL ls_scf_release(ls_scf_env)
+!     END IF
 
       CALL timeset(routineN, handle)
 
@@ -206,7 +215,6 @@ CONTAINS
       CALL section_vals_val_get(ls_scf_section, "MAX_SCF", i_val=ls_scf_env%max_scf)
       CALL section_vals_val_get(ls_scf_section, "S_PRECONDITIONER", i_val=ls_scf_env%s_preconditioner_type)
       CALL section_vals_val_get(ls_scf_section, "MATRIX_CLUSTER_TYPE", i_val=ls_scf_env%ls_mstruct%cluster_type)
-      CALL section_vals_val_get(ls_scf_section, "SINGLE_PRECISION_MATRICES", l_val=ls_scf_env%ls_mstruct%single_precision)
       CALL section_vals_val_get(ls_scf_section, "S_INVERSION", i_val=ls_scf_env%s_inversion_type)
       CALL section_vals_val_get(ls_scf_section, "CHECK_S_INV", l_val=ls_scf_env%check_s_inv)
       CALL section_vals_val_get(ls_scf_section, "REPORT_ALL_SPARSITIES", l_val=ls_scf_env%report_all_sparsities)
@@ -384,7 +392,6 @@ CONTAINS
 
          WRITE (unit_nr, '(T2,A,T61,I20)') "S sqrt order:", ls_scf_env%s_sqrt_order
          WRITE (unit_nr, '(T2,A,T61,I20)') "Extrapolation order:", ls_scf_env%extrapolation_order
-         WRITE (unit_nr, '(T2,A,T61,L20)') "Use single precision matrices", ls_scf_env%ls_mstruct%single_precision
 
          SELECT CASE (ls_scf_env%s_preconditioner_type)
          CASE (ls_s_preconditioner_none)

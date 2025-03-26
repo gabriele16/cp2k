@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -28,8 +28,8 @@ MODULE mp2_eri
                                    cp_eri_mme_param, &
                                    cp_eri_mme_set_params
    USE message_passing, ONLY: mp_para_env_type
-   USE dbcsr_api, ONLY: dbcsr_get_block_p, &
-                        dbcsr_p_type
+   USE cp_dbcsr_api, ONLY: dbcsr_get_block_p, &
+                           dbcsr_p_type
    USE eri_mme_integrate, ONLY: eri_mme_2c_integrate, &
                                 eri_mme_3c_integrate
    USE eri_mme_test, ONLY: eri_mme_2c_perf_acc_test, &
@@ -1320,11 +1320,9 @@ CONTAINS
          ! in the RI basis, there is only a single primitive Gaussian
          kpgf = 1
 
-         IF (lc_max == 0) THEN
-            nc_start = 1
-         ELSE
-            nc_start = ncoset(lc_max - 1) + 1
-         END IF
+         ! ncoset is indexed by -1,..., ,5
+         ! e.g. for pure s: lc_min = lc_max = 0, nc_start = 1
+         nc_start = ncoset(lc_min - 1) + 1
          nc_end = ncoset(lc_max)
 
          CALL coulomb3(la_max, npgfa, zeta(:), rpgfa(:), la_min, &

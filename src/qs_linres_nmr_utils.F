@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -168,9 +168,9 @@ CONTAINS
       !ENDIF
       !
       ! check that the psi0 are localized and you have all the centers
-      IF (.NOT. linres_control%localized_psi0) &
-         CPWARN(' To get NMR parameters within PBC you need localized zero order orbitals ')
-
+      IF (.NOT. linres_control%localized_psi0) THEN
+         CPWARN("To get NMR parameters within PBC you need localized zero order orbitals")
+      END IF
       gapw = dft_control%qs_control%gapw
       nspins = dft_control%nspins
       natom = SIZE(particle_set, 1)

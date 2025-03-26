@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -12,8 +12,11 @@ MODULE optbas_fenv_manipulation
                                               init_orb_basis_set
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_get_info,&
+                                              dbcsr_p_type,&
+                                              dbcsr_type
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm
-   USE cp_fm_basic_linalg,              ONLY: cp_fm_upper_to_full
+   USE cp_fm_basic_linalg,              ONLY: cp_fm_uplo_to_full
    USE cp_fm_cholesky,                  ONLY: cp_fm_cholesky_decompose,&
                                               cp_fm_cholesky_invert
    USE cp_fm_pool_types,                ONLY: cp_fm_pool_p_type
@@ -25,9 +28,6 @@ MODULE optbas_fenv_manipulation
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_to_string
    USE cp_output_handling,              ONLY: debug_print_level
-   USE dbcsr_api,                       ONLY: dbcsr_get_info,&
-                                              dbcsr_p_type,&
-                                              dbcsr_type
    USE input_section_types,             ONLY: section_vals_get,&
                                               section_vals_get_subs_vals,&
                                               section_vals_type,&
@@ -243,10 +243,10 @@ CONTAINS
       CALL cp_fm_create(matrix_s_inv, matrix_struct=fm_struct_tmp)
       CALL cp_fm_create(work1, matrix_struct=fm_struct_tmp)
       CALL copy_dbcsr_to_fm(matrix_s, matrix_s_inv)
-      CALL cp_fm_upper_to_full(matrix_s_inv, work1)
+      CALL cp_fm_uplo_to_full(matrix_s_inv, work1)
       CALL cp_fm_cholesky_decompose(matrix_s_inv)
       CALL cp_fm_cholesky_invert(matrix_s_inv)
-      CALL cp_fm_upper_to_full(matrix_s_inv, work1)
+      CALL cp_fm_uplo_to_full(matrix_s_inv, work1)
       CALL cp_fm_struct_release(fm_struct_tmp)
       CALL cp_fm_release(work1)
 

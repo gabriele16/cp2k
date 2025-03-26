@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -17,31 +17,37 @@ MODULE mp2
                                               admm_uncorrect_for_eigenvalues
    USE atomic_kind_types,               ONLY: atomic_kind_type,&
                                               get_atomic_kind_set
-   USE bibliography,                    ONLY: DelBen2012,&
+   USE bibliography,                    ONLY: Bussy2023,&
+                                              DelBen2012,&
                                               DelBen2015b,&
                                               Rybkin2016,&
+                                              Stein2022,&
+                                              Stein2024,&
                                               cite_reference
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_get_info,&
+                                              dbcsr_p_type
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm
-   USE cp_fm_basic_linalg,              ONLY: cp_fm_triangular_invert
+   USE cp_fm_basic_linalg,              ONLY: cp_fm_column_scale,&
+                                              cp_fm_syrk,&
+                                              cp_fm_triangular_invert,&
+                                              cp_fm_uplo_to_full
    USE cp_fm_cholesky,                  ONLY: cp_fm_cholesky_decompose
-   USE cp_fm_diag,                      ONLY: cp_fm_power
+   USE cp_fm_diag,                      ONLY: choose_eigv_solver
    USE cp_fm_struct,                    ONLY: cp_fm_struct_create,&
                                               cp_fm_struct_release,&
                                               cp_fm_struct_type
    USE cp_fm_types,                     ONLY: cp_fm_create,&
-                                              cp_fm_get_info,&
                                               cp_fm_get_submatrix,&
                                               cp_fm_release,&
                                               cp_fm_set_all,&
+                                              cp_fm_to_fm,&
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_type
    USE cp_output_handling,              ONLY: cp_print_key_finished_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_get_info,&
-                                              dbcsr_p_type
    USE hfx_exx,                         ONLY: calculate_exx
    USE hfx_types,                       ONLY: &
         alloc_containers, dealloc_containers, hfx_basis_info_type, hfx_basis_type, &
@@ -50,7 +56,11 @@ MODULE mp2
    USE input_constants,                 ONLY: cholesky_inverse,&
                                               cholesky_off,&
                                               do_eri_gpw,&
-                                              do_eri_mme
+                                              do_eri_mme,&
+                                              rpa_exchange_axk,&
+                                              rpa_exchange_none,&
+                                              rpa_exchange_sosex,&
+                                              sigma_none
    USE input_section_types,             ONLY: section_vals_get,&
                                               section_vals_get_subs_vals,&
                                               section_vals_type
@@ -72,6 +82,7 @@ MODULE mp2
                                               ri_mp2_laplace,&
                                               ri_mp2_method_gpw,&
                                               ri_rpa_method_gpw
+   USE parallel_gemm_api,               ONLY: parallel_gemm
    USE particle_types,                  ONLY: particle_type
    USE qs_energy_types,                 ONLY: qs_energy_type
    USE qs_environment_types,            ONLY: get_qs_env,&
@@ -115,9 +126,9 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'mp2_main'
 
-      INTEGER :: bin, cholesky_method, dimen, handle, handle2, i, i_thread, iatom, ikind, irep, &
-         ispin, max_nset, my_bin_size, n_rep_hf, n_threads, nao, natom, ncol_block, ndep, &
-         nfullcols_total, nfullrows_total, nkind, nrow_block, nspins, unit_nr
+      INTEGER :: bin, cholesky_method, dimen, handle, handle2, i, i_thread, iatom, ii, ikind, &
+         irep, ispin, max_nset, my_bin_size, n_rep_hf, n_threads, nao, natom, ndep, &
+         nfullcols_total, nfullrows_total, nkind, nmo, nspins, unit_nr
       INTEGER(KIND=int_8)                                :: mem
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of, nelec
       LOGICAL :: calc_ex, do_admm, do_admm_rpa_exx, do_dynamic_load_balancing, do_exx, do_gw, &
@@ -125,6 +136,7 @@ CONTAINS
       REAL(KIND=dp) :: E_admm_from_GW(2), E_ex_from_GW, Emp2, Emp2_AA, Emp2_AA_Cou, Emp2_AA_ex, &
          Emp2_AB, Emp2_AB_Cou, Emp2_AB_ex, Emp2_BB, Emp2_BB_Cou, Emp2_BB_ex, Emp2_Cou, Emp2_ex, &
          Emp2_S, Emp2_T, maxocc, mem_real, t1, t2, t3
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: evals
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :)        :: Auto
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :, :)     :: C
       REAL(KIND=dp), DIMENSION(:), POINTER               :: mo_eigenvalues
@@ -132,8 +144,10 @@ CONTAINS
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
       TYPE(cp_fm_struct_type), POINTER                   :: fm_struct
-      TYPE(cp_fm_type)                                   :: fm_matrix_ks, fm_matrix_s, fm_matrix_work
-      TYPE(cp_fm_type), POINTER                          :: mo_coeff
+      TYPE(cp_fm_type)                                   :: evecs, fm_matrix_ks, fm_matrix_s, &
+                                                            fm_matrix_work
+      TYPE(cp_fm_type), POINTER                          :: fm_matrix_ks_red, fm_matrix_s_red, &
+                                                            fm_work_red, mo_coeff
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_ks, matrix_s
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_ks_transl, matrix_s_kp
@@ -163,7 +177,7 @@ CONTAINS
                        "not possible to run MP2")
       END IF
 
-      NULLIFY (virial, dft_control, blacs_env, kpoints)
+      NULLIFY (virial, dft_control, blacs_env, kpoints, fm_matrix_s_red, fm_matrix_ks_red, fm_work_red)
       CALL timeset(routineN, handle)
       logger => cp_get_default_logger()
 
@@ -237,8 +251,12 @@ CONTAINS
       IF (calc_forces) THEN
          CALL cite_reference(DelBen2015b)
          CALL cite_reference(Rybkin2016)
+         CALL cite_reference(Stein2022)
+         CALL cite_reference(Bussy2023)
+         CALL cite_reference(Stein2024)
          !Gradients available for RI-MP2, and low-scaling Laplace MP2/RPA
-IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. mp2_env%method == ri_rpa_method_gpw .OR. mp2_env%method == ri_mp2_laplace)) THEN
+         IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. &
+                    mp2_env%method == ri_rpa_method_gpw .OR. mp2_env%method == ri_mp2_laplace)) THEN
             CPABORT("No forces/gradients for the selected method.")
          END IF
       END IF
@@ -291,9 +309,13 @@ IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. mp2_env%method == ri_rpa_met
       nkind = SIZE(atomic_kind_set, 1)
 
       do_admm_rpa_exx = mp2_env%ri_rpa%do_admm
-      CALL hfx_create_basis_types(basis_parameter, basis_info, qs_kind_set, do_admm_rpa_exx)
       IF (do_admm_rpa_exx .AND. .NOT. dft_control%do_admm) THEN
          CPABORT("Need an ADMM input section for ADMM RI_RPA EXX to work")
+      END IF
+      IF (do_admm_rpa_exx) THEN
+         CALL hfx_create_basis_types(basis_parameter, basis_info, qs_kind_set, "AUX_FIT")
+      ELSE
+         CALL hfx_create_basis_types(basis_parameter, basis_info, qs_kind_set, "ORB")
       END IF
 
       dimen = 0
@@ -322,10 +344,74 @@ IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. mp2_env%method == ri_rpa_met
 
       CALL cp_fm_struct_release(fm_struct)
 
-      CALL cp_fm_get_info(matrix=fm_matrix_ks, nrow_block=nrow_block, ncol_block=ncol_block)
-
+      nmo = nao
+      ALLOCATE (nelec(nspins))
       IF (scf_env%cholesky_method == cholesky_off) THEN
-         CALL cp_fm_power(fm_matrix_s, fm_matrix_work, -0.5_dp, scf_control%eps_eigval, ndep)
+         ALLOCATE (evals(nao))
+         evals = 0
+
+         CALL cp_fm_create(evecs, fm_matrix_s%matrix_struct)
+
+         ! Perform an EVD
+         CALL choose_eigv_solver(fm_matrix_s, evecs, evals)
+
+         ! Determine the number of neglectable eigenvalues assuming that the eigenvalues are in ascending order
+         ! (Required by Lapack)
+         ndep = 0
+         DO ii = 1, nao
+            IF (evals(ii) > scf_control%eps_eigval) THEN
+               ndep = ii - 1
+               EXIT
+            END IF
+         END DO
+         nmo = nao - ndep
+
+         CALL get_mo_set(mo_set=mos(1), nelectron=nelec(1))
+         IF (MAXVAL(nelec) > nmo) THEN
+            ! Should not happen as the following MO calculation is the same as during the SCF steps
+            CPABORT("Not enough MOs found!")
+         END IF
+
+         ! Set the eigenvalue of the eigenvectors belonging to the linear subspace to zero
+         evals(1:ndep) = 0.0_dp
+         ! Determine the eigenvalues of the inverse square root
+         evals(ndep + 1:nao) = 1.0_dp/SQRT(evals(ndep + 1:nao))
+
+         IF (ndep > 0) THEN
+            IF (unit_nr > 0) WRITE (unit_nr, '(T3,A,T76,I5)') 'Number of removed MOs:', ndep
+            IF (unit_nr > 0) WRITE (unit_nr, '(T3,A,T76,I5)') 'Number of available MOs:', nmo
+
+            ! Create reduced matrices
+            NULLIFY (fm_struct)
+            CALL cp_fm_struct_create(fm_struct, template_fmstruct=fm_matrix_s%matrix_struct, ncol_global=nmo)
+
+            ALLOCATE (fm_matrix_s_red, fm_work_red)
+            CALL cp_fm_create(fm_matrix_s_red, fm_struct)
+            CALL cp_fm_create(fm_work_red, fm_struct)
+            CALL cp_fm_struct_release(fm_struct)
+
+            ALLOCATE (fm_matrix_ks_red)
+            CALL cp_fm_struct_create(fm_struct, template_fmstruct=fm_matrix_s%matrix_struct, &
+                                     nrow_global=nmo, ncol_global=nmo)
+            CALL cp_fm_create(fm_matrix_ks_red, fm_struct)
+            CALL cp_fm_struct_release(fm_struct)
+
+            ! Scale the eigenvalues and copy them to
+            CALL cp_fm_to_fm(evecs, fm_matrix_s_red, nmo, ndep + 1)
+            CALL cp_fm_column_scale(fm_matrix_s_red, evals(ndep + 1:))
+
+            ! Obtain ortho from (P)DGEMM, skip the linear dependent columns
+            CALL parallel_gemm("N", "T", nao, nao, nmo, 1.0_dp, fm_matrix_s_red, evecs, &
+                               0.0_dp, fm_matrix_s, b_first_col=ndep + 1)
+         ELSE
+            ! Take the square roots of the target values to allow application of SYRK
+            evals = SQRT(evals)
+            CALL cp_fm_column_scale(evecs, evals)
+            CALL cp_fm_syrk("U", "N", nao, 1.0_dp, evecs, 1, 1, 0.0_dp, fm_matrix_s)
+            CALL cp_fm_uplo_to_full(fm_matrix_s, fm_matrix_work)
+         END IF
+
+         CALL cp_fm_release(evecs)
          cholesky_method = cholesky_off
       ELSE
          ! calculate S^(-1/2) (cholesky decomposition)
@@ -335,7 +421,29 @@ IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. mp2_env%method == ri_rpa_met
       END IF
 
       ALLOCATE (mos_mp2(nspins))
-      ALLOCATE (nelec(nspins))
+      DO ispin = 1, nspins
+
+         CALL get_mo_set(mo_set=mos(ispin), maxocc=maxocc, nelectron=nelec(ispin))
+
+         CALL allocate_mo_set(mo_set=mos_mp2(ispin), &
+                              nao=nao, &
+                              nmo=nmo, &
+                              nelectron=nelec(ispin), &
+                              n_el_f=REAL(nelec(ispin), dp), &
+                              maxocc=maxocc, &
+                              flexible_electron_count=dft_control%relax_multiplicity)
+
+         CALL get_mo_set(mos_mp2(ispin), nao=nao)
+         CALL cp_fm_struct_create(fm_struct, nrow_global=nao, &
+                                  ncol_global=nmo, para_env=para_env, &
+                                  context=blacs_env)
+
+         CALL init_mo_set(mos_mp2(ispin), &
+                          fm_struct=fm_struct, &
+                          name="mp2_mos")
+         CALL cp_fm_struct_release(fm_struct)
+      END DO
+
       DO ispin = 1, nspins
 
          ! If ADMM we should make the ks matrix up-to-date
@@ -348,26 +456,6 @@ IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. mp2_env%method == ri_rpa_met
          IF (dft_control%do_admm) THEN
             CALL admm_uncorrect_for_eigenvalues(ispin, admm_env, matrix_ks(ispin)%matrix)
          END IF
-
-         CALL get_mo_set(mo_set=mos(ispin), maxocc=maxocc, nelectron=nelec(ispin))
-
-         CALL allocate_mo_set(mo_set=mos_mp2(ispin), &
-                              nao=nao, &
-                              nmo=nao, &
-                              nelectron=nelec(ispin), &
-                              n_el_f=REAL(nelec(ispin), dp), &
-                              maxocc=maxocc, &
-                              flexible_electron_count=dft_control%relax_multiplicity)
-
-         CALL get_mo_set(mos_mp2(ispin), nao=nao)
-         CALL cp_fm_struct_create(fm_struct, nrow_global=nao, &
-                                  ncol_global=nao, para_env=para_env, &
-                                  context=blacs_env)
-
-         CALL init_mo_set(mos_mp2(ispin), &
-                          fm_struct=fm_struct, &
-                          name="mp2_mos")
-         CALL cp_fm_struct_release(fm_struct)
 
          IF (cholesky_method == cholesky_inverse) THEN
 
@@ -383,22 +471,48 @@ IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. mp2_env%method == ri_rpa_met
 
          ELSE IF (cholesky_method == cholesky_off) THEN
 
-            CALL eigensolver_symm(matrix_ks_fm=fm_matrix_ks, &
-                                  mo_set=mos_mp2(ispin), &
-                                  ortho=fm_matrix_s, &
-                                  work=fm_matrix_work, &
-                                  do_level_shift=.FALSE., &
-                                  level_shift=0.0_dp, &
-                                  use_jacobi=.FALSE., &
-                                  jacobi_threshold=0.0_dp)
-
+            IF (ASSOCIATED(fm_matrix_s_red)) THEN
+               CALL eigensolver_symm(matrix_ks_fm=fm_matrix_ks, &
+                                     mo_set=mos_mp2(ispin), &
+                                     ortho=fm_matrix_s, &
+                                     work=fm_matrix_work, &
+                                     do_level_shift=.FALSE., &
+                                     level_shift=0.0_dp, &
+                                     use_jacobi=.FALSE., &
+                                     jacobi_threshold=0.0_dp, &
+                                     ortho_red=fm_matrix_s_red, &
+                                     matrix_ks_fm_red=fm_matrix_ks_red, &
+                                     work_red=fm_work_red)
+            ELSE
+               CALL eigensolver_symm(matrix_ks_fm=fm_matrix_ks, &
+                                     mo_set=mos_mp2(ispin), &
+                                     ortho=fm_matrix_s, &
+                                     work=fm_matrix_work, &
+                                     do_level_shift=.FALSE., &
+                                     level_shift=0.0_dp, &
+                                     use_jacobi=.FALSE., &
+                                     jacobi_threshold=0.0_dp)
+            END IF
          END IF
 
+         CALL get_mo_set(mos_mp2(ispin), mo_coeff=mo_coeff)
       END DO
 
       CALL cp_fm_release(fm_matrix_s)
       CALL cp_fm_release(fm_matrix_ks)
       CALL cp_fm_release(fm_matrix_work)
+      IF (ASSOCIATED(fm_matrix_s_red)) THEN
+         CALL cp_fm_release(fm_matrix_s_red)
+         DEALLOCATE (fm_matrix_s_red)
+      END IF
+      IF (ASSOCIATED(fm_matrix_ks_red)) THEN
+         CALL cp_fm_release(fm_matrix_ks_red)
+         DEALLOCATE (fm_matrix_ks_red)
+      END IF
+      IF (ASSOCIATED(fm_work_red)) THEN
+         CALL cp_fm_release(fm_work_red)
+         DEALLOCATE (fm_work_red)
+      END IF
 
       hfx_sections => section_vals_get_subs_vals(input, "DFT%XC%HF")
 
@@ -595,10 +709,9 @@ IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. mp2_env%method == ri_rpa_met
          ! go with ri_rpa_gpw
          CALL mp2_gpw_main(qs_env, mp2_env, Emp2, Emp2_Cou, Emp2_EX, Emp2_S, Emp2_T, &
                            mos_mp2, para_env, unit_nr, calc_forces, calc_ex, do_ri_rpa=.TRUE.)
-
          ! Scale energy contributions
          Emp2 = Emp2*mp2_env%ri_rpa%scale_rpa
-         mp2_env%ri_rpa%ener_axk = mp2_env%ri_rpa%ener_axk*mp2_env%ri_rpa%scale_rpa
+         mp2_env%ri_rpa%ener_exchange = mp2_env%ri_rpa%ener_exchange*mp2_env%ri_rpa%scale_rpa
 
       CASE (ri_mp2_laplace)
          ! perform RI-SOS-Laplace-MP2 energy calculation, most part of the code in common
@@ -654,8 +767,14 @@ IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. mp2_env%method == ri_rpa_met
          IF (.NOT. update_xc_energy) Emp2 = 0.0_dp
 
          IF (unit_nr > 0 .AND. update_xc_energy) WRITE (unit_nr, '(T3,A,T56,F25.14)') 'RI-RPA energy  =   ', Emp2
-         IF (mp2_env%ri_rpa%do_ri_axk) THEN
-            IF (unit_nr > 0) WRITE (unit_nr, '(T3,A,T56,F25.14)') 'RI-RPA-AXK energy=', mp2_env%ri_rpa%ener_axk
+         IF (unit_nr > 0 .AND. mp2_env%ri_rpa%sigma_param /= sigma_none) THEN
+            WRITE (unit_nr, '(T3,A,T56,F25.14)') 'Sigma corr. to RI-RPA energy  =   ', &
+               mp2_env%ri_rpa%e_sigma_corr
+         END IF
+         IF (mp2_env%ri_rpa%exchange_correction == rpa_exchange_axk) THEN
+            IF (unit_nr > 0) WRITE (unit_nr, '(T3,A,T56,F25.14)') 'RI-RPA-AXK energy=', mp2_env%ri_rpa%ener_exchange
+         ELSE IF (mp2_env%ri_rpa%exchange_correction == rpa_exchange_sosex) THEN
+            IF (unit_nr > 0) WRITE (unit_nr, '(T3,A,T56,F25.14)') 'RI-RPA-SOSEX energy=', mp2_env%ri_rpa%ener_exchange
          END IF
          IF (mp2_env%ri_rpa%do_rse) THEN
             IF (unit_nr > 0) WRITE (unit_nr, '(T3,A,T56,F25.14)') 'Diagonal singles correction (dRSE) = ', &
@@ -668,11 +787,15 @@ IF (.NOT. (mp2_env%method == ri_mp2_method_gpw .OR. mp2_env%method == ri_rpa_met
       IF (unit_nr > 0) WRITE (unit_nr, *)
 
       ! we have it !!!!
-      IF (mp2_env%ri_rpa%do_ri_axk) THEN
-         Emp2 = Emp2 + mp2_env%ri_rpa%ener_axk
+      IF (mp2_env%ri_rpa%exchange_correction /= rpa_exchange_none) THEN
+         Emp2 = Emp2 + mp2_env%ri_rpa%ener_exchange
       END IF
       IF (mp2_env%ri_rpa%do_rse) THEN
          Emp2 = Emp2 + mp2_env%ri_rpa%rse_corr
+      END IF
+      IF (mp2_env%ri_rpa%sigma_param /= sigma_none) THEN
+         !WRITE (unit_nr, '(T3,A,T56,F25.14)') 'Sigma corr. to RI-RPA energy  =   ',&
+         Emp2 = Emp2 + mp2_env%ri_rpa%e_sigma_corr
       END IF
       energy%mp2 = Emp2
       energy%total = energy%total + Emp2

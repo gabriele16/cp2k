@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -14,6 +14,10 @@ MODULE xc_pot_saop
    USE basis_set_types,                 ONLY: gto_basis_set_type
    USE cp_array_utils,                  ONLY: cp_1d_r_p_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
+                                              dbcsr_deallocate_matrix,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_plus_fm_fm_t,&
                                               dbcsr_allocate_matrix_set,&
                                               dbcsr_deallocate_matrix_set
@@ -25,10 +29,6 @@ MODULE xc_pot_saop
                                               cp_fm_set_all,&
                                               cp_fm_set_submatrix,&
                                               cp_fm_type
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
-                                              dbcsr_deallocate_matrix,&
-                                              dbcsr_p_type,&
-                                              dbcsr_set
    USE input_constants,                 ONLY: do_method_gapw,&
                                               oe_gllb,&
                                               oe_lb,&
@@ -47,15 +47,9 @@ MODULE xc_pot_saop
                                               pw_copy,&
                                               pw_scale,&
                                               pw_zero
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_rho_elec
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -150,11 +144,13 @@ CONTAINS
       TYPE(cp_fm_type), POINTER                          :: mo_coeff
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: orbital_density_matrix, rho_struct_ao
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: molecular_orbitals
+      TYPE(pw_c1d_gs_type)                               :: orbital_g
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: orbital, orbital_g
-      TYPE(pw_type), ALLOCATABLE, DIMENSION(:)           :: vxc_GLLB, vxc_SAOP
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_g, rho_r, rho_struct_r, tau, vxc_LB, &
+      TYPE(pw_r3d_rs_type)                               :: orbital
+      TYPE(pw_r3d_rs_type), ALLOCATABLE, DIMENSION(:)    :: vxc_GLLB, vxc_SAOP
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r, rho_struct_r, tau, vxc_LB, &
                                                             vxc_tau, vxc_tmp
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho_struct
@@ -277,7 +273,7 @@ CONTAINS
       END DO
 
       DO ispin = 1, nspins
-         CALL add_lb_pot(vxc_tmp(ispin)%cr3d, rho_set, lsd, ispin)
+         CALL add_lb_pot(vxc_tmp(ispin)%array, rho_set, lsd, ispin)
          CALL pw_axpy(vxc_tmp(ispin), vxc_LB(ispin), -1.0_dp)
       END DO
 
@@ -296,23 +292,17 @@ CONTAINS
 
       ALLOCATE (vxc_GLLB(nspins))
       DO ispin = 1, nspins
-         CALL pw_pool_create_pw(auxbas_pw_pool, vxc_GLLB(ispin), &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(vxc_GLLB(ispin))
       END DO
 
       DO ispin = 1, nspins
-         CALL calc_2excpbe(vxc_GLLB(ispin)%cr3d, rho_set, e_uniform, lsd)
+         CALL calc_2excpbe(vxc_GLLB(ispin)%array, rho_set, e_uniform, lsd)
       END DO
 
       CALL xc_dset_release(deriv_set)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, orbital, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, orbital_g, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(orbital)
+      CALL auxbas_pw_pool%create_pw(orbital_g)
 
       DO ispin = 1, nspins
 
@@ -359,11 +349,11 @@ CONTAINS
          DO k = bo(1, 3), bo(2, 3)
             DO j = bo(1, 2), bo(2, 2)
                DO i = bo(1, 1), bo(2, 1)
-                  IF (rho_r(ispin)%cr3d(i, j, k) > density_cut) THEN
-                     vxc_tmp(ispin)%cr3d(i, j, k) = vxc_tmp(ispin)%cr3d(i, j, k)/ &
-                                                    rho_r(ispin)%cr3d(i, j, k)
+                  IF (rho_r(ispin)%array(i, j, k) > density_cut) THEN
+                     vxc_tmp(ispin)%array(i, j, k) = vxc_tmp(ispin)%array(i, j, k)/ &
+                                                     rho_r(ispin)%array(i, j, k)
                   ELSE
-                     vxc_tmp(ispin)%cr3d(i, j, k) = 0.0_dp
+                     vxc_tmp(ispin)%array(i, j, k) = 0.0_dp
                   END IF
                END DO
             END DO
@@ -384,8 +374,7 @@ CONTAINS
                          mo_coeff=mo_coeff, &
                          eigenvalues=mo_eigenvalues, &
                          homo=homo)
-         CALL pw_pool_create_pw(auxbas_pw_pool, vxc_SAOP(ispin), &
-                                use_data=REALDATA3D, in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(vxc_SAOP(ispin))
          CALL pw_zero(vxc_SAOP(ispin))
 
          ALLOCATE (coeff_col(nrow(ispin), 1))
@@ -399,8 +388,8 @@ CONTAINS
                we_GLLB = 2.0_dp*we_GLLB
             END IF
 
-            vxc_tmp(ispin)%cr3d = we_LB*vxc_LB(ispin)%cr3d + &
-                                  we_GLLB*vxc_GLLB(ispin)%cr3d
+            vxc_tmp(ispin)%array = we_LB*vxc_LB(ispin)%array + &
+                                   we_GLLB*vxc_GLLB(ispin)%array
 
             CALL cp_fm_set_all(single_mo_coeff(ispin), 0.0_dp)
             CALL cp_fm_get_submatrix(mo_coeff, coeff_col, &
@@ -418,8 +407,8 @@ CONTAINS
                                     rho=orbital, rho_gspace=orbital_g, &
                                     ks_env=ks_env)
 
-            vxc_SAOP(ispin)%cr3d = vxc_SAOP(ispin)%cr3d + &
-                                   orbital%cr3d*vxc_tmp(ispin)%cr3d
+            vxc_SAOP(ispin)%array = vxc_SAOP(ispin)%array + &
+                                    orbital%array*vxc_tmp(ispin)%array
 
          END DO
 
@@ -430,11 +419,11 @@ CONTAINS
          DO k = bo(1, 3), bo(2, 3)
             DO j = bo(1, 2), bo(2, 2)
                DO i = bo(1, 1), bo(2, 1)
-                  IF (rho_r(ispin)%cr3d(i, j, k) > density_cut) THEN
-                     vxc_SAOP(ispin)%cr3d(i, j, k) = vxc_SAOP(ispin)%cr3d(i, j, k)/ &
-                                                     rho_r(ispin)%cr3d(i, j, k)
+                  IF (rho_r(ispin)%array(i, j, k) > density_cut) THEN
+                     vxc_SAOP(ispin)%array(i, j, k) = vxc_SAOP(ispin)%array(i, j, k)/ &
+                                                      rho_r(ispin)%array(i, j, k)
                   ELSE
-                     vxc_SAOP(ispin)%cr3d(i, j, k) = 0.0_dp
+                     vxc_SAOP(ispin)%array(i, j, k) = 0.0_dp
                   END IF
                END DO
             END DO
@@ -445,8 +434,8 @@ CONTAINS
       CALL cp_fm_release(single_mo_coeff)
 
       CALL xc_rho_set_release(rho_set, auxbas_pw_pool)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, orbital)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, orbital_g)
+      CALL auxbas_pw_pool%give_back_pw(orbital)
+      CALL auxbas_pw_pool%give_back_pw(orbital_g)
 
       !--------------------!
       ! Do the integration !
@@ -468,10 +457,10 @@ CONTAINS
       END DO
 
       DO ispin = 1, nspins
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_SAOP(ispin))
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_GLLB(ispin))
-         CALL pw_release(vxc_LB(ispin))
-         CALL pw_release(vxc_tmp(ispin))
+         CALL auxbas_pw_pool%give_back_pw(vxc_SAOP(ispin))
+         CALL auxbas_pw_pool%give_back_pw(vxc_GLLB(ispin))
+         CALL vxc_LB(ispin)%release()
+         CALL vxc_tmp(ispin)%release()
       END DO
       DEALLOCATE (vxc_GLLB, vxc_LB, vxc_tmp, orbital_density_matrix)
 

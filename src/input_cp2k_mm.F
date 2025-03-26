@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -16,7 +16,8 @@
 MODULE input_cp2k_mm
    USE bibliography,                    ONLY: &
         Batzner2022, Clabaut2020, Clabaut2021, Devynck2012, Dick1958, Foiles1986, Mitchell1993, &
-        Musaelian2023, QUIP_ref, Siepmann1995, Tersoff1988, Tosi1964a, Tosi1964b, Yamada2000
+        Musaelian2023, QUIP_ref, Siepmann1995, Tersoff1988, Tosi1964a, Tosi1964b, Wang2018, &
+        Yamada2000, Zeng2023
    USE cp_output_handling,              ONLY: cp_print_key_section_create,&
                                               debug_print_level,&
                                               high_print_level,&
@@ -48,7 +49,8 @@ MODULE input_cp2k_mm
                                               real_t
    USE kinds,                           ONLY: default_string_length,&
                                               dp
-   USE string_utilities,                ONLY: s2a
+   USE string_utilities,                ONLY: newline,&
+                                              s2a
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -153,7 +155,7 @@ CONTAINS
       CALL section_release(print_key)
 
       CALL cp_print_key_section_create(print_key, __LOCATION__, "SUBCELL", &
-                                       description="Activates the printing of the subcells used for the"// &
+                                       description="Activates the printing of the subcells used for the "// &
                                        "generation of neighbor lists.", &
                                        print_level=high_print_level, filename="__STD_OUT__")
       CALL section_add_subsection(section, print_key)
@@ -290,7 +292,7 @@ CONTAINS
                           description="Do not abort when critical force-field parameters "// &
                           "are missing. CP2K will run as if the terms containing the "// &
                           "missing parameters are zero.", &
-                          usage="IGNORE_MISSING_BOND_PARAMS T", default_l_val=.FALSE., &
+                          usage="IGNORE_MISSING_CRITICAL_PARAMS .TRUE.", default_l_val=.FALSE., &
                           lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -386,7 +388,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="R0_NB", &
                           description="Specify the minimum value of the distance interval "// &
-                          " that brackets the value of emax_spline.", &
+                          "that brackets the value of emax_spline.", &
                           usage="R0_NB <REAL>", default_r_val=cp_unit_to_cp2k(value=0.9_dp, &
                                                                               unit_str="bohr"), &
                           unit_str="angstrom")
@@ -394,7 +396,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="RCUT_NB", &
-                          description="Cutoff radius for nonbonded interactions. This value overrides "// &
+                          description="Cutoff radius for nonbonded interactions. This value overrides"// &
                           " the value specified in the potential definition and is global for all potentials.", &
                           usage="RCUT_NB {real}", default_r_val=cp_unit_to_cp2k(value=-1.0_dp, &
                                                                                 unit_str="angstrom"), &
@@ -420,7 +422,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="EPS_SPLINE", &
                           description="Specify the threshold for the choice of the number of"// &
-                          " points used in the splines (comparing the splined value with the "// &
+                          " points used in the splines (comparing the splined value with the"// &
                           " analytically evaluated one)", &
                           usage="EPS_SPLINE <REAL>", default_r_val=1.0E-7_dp, unit_str="hartree")
       CALL section_add_keyword(section, keyword)
@@ -574,7 +576,7 @@ CONTAINS
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="OPBEND", &
                           description="Specifies the out of plane bend potential of the MM system."// &
-                          "(Only defined for atom quadruples which are also defined as an improper"// &
+                          " (Only defined for atom quadruples which are also defined as an improper"// &
                           " pattern in the topology.)", &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
@@ -728,9 +730,9 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="LEGENDRE", &
                           description="Specifies the coefficients for the legendre"// &
-                          " expansion of the bending potential."// &
-                          "'THETA0' and 'K' are not used, but need to be specified."// &
-                          "Use an arbitrary value.", usage="LEGENDRE {REAL} {REAL} ...", &
+                          "  expansion of the bending potential."// &
+                          " 'THETA0' and 'K' are not used, but need to be specified."// &
+                          " Use an arbitrary value.", usage="LEGENDRE {REAL} {REAL} ...", &
                           default_r_val=0.0d0, type_of_var=real_t, &
                           n_var=-1, unit_str="hartree")
       CALL section_add_keyword(section, keyword)
@@ -1100,7 +1102,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="SHELL_CUTOFF", &
                           description="Define a screening function to exclude some neighbors "// &
-                          " of the shell when electrostatic interaction are considered, "// &
+                          "of the shell when electrostatic interaction are considered, "// &
                           "if negative no screening is operated", &
                           usage="SHELL_CUTOFF -1.0", &
                           default_r_val=-1.0_dp, &
@@ -1183,6 +1185,10 @@ CONTAINS
       CALL section_release(subsection)
 
       CALL create_ALLEGRO_section(subsection)
+      CALL section_add_subsection(section, subsection)
+      CALL section_release(subsection)
+
+      CALL create_DEEPMD_section(subsection)
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 
@@ -1272,7 +1278,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="GEO_CHECK", &
                           description="This keyword enables the check that two atoms are never below the minimum"// &
                           " value used to construct the splines during the construction of the neighbouring list."// &
-                          " Disabling this keyword avoids CP2K to abort in case two atoms are below the minimum "// &
+                          " Disabling this keyword avoids CP2K to abort in case two atoms are below the minimum"// &
                           " value of the radius used to generate the splines.", &
                           usage="GEO_CHECK", &
                           default_l_val=.TRUE., lone_keyword_l_val=.TRUE.)
@@ -1427,9 +1433,9 @@ CONTAINS
                           description="This section specifies the input parameters for QUIP potential type. "// &
                           "Mainly intended for things like GAP corrections to DFT "// &
                           "to achieve correlated-wavefunction-like accuracy. "// &
-                          "Requires linking with quip library from <a href=""http://www.libatoms.org"" "// &
-                          "target=""_blank"">http://www.libatoms.org</a> .", &
-                          citations=(/QUIP_ref/), n_keywords=1, n_subsections=0, repeats=.TRUE.)
+                          "Requires linking with quip library from <http://www.libatoms.org>.", &
+                          citations=(/QUIP_ref/), n_keywords=1, n_subsections=0, repeats=.TRUE., &
+                          deprecation_notice="Support for the QUIP library is slated for removal.")
 
       NULLIFY (keyword)
 
@@ -1480,9 +1486,10 @@ CONTAINS
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="NEQUIP", &
                           description="This section specifies the input parameters for NEQUIP potential type "// &
-                          "based on equivariant neural networks with message passing. "// &
-                          "Requires linking with libtorch library from <a href=""https://pytorch.org/cppdocs/installing.html"" "// &
-                          "target=""_blank"">https://pytorch.org/cppdocs/installing.html</a> .", &
+                          "based on equivariant neural networks with message passing. Starting from the NequIP 0.6.0, "// &
+                          "one can predict stress if the config.yaml file has the StressForceOutput keyword, "// &
+                          "regardless of whether the model has been trained on the stress. "// &
+                          "Requires linking with libtorch library from <https://pytorch.org/cppdocs/installing.html>.", &
                           citations=(/Batzner2022/), n_keywords=1, n_subsections=0, repeats=.FALSE.)
 
       NULLIFY (keyword)
@@ -1505,26 +1512,34 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="UNIT_COORDS", &
-                          description="Units of coordinates in the NEQUIP model.pth file.", &
-                          usage="UNIT angstrom", default_c_val="angstrom")
+                          description="Units of coordinates in the NEQUIP model.pth file. "// &
+                          "The units of positions, energies and forces must be self-consistent: "// &
+                          "e.g. coordinates in Angstrom, energies in eV, forces in eV/Angstrom. ", &
+                          usage="UNIT_COORDS angstrom", default_c_val="angstrom")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="UNIT_ENERGY", &
-                          description="Units of energy in the NEQUIP model.pth file.", &
-                          usage="UNIT hartree", default_c_val="hartree")
+                          description="Units of energy in the NEQUIP model.pth file. "// &
+                          "The units of positions, energies and forces must be self-consistent: "// &
+                          "e.g. coordinates in Angstrom, energies in eV, forces in eV/Angstrom. ", &
+                          usage="UNIT_ENERGY hartree", default_c_val="eV")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="UNIT_FORCES", &
-                          description="Units of the forces in the NEQUIP model.pth file.", &
-                          usage="UNIT hartree/bohr", default_c_val="hartree/bohr")
+                          description="Units of the forces in the NEQUIP model.pth file. "// &
+                          "The units of positions, energies and forces must be self-consistent: "// &
+                          "e.g. coordinates in Angstrom, energies in eV, forces in eV/Angstrom. ", &
+                          usage="UNIT_FORCES hartree/bohr", default_c_val="eV/Angstrom")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="UNIT_CELL", &
-                          description="Units of the cell vectors in the NEQUIP model.pth file.", &
-                          usage="UNIT angstrom", default_c_val="angstrom")
+                          description="Units of the cell vectors in the NEQUIP model.pth file. "// &
+                          "The units of positions, energies and forces must be self-consistent: "// &
+                          "e.g. coordinates in Angstrom, energies in eV, forces in eV/Angstrom. ", &
+                          usage="UNIT_CELL angstrom", default_c_val="angstrom")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -1543,9 +1558,10 @@ CONTAINS
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="ALLEGRO", &
                           description="This section specifies the input parameters for ALLEGRO potential type "// &
-                          "based on equivariant neural network potentials. "// &
-                          "Requires linking with libtorch library from <a href=""https://pytorch.org/cppdocs/installing.html"" "// &
-                          "target=""_blank"">https://pytorch.org/cppdocs/installing.html</a> .", &
+                          "based on equivariant neural network potentials. Starting from the NequIP 0.6.0, "// &
+                          "one can predict stress if the config.yaml file has the StressForceOutput keyword, "// &
+                          "regardless of whether the model has been trained on the stress. "// &
+                          "Requires linking with libtorch library from <https://pytorch.org/cppdocs/installing.html>.", &
                           citations=(/Musaelian2023/), n_keywords=1, n_subsections=0, repeats=.FALSE.)
 
       NULLIFY (keyword)
@@ -1568,30 +1584,82 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="UNIT_COORDS", &
-                          description="Units of coordinates in the ALLEGRO model.pth file.", &
-                          usage="UNIT angstrom", default_c_val="angstrom")
+                          description="Units of coordinates in the ALLEGRO model.pth file. "// &
+                          "The units of positions, energies and forces must be self-consistent: "// &
+                          "e.g. coordinates in Angstrom, energies in eV, forces in eV/Angstrom. ", &
+                          usage="UNIT_COORDS angstrom", default_c_val="angstrom")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="UNIT_ENERGY", &
-                          description="Units of energy in the ALLEGRO model.pth file.", &
-                          usage="UNIT hartree", default_c_val="hartree")
+                          description="Units of energy in the ALLEGRO model.pth file. "// &
+                          "The units of positions, energies and forces must be self-consistent: "// &
+                          "e.g. coordinates in Angstrom, energies in eV, forces in eV/Angstrom. ", &
+                          usage="UNIT_ENERGY hartree", default_c_val="eV")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="UNIT_FORCES", &
-                          description="Units of the forces in the ALLEGRO model.pth file.", &
-                          usage="UNIT hartree/bohr", default_c_val="hartree/bohr")
+                          description="Units of the forces in the ALLEGRO model.pth file. "// &
+                          "The units of positions, energies and forces must be self-consistent: "// &
+                          "e.g. coordinates in Angstrom, energies in eV, forces in eV/Angstrom. ", &
+                          usage="UNIT_FORCES hartree/bohr", default_c_val="eV/Angstrom")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="UNIT_CELL", &
-                          description="Units of the cell vectors in the ALLEGRO model.pth file.", &
-                          usage="UNIT angstrom", default_c_val="angstrom")
+                          description="Units of the cell vectors in the ALLEGRO model.pth file. "// &
+                          "The units of positions, energies and forces must be self-consistent: "// &
+                          "e.g. coordinates in Angstrom, energies in eV, forces in eV/Angstrom. ", &
+                          usage="UNIT_CELL angstrom", default_c_val="angstrom")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
    END SUBROUTINE create_ALLEGRO_section
+
+! **************************************************************************************************
+!> \brief This section specifies the input parameters for DEEPMD potential type
+!> \param section the section to create
+!> \author ybzhuang
+! **************************************************************************************************
+   SUBROUTINE create_DEEPMD_section(section)
+      TYPE(section_type), POINTER                        :: section
+
+      TYPE(keyword_type), POINTER                        :: keyword
+
+      CALL section_create(section, __LOCATION__, name="DEEPMD", &
+                          description="This section specifies the input parameters for Deep Potential type. "// &
+                          "Mainly intended for things like neural network to DFT "// &
+                          "to achieve correlated-wavefunction-like accuracy. "// &
+                          "Requires linking with DeePMD-kit library from "// &
+                          "<a href=""https://docs.deepmodeling.com/projects/deepmd/en/master"" "// &
+                          "target=""_blank"">https://docs.deepmodeling.com/projects/deepmd/en/master</a> .", &
+                          citations=(/Wang2018, Zeng2023/), n_keywords=1, n_subsections=0, repeats=.FALSE.)
+      NULLIFY (keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="ATOMS", &
+                          description="Defines the atomic kinds involved in the Deep Potential. "// &
+                          "Provide a list of each element, "// &
+                          "making sure that the mapping from the ATOMS list to DeePMD atom types is correct.", &
+                          usage="ATOMS {KIND 1} {KIND 2} .. {KIND N}", type_of_var=char_t, &
+                          n_var=-1)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="POT_FILE_NAME", &
+                          variants=(/"PARMFILE"/), &
+                          description="Specifies the filename that contains the DeePMD-kit potential.", &
+                          usage="POT_FILE_NAME {FILENAME}", default_lc_val="graph.pb")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="ATOMS_DEEPMD_TYPE", &
+                          description="Specifies the atomic TYPE for the DeePMD-kit potential. "// &
+                          "Provide a list of index, making sure that the mapping "// &
+                          "from the ATOMS list to DeePMD atom types is correct. ", &
+                          usage="ATOMS_DEEPMD_TYPE {TYPE INTEGER 1} {TYPE INTEGER 2} .. "// &
+                          "{TYPE INTEGER N}", type_of_var=integer_t, &
+                          n_var=-1)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+   END SUBROUTINE create_DEEPMD_section
 
 ! **************************************************************************************************
 !> \brief This section specifies the input parameters for Lennard-Jones potential type
@@ -1605,7 +1673,7 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="lennard-jones", &
-                          description="This section specifies the input parameters for LENNARD-JONES potential type."// &
+                          description="This section specifies the input parameters for LENNARD-JONES potential type. "// &
                           "Functional form: V(r) = 4.0 * EPSILON * [(SIGMA/r)^12-(SIGMA/r)^6].", &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
@@ -1668,7 +1736,7 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="williams", &
-                          description="This section specifies the input parameters for WILLIAMS potential type."// &
+                          description="This section specifies the input parameters for WILLIAMS potential type. "// &
                           "Functional form: V(r) = A*EXP(-B*r) - C / r^6 .", &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
@@ -1738,7 +1806,7 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="goodwin", &
-                          description="This section specifies the input parameters for GOODWIN potential type."// &
+                          description="This section specifies the input parameters for GOODWIN potential type. "// &
                           "Functional form: V(r) = EXP(M*(-(r/DC)**MC+(D/DC)**MC))*VR0*(D/r)**M.", &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
@@ -1821,7 +1889,7 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="ipbv", &
-                          description="This section specifies the input parameters for IPBV potential type."// &
+                          description="This section specifies the input parameters for IPBV potential type. "// &
                           "Functional form: Implicit table function.", &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
@@ -1870,8 +1938,8 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="BMHFT", &
-                          description="This section specifies the input parameters for BMHFT potential type."// &
-                          "Functional form: V(r) = A * EXP(-B*r) - C/r^6 - D/r^8."// &
+                          description="This section specifies the input parameters for BMHFT potential type. "// &
+                          "Functional form: V(r) = A * EXP(-B*r) - C/r^6 - D/r^8. "// &
                           "Values available inside cp2k only for the Na/Cl pair.", &
                           citations=(/Tosi1964a, Tosi1964b/), n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
@@ -1887,7 +1955,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="MAP_ATOMS", &
                           description="Defines the kinds for which internally is defined the BMHFT nonbond potential"// &
                           " at the moment only Na and Cl.", &
-                          usage="ATOMS {KIND1} {KIND2}", type_of_var=char_t, &
+                          usage="MAP_ATOMS {KIND1} {KIND2}", type_of_var=char_t, &
                           n_var=2)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -1957,7 +2025,7 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="BMHFTD", &
-                          description="This section specifies the input parameters for the BMHFTD potential type."// &
+                          description="This section specifies the input parameters for the BMHFTD potential type. "// &
                           "Functional form: V(r) = A*exp(-B*r) - f_6*(r)C/r^6 - f_8(r)*D/r^8 "// &
                           "where f_order(r) = 1 - exp(-BD*r)*\sum_{k=0}^order (BD*r)^k/k! "// &
                           "(Tang-Toennies damping function). No pre-defined parameter values are available.", &
@@ -1975,7 +2043,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="MAP_ATOMS", &
                           description="Defines the kinds for which internally is defined the BMHFTD nonbond potential"// &
                           " at the moment no species included.", &
-                          usage="ATOMS {KIND1} {KIND2}", type_of_var=char_t, &
+                          usage="MAP_ATOMS {KIND1} {KIND2}", type_of_var=char_t, &
                           n_var=2)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -2053,12 +2121,13 @@ CONTAINS
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="BUCK4RANGES", &
                           description="This section specifies the input parameters for the Buckingham 4-ranges"// &
-                          " potential type."// &
-                          " Functional form:<ul>"// &
-                          "<li>V(r) = A*EXP(-B*r) for r &lt; r<sub>1</sub></li>"// &
-                          "<li>V(r) = Sum_n POLY1(n)*r<sup>n</sup> for r<sub>1</sub> &le; r &lt; r<sub>2</sub></li>"// &
-                          "<li>V(r) = Sum_n POLY2(n)*r<sup>n</sup> for r<sub>2</sub> &le; r &lt; r<sub>3</sub></li>"// &
-                          "<li>V(r) = -C/r<sup>6</sup> for r &ge; r<sub>3</sub></li></ul>", &
+                          " potential type."//newline// &
+                          "| Range | Functional Form |"//newline// &
+                          "| ----- | --------------- |"//newline// &
+                          "| $ r < r_1 $ | $ V(r) = A\exp(-Br) $ |"//newline// &
+                          "| $ r_1 \leq r < r_2 $ | $ V(r) = \sum_n \operatorname{POLY1}(n)r_n $ |"//newline// &
+                          "| $ r_2 \leq r < r_3 $ | $ V(r) = \sum_n \operatorname{POLY2}(n)r_n $ |"//newline// &
+                          "| $ r \geq r_3 $ | $ V(r) = -C/r_6 $ |"//newline, &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
       NULLIFY (keyword)
@@ -2113,7 +2182,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="POLY1", &
-                          description="Coefficients of the polynomial used in the second range"// &
+                          description="Coefficients of the polynomial used in the second range "// &
                           "This keyword can be repeated several times.", &
                           usage="POLY1 C1 C2 C3 ..", &
                           n_var=-1, unit_str="K_e", type_of_var=real_t, repeats=.TRUE.)
@@ -2121,9 +2190,9 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="POLY2", &
-                          description="Coefficients of the polynomial used in the third range"// &
+                          description="Coefficients of the polynomial used in the third range "// &
                           "This keyword can be repeated several times.", &
-                          usage="POLY1 C1 C2 C3 ..", &
+                          usage="POLY2 C1 C2 C3 ..", &
                           n_var=-1, unit_str="K_e", type_of_var=real_t, repeats=.TRUE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -2166,7 +2235,7 @@ CONTAINS
       CALL section_create( &
          section, __LOCATION__, name="BUCKMORSE", &
          description="This section specifies the input parameters for"// &
-         " Buckingham plus Morse potential type "// &
+         " Buckingham plus Morse potential type"// &
          " Functional Form: V(r) = F0*(B1+B2)*EXP([A1+A2-r]/[B1+B2])-C/r^6+D*{EXP[-2*beta*(r-R0)]-2*EXP[-beta*(r-R0)]}.", &
          citations=(/Yamada2000/), n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
@@ -2402,9 +2471,9 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="RCUT", &
-                          description="Defines the cutoff parameter of the tersoff potential. "// &
-                          " This parameter is in principle already defined by the values of "// &
-                          " bigD and bigR. But it is necessary to define it when using the tersoff "// &
+                          description="Defines the cutoff parameter of the tersoff potential."// &
+                          " This parameter is in principle already defined by the values of"// &
+                          " bigD and bigR. But it is necessary to define it when using the tersoff"// &
                           " in conjunction with other potentials (for the same atomic pair) in order to have"// &
                           " the same consistent definition of RCUT for all potentials.", &
                           usage="RCUT {real}", type_of_var=real_t, &
@@ -2473,7 +2542,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="F", &
                           description="Defines the F parameter of Siepmann potential", &
-                          usage="B {real}", type_of_var=real_t, &
+                          usage="F {real}", type_of_var=real_t, &
                           default_r_val=13.3_dp, n_var=1)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -2529,7 +2598,7 @@ CONTAINS
                           " the formation of such ions. The T3 term (dipole term)"// &
                           " is then switched off for evaluating the interaction"// &
                           " between the O^2- ion and the metal.", &
-                          usage="ALLOW_O2-_FORMATION TRUE", &
+                          usage="ALLOW_O_FORMATION .TRUE.", &
                           default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -2597,8 +2666,9 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="r", &
-                          description="Defines the R_0 parameters of GAL19 potential for the two METALS."// &
-        "This is the only parameter that is shared between the two section of the forcefield in the case of two metals (alloy)."// &
+                          description="Defines the R_0 parameters of GAL19 potential for the two METALS. "// &
+                          "This is the only parameter that is shared between the two section of the "// &
+                          "forcefield in the case of two metals (alloy). "// &
                           "If one metal only is present, a second number should be given but won't be read", &
                           usage="r {real} {real}", type_of_var=real_t, n_var=2, unit_str="angstrom")
       CALL section_add_keyword(section, keyword)
@@ -2728,8 +2798,9 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="r", &
-                          description="Defines the R_0 parameters of GAL21 potential for the two METALS."// &
-        "This is the only parameter that is shared between the two section of the forcefield in the case of two metals (alloy)."// &
+                          description="Defines the R_0 parameters of GAL21 potential for the two METALS. "// &
+                          "This is the only parameter that is shared between the two section of "// &
+                          "the forcefield in the case of two metals (alloy). "// &
                           "If one metal only is present, a second number should be given but won't be read", &
                           usage="r {real} {real}", type_of_var=real_t, n_var=2, unit_str="angstrom")
       CALL section_add_keyword(section, keyword)
@@ -2871,7 +2942,7 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="GCN", &
-                          description="Allow to specify the generalized coordination number of the atoms."// &
+                          description="Allow to specify the generalized coordination number of the atoms. "// &
                           "Those numbers msust be generated by another program ", &
                           n_keywords=1, n_subsections=0, repeats=.FALSE.)
 

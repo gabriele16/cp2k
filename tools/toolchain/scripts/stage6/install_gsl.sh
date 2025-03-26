@@ -6,8 +6,8 @@
 [ "${BASH_SOURCE[0]}" ] && SCRIPT_NAME="${BASH_SOURCE[0]}" || SCRIPT_NAME=$0
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_NAME")/.." && pwd -P)"
 
-gsl_ver="2.7"
-gls_sha256="efbbf3785da0e53038be7907500628b466152dbc3c173a87de1b5eba2e23602b"
+gsl_ver="2.8"
+gls_sha256="6a99eeed15632c6354895b1dd542ed5a855c0f15d9ad1326c6fe2b2c9e423190"
 source "${SCRIPT_DIR}"/common_vars.sh
 source "${SCRIPT_DIR}"/tool_kit.sh
 source "${SCRIPT_DIR}"/signal_trap.sh
@@ -21,7 +21,7 @@ cd "${BUILDDIR}"
 
 case "$with_gsl" in
   __INSTALL__)
-    echo "==================== Installing gsl ===================="
+    echo "==================== Installing GSL ===================="
     pkg_install_dir="${INSTALLDIR}/gsl-${gsl_ver}"
     install_lock_file="$pkg_install_dir/install_successful"
     if verify_checksums "${install_lock_file}"; then
@@ -51,7 +51,7 @@ case "$with_gsl" in
     GSL_LDFLAGS="-L'${pkg_install_dir}/lib' -Wl,-rpath,'${pkg_install_dir}/lib'"
     ;;
   __SYSTEM__)
-    echo "==================== Finding gsl from system paths ===================="
+    echo "==================== Finding GSL from system paths ===================="
     check_command pkg-config --modversion gsl
     add_include_from_paths GSL_CFLAGS "gsl.h" $INCLUDE_PATHS
     add_lib_from_paths GSL_LDFLAGS "libgsl.*" $LIB_PATHS
@@ -60,7 +60,7 @@ case "$with_gsl" in
     # Nothing to do
     ;;
   *)
-    echo "==================== Linking gsl to user paths ===================="
+    echo "==================== Linking GSL to user paths ===================="
     pkg_install_dir="$with_gsl"
     check_dir "$pkg_install_dir/lib"
     check_dir "$pkg_install_dir/include"
@@ -81,25 +81,17 @@ export GSL_LIBRARY="-lgsl"
 EOF
   fi
   cat << EOF >> "${BUILDDIR}/setup_gsl"
+export GSL_VER="${gsl_ver}"
 export GSL_CFLAGS="${GSL_CFLAGS}"
 export GSL_LDFLAGS="${GSL_LDFLAGS}"
 export CP_DFLAGS="\${CP_DFLAGS} IF_MPI(-D__GSL|)"
 export CP_CFLAGS="\${CP_CFLAGS} ${GSL_CFLAGS}"
 export CP_LDFLAGS="\${CP_LDFLAGS} ${GSL_LDFLAGS}"
 export GSL_LIBRARY="-lgsl"
-export GSL_ROOT="$pkg_install_dir"
+export GSL_ROOT="${pkg_install_dir}"
 export GSL_INCLUDE_DIR="$pkg_install_dir/include"
-prepend_path PKG_CONFIG_PATH "$pkg_install_dir/lib64/pkgconfig"
-prepend_path PKG_CONFIG_PATH "$pkg_install_dir/lib/pkgconfig"
-
-##########################################################
-#
-# I only include the library when SIRIUS is activated
-# which depends explicitly on MPI
-#
-##########################################################
-
-
+prepend_path PKG_CONFIG_PATH "${pkg_install_dir}/lib64/pkgconfig"
+prepend_path PKG_CONFIG_PATH "${pkg_install_dir}/lib/pkgconfig"
 export CP_LIBS="IF_MPI(${GSL_LIBS}|) \${CP_LIBS}"
 EOF
   cat "${BUILDDIR}/setup_gsl" >> $SETUPFILE

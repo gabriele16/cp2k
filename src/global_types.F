@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -82,6 +82,7 @@ MODULE global_types
       LOGICAL :: elpa_qr = .FALSE. ! allow ELPA to use QR during diagonalization
       LOGICAL :: elpa_print = .FALSE. ! if additional information about ELPA diagonalization should be printed
       LOGICAL :: elpa_qr_unsafe = .FALSE. ! enable potentially unsafe ELPA options
+      INTEGER :: dlaf_neigvec_min = 0 ! Minimum number of eigenvectors for DLAF usage
       LOGICAL :: blacs_repeatable = .FALSE. ! will store the user preference for the repeatability of BLACS collectives
       REAL(KIND=dp) :: cp2k_start_time = 0.0_dp
       REAL(KIND=dp) :: cp2k_target_time = HUGE(0.0_dp) ! Maximum run time in seconds
@@ -103,6 +104,7 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(globenv))
       ALLOCATE (globenv)
+      ALLOCATE (globenv%gaussian_rng_stream)
       globenv%ref_count = 1
       globenv%cp2k_start_time = m_walltime()
 

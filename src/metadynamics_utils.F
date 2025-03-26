@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -793,8 +793,8 @@ CONTAINS
             END DO
          ELSE
             CALL cp_warn(__LOCATION__, &
-                         "Section SPAWNED_HILLS_SCALE is not present! Setting the scales of the"// &
-                         "restarted hills according the parameters specified in the input file. ")
+                         "Section SPAWNED_HILLS_SCALE is not present! Setting the scales of the "// &
+                         "restarted hills according the parameters specified in the input file.")
             DO i = 1, n_hills
                DO j = 1, n_colvar
                   delta_s_history(j, i) = colvars(i)%delta_s

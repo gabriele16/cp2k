@@ -6,6 +6,7 @@
         "../input",
         "../grid",
         "../dbm",
+        "../dbx",
         "../pw",
         "../fm",
         "../tmc",
@@ -15,5 +16,6 @@
         "../swarm",
         "../motion",
         "../motion/mc",
+        "../emd",
     ],
 }

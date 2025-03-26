@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -27,8 +27,8 @@ MODULE mm_mapping_library
 
 ! **************************************************************************************************
    TYPE ff_map_type
-      CHARACTER(LEN=default_string_length), DIMENSION(:), POINTER :: kind
-      CHARACTER(LEN=default_string_length), DIMENSION(:), POINTER :: element
+      CHARACTER(LEN=default_string_length), DIMENSION(:), POINTER :: kind => NULL()
+      CHARACTER(LEN=default_string_length), DIMENSION(:), POINTER :: element => NULL()
    END TYPE ff_map_type
 
    TYPE(ff_map_type), POINTER, PUBLIC :: amber_map, &

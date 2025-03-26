@@ -2,26 +2,18 @@
 
 # author: Ole Schuett
 
-# shellcheck disable=SC1091
-source /opt/cp2k-toolchain/install/setup
+# Compile CP2K.
+./build_cp2k_cmake.sh "toolchain" "ssmp" || exit 0
 
-cd /opt/cp2k
-echo -n "Compiling cp2k... "
-if make -j VERSION=sdbg &> make.out; then
-  echo "done."
-else
-  echo -e "failed.\n\n"
-  tail -n 100 make.out
-  echo -e "\nSummary: Compilation failed."
-  echo -e "Status: FAILED\n"
-  exit 0
-fi
+# Fake installation of data files.
+mkdir -p ./share/cp2k
+ln -s ../../data ./share/cp2k/data
 
 cat > /usr/bin/cp2k_shell << EndOfMessage
 #!/bin/bash -e
-source /opt/cp2k-toolchain/install/setup
 export OMP_NUM_THREADS=1
-/opt/cp2k/exe/local/cp2k_shell.sdbg "\$@"
+source /opt/cp2k-toolchain/install/setup
+/opt/cp2k/build/bin/cp2k.ssmp --shell "\$@"
 EndOfMessage
 chmod +x /usr/bin/cp2k_shell
 
@@ -29,29 +21,35 @@ chmod +x /usr/bin/cp2k_shell
 # https://gitlab.com/ase/ase/merge_requests/1109
 cat > /usr/bin/cp2k << EndOfMessage
 #!/bin/bash -e
-source /opt/cp2k-toolchain/install/setup
 export OMP_NUM_THREADS=1
-/opt/cp2k/exe/local/cp2k.sdbg "\$@"
+source /opt/cp2k-toolchain/install/setup
+/opt/cp2k/build/bin/cp2k.ssmp "\$@"
 EndOfMessage
 chmod +x /usr/bin/cp2k
 
 mkdir -p ~/.config/ase
-cat > ~/.config/ase/ase.conf << EndOfMessage
-[executables]
-cp2k = /usr/bin/cp2k_shell
+cat > ~/.config/ase/config.ini << EndOfMessage
+[cp2k]
+cp2k_shell = /usr/bin/cp2k_shell
 cp2k_main = /usr/bin/cp2k
 EndOfMessage
 
 echo -e "\n========== Installing Dependencies =========="
 apt-get update -qq
 apt-get install -qq --no-install-recommends \
+  git \
   python3 \
   python3-dev \
+  python3-venv \
   python3-pip \
   python3-wheel \
   python3-setuptools \
   build-essential
 rm -rf /var/lib/apt/lists/*
+
+# Create and activate a virtual environment for Python packages.
+python3 -m venv /opt/venv
+export PATH="/opt/venv/bin:$PATH"
 
 echo -e "\n========== Installing ASE =========="
 git clone --quiet --depth=1 --single-branch -b master https://gitlab.com/ase/ase.git /opt/ase
@@ -61,6 +59,10 @@ pip3 install ".[test]"
 echo -e "\n========== Running ASE Tests =========="
 ASE_REVISION=$(git rev-parse --short HEAD)
 echo -
+
+# Make test temp files available as artifacts.
+export PYTEST_DEBUG_TEMPROOT=/workspace/artifacts
+mkdir -p ${PYTEST_DEBUG_TEMPROOT}
 
 if ase test -j 0 -c cp2k calculator/cp2k; then
   echo -e "\nSummary: ASE commit ${ASE_REVISION} works fine."

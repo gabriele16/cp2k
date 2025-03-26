@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -17,14 +17,14 @@ MODULE qs_local_properties
                                               Rogers2002,&
                                               cite_reference
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set,&
+                                              dbcsr_type
    USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_io_unit,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
-                                              dbcsr_p_type,&
-                                              dbcsr_set,&
-                                              dbcsr_type
    USE input_section_types,             ONLY: section_vals_get_subs_vals,&
                                               section_vals_type
    USE kinds,                           ONLY: dp
@@ -38,23 +38,18 @@ MODULE qs_local_properties
                                               pw_multiply,&
                                               pw_transfer,&
                                               pw_zero
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_rho_elec
    USE qs_core_energies,                ONLY: calculate_ptrace
-   USE qs_energy_matrix_w,              ONLY: qs_energies_compute_w
    USE qs_energy_types,                 ONLY: qs_energy_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_ks_methods,                   ONLY: calc_rho_tot_gspace
    USE qs_ks_types,                     ONLY: qs_ks_env_type,&
                                               set_ks_env
+   USE qs_matrix_w,                     ONLY: compute_matrix_w
    USE qs_rho_types,                    ONLY: qs_rho_get,&
                                               qs_rho_type
    USE qs_vxc,                          ONLY: qs_xc_density
@@ -83,7 +78,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE qs_local_energy(qs_env, energy_density)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type), INTENT(INOUT)                       :: energy_density
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: energy_density
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'qs_local_energy'
 
@@ -96,13 +91,14 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_ks, matrix_s, matrix_w, rho_ao_kp
       TYPE(dbcsr_type), POINTER                          :: matrix
       TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(pw_c1d_gs_type)                               :: edens_g
+      TYPE(pw_c1d_gs_type), POINTER                      :: rho_core, rho_tot_gspace
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: band_density, edens_g, edens_r, &
-                                                            hartree_density, xc_density
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r
-      TYPE(pw_type), POINTER                             :: rho_core, rho_tot_gspace, &
-                                                            rho_tot_rspace, v_hartree_rspace
+      TYPE(pw_r3d_rs_type)                               :: band_density, edens_r, hartree_density, &
+                                                            xc_density
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
+      TYPE(pw_r3d_rs_type), POINTER                      :: rho_tot_rspace, v_hartree_rspace
       TYPE(qs_energy_type), POINTER                      :: energy
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho, rho_struct
@@ -127,9 +123,9 @@ CONTAINS
       ! get working arrays
       CALL get_qs_env(qs_env=qs_env, pw_env=pw_env)
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool)
-      CALL pw_pool_create_pw(auxbas_pw_pool, band_density, use_data=REALDATA3D, in_space=REALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, hartree_density, use_data=REALDATA3D, in_space=REALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, xc_density, use_data=REALDATA3D, in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(band_density)
+      CALL auxbas_pw_pool%create_pw(hartree_density)
+      CALL auxbas_pw_pool%create_pw(xc_density)
 
       ! w matrix
       CALL get_qs_env(qs_env, matrix_w_kp=matrix_w)
@@ -149,16 +145,10 @@ CONTAINS
          CALL set_ks_env(ks_env, matrix_w_kp=matrix_w)
       END IF
       ! band structure energy density
-      CALL qs_energies_compute_w(qs_env, .TRUE.)
+      CALL compute_matrix_w(qs_env, .TRUE.)
       CALL get_qs_env(qs_env, ks_env=ks_env, matrix_w_kp=matrix_w)
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             edens_r, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             edens_g, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(edens_r)
+      CALL auxbas_pw_pool%create_pw(edens_g)
       CALL pw_zero(band_density)
       DO ispin = 1, nspins
          rho_ao => matrix_w(ispin, :)
@@ -168,19 +158,13 @@ CONTAINS
                                  ks_env=ks_env, soft_valid=(gapw .OR. gapw_xc))
          CALL pw_axpy(edens_r, band_density)
       END DO
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, edens_r)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, edens_g)
+      CALL auxbas_pw_pool%give_back_pw(edens_r)
+      CALL auxbas_pw_pool%give_back_pw(edens_g)
 
       ! Hartree energy density correction = -0.5 * V_H(r) * [rho(r) - rho_core(r)]
       ALLOCATE (rho_tot_gspace, rho_tot_rspace)
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             rho_tot_gspace, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             rho_tot_rspace, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(rho_tot_gspace)
+      CALL auxbas_pw_pool%create_pw(rho_tot_rspace)
       NULLIFY (rho_core)
       CALL get_qs_env(qs_env, &
                       v_hartree_rspace=v_hartree_rspace, &
@@ -198,8 +182,8 @@ CONTAINS
       CALL pw_zero(hartree_density)
       ovol = 0.5_dp/hartree_density%pw_grid%dvol
       CALL pw_multiply(hartree_density, v_hartree_rspace, rho_tot_rspace, alpha=ovol)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_tot_gspace)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_tot_rspace)
+      CALL auxbas_pw_pool%give_back_pw(rho_tot_gspace)
+      CALL auxbas_pw_pool%give_back_pw(rho_tot_rspace)
       DEALLOCATE (rho_tot_gspace, rho_tot_rspace)
 
       IF (dft_control%do_admm) THEN
@@ -243,9 +227,9 @@ CONTAINS
       END IF
 
       ! return temp arrays
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, band_density)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, hartree_density)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, xc_density)
+      CALL auxbas_pw_pool%give_back_pw(band_density)
+      CALL auxbas_pw_pool%give_back_pw(hartree_density)
+      CALL auxbas_pw_pool%give_back_pw(xc_density)
 
       CALL timestop(handle)
 
@@ -262,8 +246,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE qs_local_stress(qs_env, stress_tensor, beta)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type), DIMENSION(:, :), INTENT(INOUT), &
-         OPTIONAL                                        :: stress_tensor
+      TYPE(pw_r3d_rs_type), DIMENSION(:, :), &
+         INTENT(INOUT), OPTIONAL                         :: stress_tensor
       REAL(KIND=dp), INTENT(IN), OPTIONAL                :: beta
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'qs_local_stress'
@@ -275,11 +259,12 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(3, 3)                     :: pv_loc
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(pw_c1d_gs_type)                               :: v_hartree_gspace
+      TYPE(pw_c1d_gs_type), DIMENSION(3)                 :: efield
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: v_hartree_gspace, xc_density
-      TYPE(pw_type), DIMENSION(3)                        :: efield
-      TYPE(pw_type), POINTER                             :: v_hartree_rspace
+      TYPE(pw_r3d_rs_type)                               :: xc_density
+      TYPE(pw_r3d_rs_type), POINTER                      :: v_hartree_rspace
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho_struct
       TYPE(section_vals_type), POINTER                   :: input, xc_section
@@ -324,7 +309,7 @@ CONTAINS
       ! get working arrays
       CALL get_qs_env(qs_env=qs_env, pw_env=pw_env)
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool)
-      CALL pw_pool_create_pw(auxbas_pw_pool, xc_density, use_data=REALDATA3D, in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(xc_density)
 
       ! init local stress tensor
       IF (do_stress) THEN
@@ -349,20 +334,18 @@ CONTAINS
 
       ! Electrical field terms
       CALL get_qs_env(qs_env, v_hartree_rspace=v_hartree_rspace)
-      CALL pw_pool_create_pw(auxbas_pw_pool, v_hartree_gspace, &
-                             use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(v_hartree_gspace)
       CALL pw_transfer(v_hartree_rspace, v_hartree_gspace)
       DO i = 1, 3
-         CALL pw_pool_create_pw(auxbas_pw_pool, efield(i), &
-                                use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+         CALL auxbas_pw_pool%create_pw(efield(i))
          CALL pw_copy(v_hartree_gspace, efield(i))
       END DO
       CALL pw_derive(efield(1), (/1, 0, 0/))
       CALL pw_derive(efield(2), (/0, 1, 0/))
       CALL pw_derive(efield(3), (/0, 0, 1/))
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, v_hartree_gspace)
+      CALL auxbas_pw_pool%give_back_pw(v_hartree_gspace)
       DO i = 1, 3
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, efield(i))
+         CALL auxbas_pw_pool%give_back_pw(efield(i))
       END DO
 
       pv_loc = 0.0_dp

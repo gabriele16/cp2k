@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -123,7 +123,7 @@ CONTAINS
 
       CALL section_create(subsection, __LOCATION__, name="MODEL", &
                           description="Section for a single NNP model. "// &
-                          "If this section is repeated, a committee model (C-NNP)"// &
+                          "If this section is repeated, a committee model (C-NNP) "// &
                           "is used where the NNP members share the same symmetry functions.", &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
       CALL keyword_create(keyword, __LOCATION__, name="WEIGHTS", &

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -15,6 +15,14 @@ MODULE qs_dcdr_utils
    USE cell_types,                      ONLY: cell_type,&
                                               get_cell
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
+                                              dbcsr_create,&
+                                              dbcsr_init_p,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set,&
+                                              dbcsr_type,&
+                                              dbcsr_type_no_symmetry,&
+                                              dbcsr_type_symmetric
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply,&
                                               dbcsr_allocate_matrix_set,&
@@ -42,14 +50,6 @@ MODULE qs_dcdr_utils
                                               cp_print_key_unit_nr
    USE cp_result_methods,               ONLY: get_results
    USE cp_result_types,                 ONLY: cp_result_type
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
-                                              dbcsr_create,&
-                                              dbcsr_init_p,&
-                                              dbcsr_p_type,&
-                                              dbcsr_set,&
-                                              dbcsr_type,&
-                                              dbcsr_type_no_symmetry,&
-                                              dbcsr_type_symmetric
    USE input_constants,                 ONLY: current_orb_center_wannier,&
                                               use_mom_ref_user
    USE input_section_types,             ONLY: section_vals_get_subs_vals,&
@@ -111,7 +111,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE multiply_localization(ao_matrix, mo_coeff, work, nmo, icenter, res)
       TYPE(dbcsr_type), INTENT(IN), POINTER              :: ao_matrix
-      TYPE(cp_fm_type), INTENT(IN)                       :: mo_coeff, work
+      TYPE(cp_fm_type), INTENT(IN)                       :: mo_coeff
+      TYPE(cp_fm_type), INTENT(INOUT)                    :: work
       INTEGER, INTENT(IN)                                :: nmo, icenter
       TYPE(cp_fm_type), INTENT(IN)                       :: res
 
@@ -732,6 +733,8 @@ CONTAINS
       CALL section_vals_val_get(dcdr_section, "DISTRIBUTED_ORIGIN", l_val=dcdr_env%distributed_origin)
       CALL section_vals_val_get(loc_section, "_SECTION_PARAMETERS_", l_val=dcdr_env%localized_psi0)
       CALL section_vals_val_get(lr_section, "RESTART", l_val=qs_env%linres_control%linres_restart)
+      CALL section_vals_val_get(dcdr_section, "Z_MATRIX_METHOD", l_val=dcdr_env%z_matrix_method)
+
       dcdr_env%ref_point = 0._dp
 
       ! List of atoms
@@ -843,6 +846,16 @@ CONTAINS
          CALL get_mo_set(mo_set=mos(ispin), mo_coeff=mo_coeff)
          CALL cp_fm_to_fm(mo_coeff, dcdr_env%mo_coeff(ispin))
       END DO
+
+      IF (dcdr_env%z_matrix_method) THEN
+         ALLOCATE (dcdr_env%matrix_m_alpha(3, nspins))
+         DO i = 1, 3
+            DO ispin = 1, nspins
+               CALL cp_fm_create(dcdr_env%matrix_m_alpha(i, ispin), dcdr_env%likemos_fm_struct(1)%struct)
+               CALL cp_fm_set_all(dcdr_env%matrix_m_alpha(i, ispin), 0.0_dp)
+            END DO
+         END DO
+      END IF
 
       ! DBCSR matrices
       NULLIFY (dcdr_env%hamiltonian1)
@@ -1037,6 +1050,10 @@ CONTAINS
       CALL cp_fm_release(dcdr_env%mo_coeff)
       CALL cp_fm_release(dcdr_env%chc)
       CALL cp_fm_release(dcdr_env%op_dR)
+
+      IF (dcdr_env%z_matrix_method) THEN
+         CALL cp_fm_release(dcdr_env%matrix_m_alpha)
+      END IF
 
       ! DBCSR matrices
       CALL dbcsr_deallocate_matrix_set(dcdr_env%perturbed_dm_correction)

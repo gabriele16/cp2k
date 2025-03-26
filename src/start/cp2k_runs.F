@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -18,6 +18,10 @@ MODULE cp2k_runs
                                               cp2k_version,&
                                               cp2k_year
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_finalize_lib,&
+                                              dbcsr_init_lib,&
+                                              dbcsr_print_config,&
+                                              dbcsr_print_statistics
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_config
    USE cp_files,                        ONLY: close_file,&
                                               open_file
@@ -37,11 +41,7 @@ MODULE cp2k_runs
    USE cp_units,                        ONLY: cp_unit_set_create,&
                                               cp_unit_set_release,&
                                               cp_unit_set_type,&
-                                              print_all_units
-   USE dbcsr_api,                       ONLY: dbcsr_finalize_lib,&
-                                              dbcsr_init_lib,&
-                                              dbcsr_print_config,&
-                                              dbcsr_print_statistics
+                                              export_units_as_xml
    USE dbm_api,                         ONLY: dbm_library_print_stats
    USE environment,                     ONLY: cp2k_finalize,&
                                               cp2k_init,&
@@ -74,11 +74,10 @@ MODULE cp2k_runs
                                               grid_library_set_config
    USE input_constants,                 ONLY: &
         bsse_run, cell_opt_run, debug_run, do_atom, do_band, do_cp2k, do_embed, do_farming, &
-        do_fist, do_mixed, do_nnp, do_opt_basis, do_optimize_input, do_qmmm, do_qs, do_sirius, &
-        do_swarm, do_tamc, do_test, do_tree_mc, do_tree_mc_ana, driver_run, ehrenfest, &
-        electronic_spectra_run, energy_force_run, energy_run, geo_opt_run, linear_response_run, &
-        mol_dyn_run, mon_car_run, negf_run, none_run, pint_run, real_time_propagation, &
-        tree_mc_run, vib_anal
+        do_fist, do_ipi, do_mixed, do_nnp, do_opt_basis, do_optimize_input, do_qmmm, do_qs, &
+        do_sirius, do_swarm, do_tamc, do_test, do_tree_mc, do_tree_mc_ana, driver_run, ehrenfest, &
+        energy_force_run, energy_run, geo_opt_run, linear_response_run, mol_dyn_run, mon_car_run, &
+        negf_run, none_run, pint_run, real_time_propagation, rtp_method_bse, tree_mc_run, vib_anal
    USE input_cp2k,                      ONLY: create_cp2k_root_section
    USE input_cp2k_check,                ONLY: check_cp2k_input
    USE input_cp2k_global,               ONLY: create_global_section
@@ -117,20 +116,11 @@ MODULE cp2k_runs
    USE optimize_basis,                  ONLY: run_optimize_basis
    USE optimize_input,                  ONLY: run_optimize_input
    USE pint_methods,                    ONLY: do_pint_run
-   USE pw_fpga,                         ONLY: pw_fpga_finalize,&
-                                              pw_fpga_init
-   USE pw_gpu,                          ONLY: pw_gpu_finalize,&
-                                              pw_gpu_init
    USE qs_environment_types,            ONLY: get_qs_env
    USE qs_linres_module,                ONLY: linres_calculation
-   USE qs_tddfpt_module,                ONLY: tddfpt_calculation
-   USE reference_manager,               ONLY: print_all_references,&
-                                              print_format_html
+   USE reference_manager,               ONLY: export_references_as_xml
+   USE rt_bse,                          ONLY: run_propagation_bse
    USE rt_propagation,                  ONLY: rt_prop_setup
-   USE sirius_interface,                ONLY: cp_sirius_finalize,&
-                                              cp_sirius_init
-   USE string_utilities,                ONLY: html_entity_table,&
-                                              write_html_tables
    USE swarm,                           ONLY: run_swarm
    USE tamc_run,                        ONLY: qs_tamc
    USE tmc_setup,                       ONLY: do_analyze_files,&
@@ -183,6 +173,10 @@ CONTAINS
       INTEGER                                            :: f_env_handle, grid_backend, ierr, &
                                                             iter_level, method_name_id, &
                                                             new_env_id, prog_name_id, run_type_id
+#if defined(__DBCSR_ACC)
+      INTEGER, TARGET                                    :: offload_chosen_device
+#endif
+      INTEGER, POINTER                                   :: active_device_id
       INTEGER(KIND=int_8)                                :: m_memory_max_mpi
       LOGICAL                                            :: echo_input, grid_apply_cutoff, &
                                                             grid_validate, I_was_ionode
@@ -194,23 +188,18 @@ CONTAINS
       TYPE(global_environment_type), POINTER             :: globenv
       TYPE(section_vals_type), POINTER                   :: glob_section, input_file, root_section
 
-      NULLIFY (para_env, f_env, dft_control)
+      NULLIFY (para_env, f_env, dft_control, active_device_id)
       ALLOCATE (para_env)
       para_env = mpi_comm
 
 #if defined(__DBCSR_ACC)
       IF (offload_get_device_count() > 0) THEN
-         CALL dbcsr_init_lib(mpi_comm%get_handle(), io_unit=output_unit, &
-                             accdrv_active_device_id=offload_get_chosen_device())
-      ELSE
-         CALL dbcsr_init_lib(mpi_comm%get_handle(), io_unit=output_unit)
+         offload_chosen_device = offload_get_chosen_device()
+         active_device_id => offload_chosen_device
       END IF
-#else
-      CALL dbcsr_init_lib(mpi_comm%get_handle(), io_unit=output_unit)
 #endif
-
-      CALL pw_gpu_init()
-      CALL pw_fpga_init()
+      CALL dbcsr_init_lib(mpi_comm%get_handle(), io_unit=output_unit, &
+                          accdrv_active_device_id=active_device_id)
 
       NULLIFY (globenv, force_env)
 
@@ -272,35 +261,15 @@ CONTAINS
          CALL run_optimize_input(input_declaration, root_section, para_env)
       CASE (do_swarm)
          CALL run_swarm(input_declaration, root_section, para_env, globenv, input_file_name)
-      CASE (do_farming)
-         ! Hack: DBCSR should be uninitialized when entering farming.
-         ! But, we don't want to change the public f77_interface.
-         ! TODO: refactor cp2k's startup code
+      CASE (do_farming) ! TODO: refactor cp2k's startup code
          CALL dbcsr_finalize_lib()
-         IF (method_name_id == do_sirius) CALL cp_sirius_finalize()
-
-         CALL pw_gpu_finalize()
-         CALL pw_fpga_finalize()
          CALL farming_run(input_declaration, root_section, para_env, initial_variables)
-#if defined(__DBCSR_ACC)
-         IF (offload_get_device_count() > 0) THEN
-            CALL dbcsr_init_lib(mpi_comm%get_handle(), io_unit=output_unit, &
-                                accdrv_active_device_id=offload_get_chosen_device())
-         ELSE
-            CALL dbcsr_init_lib(mpi_comm%get_handle(), io_unit=output_unit)
-         END IF
-#else
-         CALL dbcsr_init_lib(mpi_comm%get_handle(), io_unit=output_unit)
-#endif
-
-         CALL pw_gpu_init()
-         CALL pw_fpga_init()
-         IF (method_name_id == do_sirius) CALL cp_sirius_init()
+         CALL dbcsr_init_lib(mpi_comm%get_handle(), io_unit=output_unit, &
+                             accdrv_active_device_id=active_device_id)
       CASE (do_opt_basis)
          CALL run_optimize_basis(input_declaration, root_section, para_env)
          globenv%run_type_id = none_run
       CASE (do_cp2k)
-         IF (method_name_id == do_sirius) CALL cp_sirius_init()
          CALL create_force_env(new_env_id, &
                                input_declaration=input_declaration, &
                                input_path=input_file_name, &
@@ -337,7 +306,8 @@ CONTAINS
              method_name_id /= do_mixed .AND. &
              method_name_id /= do_nnp .AND. &
              method_name_id /= do_embed .AND. &
-             method_name_id /= do_fist) &
+             method_name_id /= do_fist .AND. &
+             method_name_id /= do_ipi) &
             CPABORT("Energy/Force run not available for all methods ")
 
          sublogger => cp_get_default_logger()
@@ -369,17 +339,19 @@ CONTAINS
          CALL do_mon_car(force_env, globenv, input_declaration, input_file_name)
       CASE (do_tamc)
          CALL qs_tamc(force_env, globenv)
-      CASE (electronic_spectra_run)
-         IF (method_name_id /= do_qs) &
-            CPABORT("Electron spectra available only with Quickstep. ")
-         CALL force_env_calc_energy_force(force_env, calc_force=.FALSE.)
-         CALL tddfpt_calculation(force_env%qs_env)
       CASE (real_time_propagation)
          IF (method_name_id /= do_qs) &
             CPABORT("Real time propagation needs METHOD QS. ")
          CALL get_qs_env(force_env%qs_env, dft_control=dft_control)
          dft_control%rtp_control%fixed_ions = .TRUE.
-         CALL rt_prop_setup(force_env)
+         SELECT CASE (dft_control%rtp_control%rtp_method)
+         CASE (rtp_method_bse)
+            ! Run the TD-BSE method
+            CALL run_propagation_bse(force_env%qs_env, force_env)
+         CASE default
+            ! Run the TDDFT method
+            CALL rt_prop_setup(force_env)
+         END SELECT
       CASE (ehrenfest)
          IF (method_name_id /= do_qs) &
             CPABORT("Ehrenfest dynamics needs METHOD QS ")
@@ -415,13 +387,7 @@ CONTAINS
       !sample peak memory
       CALL m_memory()
 
-      IF (method_name_id == do_sirius) CALL cp_sirius_finalize()
-
-      CALL pw_gpu_finalize()
-      CALL pw_fpga_finalize()
-
       CALL dbcsr_print_statistics()
-
       CALL dbm_library_print_stats(mpi_comm=mpi_comm, output_unit=output_unit)
       CALL grid_library_print_stats(mpi_comm=mpi_comm, output_unit=output_unit)
 
@@ -886,7 +852,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE write_xml_file()
 
-      INTEGER                                            :: i, ie, is, unit_number
+      INTEGER                                            :: i, unit_number
       TYPE(section_type), POINTER                        :: root_section
 
       NULLIFY (root_section)
@@ -897,26 +863,7 @@ CONTAINS
                      file_action="WRITE", &
                      file_status="REPLACE")
 
-      WRITE (UNIT=unit_number, FMT="(A)") &
-         "<?xml version=""1.0"" encoding=""ISO-8859-1""?>", &
-         "<?xml-stylesheet type=""text/xsl"" href=""cp2k_input.xsl""?>"
-
-      !MK Write a HTML translation table
-      !MK In principle this is only required for non-standard HTML entities
-      is = 0
-      ie = 0
-      WRITE (UNIT=unit_number, FMT="(A)") &
-         "<!DOCTYPE documentElement["
-      DO i = 1, SIZE(html_entity_table), 2
-         is = INDEX(html_entity_table(i), "&") + 1
-         CPASSERT(is > 0)
-         ie = INDEX(html_entity_table(i), ";") - 1
-         CPASSERT(ie >= is)
-         WRITE (UNIT=unit_number, FMT="(A)") &
-            "<!ENTITY "//html_entity_table(i) (is:ie)//" """//TRIM(html_entity_table(i + 1))//""">"
-      END DO
-      WRITE (UNIT=unit_number, FMT="(A)") &
-         "]>"
+      WRITE (UNIT=unit_number, FMT="(A)") '<?xml version="1.0" encoding="utf-8"?>'
 
       !MK CP2K input structure
       WRITE (UNIT=unit_number, FMT="(A)") &
@@ -925,33 +872,17 @@ CONTAINS
          " <CP2K_YEAR>"//TRIM(cp2k_year)//"</CP2K_YEAR>", &
          " <COMPILE_DATE>"//TRIM(compile_date)//"</COMPILE_DATE>", &
          " <COMPILE_REVISION>"//TRIM(compile_revision)//"</COMPILE_REVISION>"
+
+      CALL export_references_as_xml(unit_number)
+      CALL export_units_as_xml(unit_number)
+
       DO i = 1, root_section%n_subsections
          CALL write_section_xml(root_section%subsections(i)%section, 1, unit_number)
       END DO
-      ! Append HTML entity and tag tables
-      CALL write_html_tables(unit_number)
+
       WRITE (UNIT=unit_number, FMT="(A)") "</CP2K_INPUT>"
       CALL close_file(unit_number=unit_number)
       CALL section_release(root_section)
-
-      ! References
-      CALL open_file(unit_number=unit_number, file_name="references.html", &
-                     file_action="WRITE", file_status="REPLACE")
-      WRITE (unit_number, FMT='(A)') "<HTML><BODY><HEAD><TITLE>The cp2k literature list</TITLE>"
-      WRITE (unit_number, FMT='(A)') "<H1>CP2K references</H1>"
-      CALL print_all_references(sorted=.TRUE., cited_only=.FALSE., &
-                                FORMAT=print_format_html, unit=unit_number)
-      WRITE (unit_number, FMT='(A)') "</BODY></HTML>"
-      CALL close_file(unit_number=unit_number)
-
-      ! Units
-      CALL open_file(unit_number=unit_number, file_name="units.html", &
-                     file_action="WRITE", file_status="REPLACE")
-      WRITE (unit_number, FMT='(A)') "<HTML><BODY><HEAD><TITLE>The cp2k units list</TITLE>"
-      WRITE (unit_number, FMT='(A)') "<H1>CP2K Available Units of Measurement</H1>"
-      CALL print_all_units(unit_nr=unit_number)
-      WRITE (unit_number, FMT='(A)') "</BODY></HTML>"
-      CALL close_file(unit_number=unit_number)
 
    END SUBROUTINE write_xml_file
 

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -19,16 +19,16 @@ MODULE cp_dbcsr_output
                                               get_atomic_kind
    USE basis_set_types,                 ONLY: get_gto_basis_set,&
                                               gto_basis_set_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_get_data_size, dbcsr_get_info, dbcsr_get_matrix_type, dbcsr_get_num_blocks, &
+        dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, dbcsr_iterator_start, &
+        dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_type, dbcsr_type_antisymmetric, &
+        dbcsr_type_no_symmetry, dbcsr_type_symmetric
    USE cp_fm_types,                     ONLY: cp_fm_get_info,&
                                               cp_fm_get_submatrix,&
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_get_data_size, dbcsr_get_info, dbcsr_get_matrix_type, dbcsr_get_num_blocks, &
-        dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, dbcsr_iterator_start, &
-        dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_type, dbcsr_type_antisymmetric, &
-        dbcsr_type_no_symmetry, dbcsr_type_symmetric
    USE kinds,                           ONLY: default_string_length,&
                                               dp,&
                                               int_8
@@ -261,11 +261,11 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'copy_repl_dbcsr_to_repl_fm'
 
-      INTEGER                                            :: blk, col, handle, i, j, nblkcols_total, &
+      INTEGER                                            :: col, handle, i, j, nblkcols_total, &
                                                             nblkrows_total, nc, nr, row
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: c_offset, r_offset
       INTEGER, DIMENSION(:), POINTER                     :: col_blk_size, row_blk_size
-      REAL(KIND=dp), DIMENSION(:, :), POINTER            :: DATA
+      REAL(KIND=dp), DIMENSION(:, :), POINTER            :: block
       TYPE(dbcsr_iterator_type)                          :: iter
 
       CALL timeset(routineN, handle)
@@ -299,10 +299,10 @@ CONTAINS
 
       CALL dbcsr_iterator_start(iter, sparse_matrix)
       DO WHILE (dbcsr_iterator_blocks_left(iter))
-         CALL dbcsr_iterator_next_block(iter, row, col, DATA, blk)
-         DO j = 1, SIZE(DATA, 2)
-         DO i = 1, SIZE(DATA, 1)
-            fm(r_offset(row) + i - 1, c_offset(col) + j - 1) = DATA(i, j)
+         CALL dbcsr_iterator_next_block(iter, row, col, block)
+         DO j = 1, SIZE(block, 2)
+         DO i = 1, SIZE(block, 1)
+            fm(r_offset(row) + i - 1, c_offset(col) + j - 1) = block(i, j)
          END DO
          END DO
       END DO

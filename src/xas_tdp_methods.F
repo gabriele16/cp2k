@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -26,6 +26,12 @@ MODULE xas_tdp_methods
                                               pbc
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_complete_redistribute, dbcsr_copy, dbcsr_create, dbcsr_filter, dbcsr_finalize, &
+        dbcsr_get_info, dbcsr_get_occupation, dbcsr_multiply, dbcsr_p_type, dbcsr_release, &
+        dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_no_symmetry, &
+        dbcsr_type_symmetric
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_add_on_diag
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr,&
                                               cp_dbcsr_sm_fm_multiply
@@ -52,11 +58,6 @@ MODULE xas_tdp_methods
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr,&
                                               debug_print_level
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add_on_diag, dbcsr_complete_redistribute, dbcsr_copy, dbcsr_create, dbcsr_filter, &
-        dbcsr_finalize, dbcsr_get_info, dbcsr_get_occupation, dbcsr_multiply, dbcsr_p_type, &
-        dbcsr_release, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_no_symmetry, &
-        dbcsr_type_symmetric
    USE input_constants,                 ONLY: &
         do_admm_purify_cauchy_subspace, do_admm_purify_mo_diag, do_admm_purify_none, do_loc_none, &
         do_potential_coulomb, do_potential_id, do_potential_short, do_potential_truncated, &
@@ -2571,6 +2572,9 @@ CONTAINS
 
                DO ispin = 1, 2
                   CALL duplicate_mo_set(restart_mos(ispin), mos(1))
+                  ! Set the new occupation number in the case of spin-independent based calculaltion since the restart is spin-depedent
+                  IF (SIZE(mos) == 1) &
+                     restart_mos(ispin)%occupation_numbers = mos(1)%occupation_numbers/2
                END DO
 
                CALL cp_fm_to_fm_submat(msource=lr_coeffs, mtarget=restart_mos(1)%mo_coeff, nrow=nao, &

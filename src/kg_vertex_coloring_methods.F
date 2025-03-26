@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -42,16 +42,16 @@ MODULE kg_vertex_coloring_methods
    PRIVATE
 
    TYPE vertex
-      INTEGER :: id
-      INTEGER :: color
-      INTEGER :: degree ! degree (number of neighbors)
-      INTEGER :: dsat ! degree of saturation
+      INTEGER :: id = -1
+      INTEGER :: color = -1
+      INTEGER :: degree = -1 ! degree (number of neighbors)
+      INTEGER :: dsat = -1 ! degree of saturation
       LOGICAL, ALLOCATABLE, DIMENSION(:)       :: color_present ! the colors present on neighbors
       TYPE(vertex_p_type), DIMENSION(:), POINTER :: neighbors => NULL()
    END TYPE vertex
 
    TYPE vertex_p_type
-      TYPE(vertex), POINTER :: vertex
+      TYPE(vertex), POINTER :: vertex => NULL()
    END TYPE vertex_p_type
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'kg_vertex_coloring_methods'

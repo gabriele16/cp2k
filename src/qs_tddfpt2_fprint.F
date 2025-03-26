@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -9,6 +9,7 @@ MODULE qs_tddfpt2_fprint
    USE atomic_kind_types,               ONLY: atomic_kind_type,&
                                               get_atomic_kind_set
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_p_type
    USE cp_dbcsr_operations,             ONLY: dbcsr_deallocate_matrix_set
    USE cp_fm_struct,                    ONLY: cp_fm_struct_type
    USE cp_fm_types,                     ONLY: cp_fm_create,&
@@ -23,7 +24,6 @@ MODULE qs_tddfpt2_fprint
                                               cp_print_key_finished_output,&
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_p_type
    USE efield_utils,                    ONLY: calculate_ecore_efield
    USE exstates_types,                  ONLY: excited_energy_type
    USE input_section_types,             ONLY: section_vals_get_subs_vals,&
@@ -54,7 +54,7 @@ MODULE qs_tddfpt2_fprint
    USE qs_ks_methods,                   ONLY: qs_ks_build_kohn_sham_matrix
    USE qs_ks_types,                     ONLY: qs_ks_env_type,&
                                               set_ks_env
-   USE qs_matrix_w,                     ONLY: qs_energies_compute_matrix_w
+   USE qs_matrix_w,                     ONLY: compute_matrix_w
    USE qs_p_env_types,                  ONLY: p_env_release,&
                                               qs_p_env_type
    USE qs_scf,                          ONLY: scf
@@ -66,8 +66,8 @@ MODULE qs_tddfpt2_fprint
                                               response_force,&
                                               response_force_xtb
    USE ri_environment_methods,          ONLY: build_ri_matrices
-   USE xtb_matrices,                    ONLY: build_xtb_ks_matrix,&
-                                              build_xtb_matrices
+   USE xtb_ks_matrix,                   ONLY: build_xtb_ks_matrix
+   USE xtb_matrices,                    ONLY: build_xtb_matrices
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -124,7 +124,7 @@ CONTAINS
       TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(qs_force_type), DIMENSION(:), POINTER         :: gs_force, ks_force, td_force
       TYPE(qs_p_env_type)                                :: p_env
-      TYPE(section_vals_type), POINTER                   :: force_section
+      TYPE(section_vals_type), POINTER                   :: force_section, tdlr_section
 
       CALL timeset(routineN, handle)
 
@@ -149,6 +149,7 @@ CONTAINS
          END IF
          force_section => section_vals_get_subs_vals(print_section, "FORCES")
          CALL section_vals_val_get(force_section, "THRESHOLD", r_val=threshold)
+         tdlr_section => section_vals_get_subs_vals(qs_env%input, "PROPERTIES%TDDFPT%LINRES")
          ALLOCATE (state_list(nstates))
          CALL build_state_list(force_section, state_list)
          ! screen with oscillator strength
@@ -219,7 +220,7 @@ CONTAINS
                ELSE
                   iw = -1
                END IF
-               CALL response_equation(qs_env, p_env, ex_env%cpmos, iw)
+               CALL response_equation(qs_env, p_env, ex_env%cpmos, iw, tdlr_section)
                !
                CALL get_qs_env(qs_env, dft_control=dft_control)
                IF (dft_control%qs_control%semi_empirical) THEN
@@ -322,7 +323,7 @@ CONTAINS
       CALL qs_env_rebuild_pw_env(qs_env)
       CALL qs_energies_init(qs_env, .TRUE.)
       CALL scf(qs_env)
-      CALL qs_energies_compute_matrix_w(qs_env, .TRUE.)
+      CALL compute_matrix_w(qs_env, .TRUE.)
 
       NULLIFY (para_env)
       CALL get_qs_env(qs_env, para_env=para_env)
@@ -331,8 +332,7 @@ CONTAINS
       ELSEIF (dft_control%qs_control%dftb) THEN
          CPABORT("TDDFPT| DFTB not available")
       ELSEIF (dft_control%qs_control%xtb) THEN
-         CALL build_xtb_matrices(qs_env=qs_env, para_env=para_env, &
-                                 calculate_forces=.TRUE.)
+         CALL build_xtb_matrices(qs_env=qs_env, calculate_forces=.TRUE.)
          CALL build_xtb_ks_matrix(qs_env, calculate_forces=.TRUE., just_energy=.FALSE.)
       ELSE
          CALL build_core_hamiltonian_matrix(qs_env=qs_env, calculate_forces=.TRUE.)

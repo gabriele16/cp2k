@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -20,6 +20,8 @@ MODULE xas_tp_scf
    USE cp_array_utils,                  ONLY: cp_2d_r_p_type
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
+                                              dbcsr_p_type
    USE cp_external_control,             ONLY: external_control
    USE cp_fm_types,                     ONLY: cp_fm_get_submatrix,&
                                               cp_fm_init_random,&
@@ -37,8 +39,6 @@ MODULE xas_tp_scf
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr,&
                                               cp_rm_iter_level
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
-                                              dbcsr_p_type
    USE input_constants,                 ONLY: ot_precond_full_kinetic,&
                                               ot_precond_solver_default,&
                                               xas_dscf
@@ -56,8 +56,7 @@ MODULE xas_tp_scf
                                               preconditioner_type
    USE qs_charges_types,                ONLY: qs_charges_type
    USE qs_density_matrices,             ONLY: calculate_density_matrix
-   USE qs_density_mixing_types,         ONLY: broyden_mixing_new_nr,&
-                                              broyden_mixing_nr,&
+   USE qs_density_mixing_types,         ONLY: broyden_mixing_nr,&
                                               direct_mixing_nr,&
                                               gspace_mixing_nr,&
                                               multisecant_mixing_nr,&
@@ -279,7 +278,7 @@ CONTAINS
                                         scf_env%mixing_store, rho_ao_kp, para_env, scf_env%iter_delta, scf_env%iter_count, &
                                         diis=diis_step)
          CASE (gspace_mixing_nr, pulay_mixing_nr, broyden_mixing_nr, &
-               broyden_mixing_new_nr, multisecant_mixing_nr)
+               multisecant_mixing_nr)
             ! Compute the difference p_out-p_in
             CALL self_consistency_check(rho_ao_kp, scf_env%p_delta, para_env, scf_env%p_mix_new, &
                                         delta=scf_env%iter_delta)
@@ -483,7 +482,7 @@ CONTAINS
          IF (output_unit > 0) THEN
             WRITE (UNIT=output_unit, FMT="(/,/,T2,A)") " Eigenstates are derived "// &
                "from the MOs optimized by OT. Follows localization of the core states"// &
-               " to identify the excited orbital. "
+               " to identify the excited orbital."
          END IF
 
          CALL get_xas_env(xas_env=xas_env, &
@@ -564,7 +563,7 @@ CONTAINS
          CALL get_mo_set(mos(my_spin), mo_coeff=mo_coeff, nmo=nmo)
          IF (output_unit > 0) THEN
             WRITE (UNIT=output_unit, FMT="(/,/,T2,A,I5,A,I6,A)") " Calculation of ", nvirtual2, &
-               " additional virtual states of the subspace complementary to the "// &
+               " additional virtual states of the subspace complementary to the"// &
                " lowest ", nmo, " states"
          END IF
 

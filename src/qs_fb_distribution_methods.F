@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -8,16 +8,15 @@
 MODULE qs_fb_distribution_methods
 
    USE cell_types,                      ONLY: cell_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_distribution_get,&
+                                              dbcsr_distribution_type,&
+                                              dbcsr_get_info,&
+                                              dbcsr_p_type,&
+                                              dbcsr_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_type
    USE cp_output_handling,              ONLY: cp_print_key_finished_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_distribution_get,&
-                                              dbcsr_distribution_type,&
-                                              dbcsr_get_info,&
-                                              dbcsr_nblkcols_total,&
-                                              dbcsr_p_type,&
-                                              dbcsr_type
    USE input_section_types,             ONLY: section_vals_type
    USE kinds,                           ONLY: dp
    USE message_passing,                 ONLY: mp_para_env_type
@@ -51,8 +50,8 @@ MODULE qs_fb_distribution_methods
 !> \author Lianheng Tong (LT) lianheng.tong@kcl.ac.uk
 ! **************************************************************************************************
    TYPE fb_distribution_element
-      INTEGER :: id
-      REAL(KIND=dp) :: cost
+      INTEGER :: id = -1
+      REAL(KIND=dp) :: cost = -1.0_dp
    END TYPE fb_distribution_element
 
 ! **************************************************************************************************
@@ -64,8 +63,8 @@ MODULE qs_fb_distribution_methods
 ! **************************************************************************************************
    TYPE fb_distribution_list
       TYPE(fb_distribution_element), DIMENSION(:), POINTER :: list => NULL()
-      INTEGER :: nelements
-      REAL(KIND=dp) :: cost
+      INTEGER :: nelements = -1
+      REAL(KIND=dp) :: cost = -1.0_dp
    END TYPE fb_distribution_list
 
 ! **************************************************************************************************
@@ -86,7 +85,7 @@ MODULE qs_fb_distribution_methods
 ! **************************************************************************************************
    TYPE fb_preferred_procs_list
       INTEGER, DIMENSION(:), POINTER :: list => NULL()
-      INTEGER :: nprocs
+      INTEGER :: nprocs = -1
    END TYPE fb_preferred_procs_list
 
 ! Parameters related to automatic resizing of the hash_table:
@@ -454,18 +453,15 @@ CONTAINS
       INTEGER, DIMENSION(:), INTENT(OUT)                 :: common_set_ids
       INTEGER, INTENT(OUT)                               :: n_common_sets
 
-      INTEGER                                            :: icol, nprows, pcol, prow
+      INTEGER                                            :: icol, nblkcols_tot, nprows, pcol, prow
       INTEGER, DIMENSION(:), POINTER                     :: col_dist
       INTEGER, DIMENSION(:, :), POINTER                  :: pgrid
-      LOGICAL                                            :: check_ok
       TYPE(dbcsr_distribution_type)                      :: dbcsr_dist
 
-      check_ok = natoms .LE. dbcsr_nblkcols_total(dbcsr_mat)
-      CPASSERT(check_ok)
-      check_ok = SIZE(preferred_procs_set) .GE. natoms
-      CPASSERT(check_ok)
-      check_ok = SIZE(common_set_ids) .GE. natoms
-      CPASSERT(check_ok)
+      CALL dbcsr_get_info(dbcsr_mat, nblkcols_total=nblkcols_tot)
+      CPASSERT(natoms <= nblkcols_tot)
+      CPASSERT(SIZE(preferred_procs_set) >= natoms)
+      CPASSERT(SIZE(common_set_ids) >= natoms)
 
       CALL dbcsr_get_info(dbcsr_mat, distribution=dbcsr_dist, proc_col_dist=col_dist)
       CALL dbcsr_distribution_get(dbcsr_dist, pgrid=pgrid, nprows=nprows, npcols=n_common_sets)

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -14,6 +14,11 @@
 ! **************************************************************************************************
 MODULE qs_linres_methods
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set,&
+                                              dbcsr_type
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_checksum
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply
    USE cp_external_control,             ONLY: external_control
    USE cp_files,                        ONLY: close_file,&
@@ -38,11 +43,6 @@ MODULE qs_linres_methods
                                               cp_print_key_generate_filename,&
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_checksum,&
-                                              dbcsr_copy,&
-                                              dbcsr_p_type,&
-                                              dbcsr_set,&
-                                              dbcsr_type
    USE input_constants,                 ONLY: do_loc_none,&
                                               op_loc_berry,&
                                               ot_precond_none,&
@@ -431,8 +431,8 @@ CONTAINS
          ! Max number of iteration reached
          IF (iter == linres_control%max_iter) THEN
             IF (iounit > 0) THEN
-               WRITE (iounit, "(T3,A)") &
-                  "The linear solver didn't converge! Maximum number of iterations reached."
+               CALL cp_warn(__LOCATION__, &
+                            "The linear solver didn't converge! Maximum number of iterations reached.")
                CALL m_flush(iounit)
             END IF
             linres_control%converged = .FALSE.
@@ -567,7 +567,9 @@ CONTAINS
       !
       TYPE(qs_environment_type), INTENT(IN), POINTER     :: qs_env
       TYPE(qs_p_env_type)                                :: p_env
-      TYPE(cp_fm_type), DIMENSION(:), INTENT(IN)         :: c0, v, Av, chc
+      TYPE(cp_fm_type), DIMENSION(:), INTENT(IN)         :: c0, v
+      TYPE(cp_fm_type), DIMENSION(:), INTENT(INOUT)      :: Av
+      TYPE(cp_fm_type), DIMENSION(:), INTENT(IN)         :: chc
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'apply_op'
 
@@ -662,7 +664,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE apply_op_1(v, Av, matrix_ks, matrix_s, chc)
       !
-      TYPE(cp_fm_type), INTENT(IN)                       :: v, Av
+      TYPE(cp_fm_type), INTENT(IN)                       :: v
+      TYPE(cp_fm_type), INTENT(INOUT)                    :: Av
       TYPE(dbcsr_type), INTENT(IN)                       :: matrix_ks, matrix_s
       TYPE(cp_fm_type), INTENT(IN)                       :: chc
 

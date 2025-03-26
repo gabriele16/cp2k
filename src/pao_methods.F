@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -18,16 +18,19 @@ MODULE pao_methods
                                               Kuhne2007,&
                                               cite_reference
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_add, dbcsr_binary_read, dbcsr_complete_redistribute, dbcsr_copy, dbcsr_create, &
+        dbcsr_desymmetrize, dbcsr_distribution_get, dbcsr_distribution_new, &
+        dbcsr_distribution_type, dbcsr_filter, dbcsr_get_block_p, dbcsr_get_info, &
+        dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, dbcsr_iterator_start, &
+        dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_p_type, dbcsr_release, dbcsr_scale, &
+        dbcsr_set, dbcsr_type
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_checksum,&
+                                              dbcsr_dot,&
+                                              dbcsr_reserve_diag_blocks
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_type,&
                                               cp_to_string
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add, dbcsr_binary_read, dbcsr_checksum, dbcsr_complete_redistribute, &
-        dbcsr_copy_into_existing, dbcsr_create, dbcsr_desymmetrize, dbcsr_distribution_get, &
-        dbcsr_distribution_new, dbcsr_distribution_type, dbcsr_dot, dbcsr_filter, &
-        dbcsr_get_block_p, dbcsr_get_info, dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, &
-        dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_p_type, &
-        dbcsr_release, dbcsr_reserve_diag_blocks, dbcsr_scale, dbcsr_set, dbcsr_type
    USE dm_ls_scf_methods,               ONLY: density_matrix_trs4,&
                                               ls_scf_init_matrix_S
    USE dm_ls_scf_qs,                    ONLY: ls_scf_dm_to_ks,&
@@ -44,6 +47,8 @@ MODULE pao_methods
                                               diamat_all
    USE message_passing,                 ONLY: mp_para_env_type
    USE pao_ml,                          ONLY: pao_ml_forces
+   USE pao_model,                       ONLY: pao_model_forces,&
+                                              pao_model_load
    USE pao_param,                       ONLY: pao_calc_AB,&
                                               pao_param_count
    USE pao_types,                       ONLY: pao_env_type
@@ -94,6 +99,7 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'pao_init_kinds'
 
+      CHARACTER(LEN=default_path_length)                 :: pao_model_file
       INTEGER                                            :: handle, i, ikind, pao_basis_size
       TYPE(gto_basis_set_type), POINTER                  :: basis_set
       TYPE(pao_descriptor_type), DIMENSION(:), POINTER   :: pao_descriptors
@@ -107,6 +113,7 @@ CONTAINS
          CALL get_qs_kind(qs_kind_set(ikind), &
                           basis_set=basis_set, &
                           pao_basis_size=pao_basis_size, &
+                          pao_model_file=pao_model_file, &
                           pao_potentials=pao_potentials, &
                           pao_descriptors=pao_descriptors)
 
@@ -123,6 +130,14 @@ CONTAINS
             pao_descriptors(i)%beta_radius = exp_radius(0, pao_descriptors(i)%beta, pao%eps_pgf, 1.0_dp)
             pao_descriptors(i)%screening_radius = exp_radius(0, pao_descriptors(i)%screening, pao%eps_pgf, 1.0_dp)
          END DO
+
+         ! Load torch model.
+         IF (LEN_TRIM(pao_model_file) > 0) THEN
+            IF (.NOT. ALLOCATED(pao%models)) &
+               ALLOCATE (pao%models(SIZE(qs_kind_set)))
+            CALL pao_model_load(pao, qs_env, ikind, pao_model_file, pao%models(ikind))
+         END IF
+
       END DO
       CALL timestop(handle)
    END SUBROUTINE pao_init_kinds
@@ -455,7 +470,7 @@ CONTAINS
 
       IF (pao%istep > 1) THEN
          IF (pao%iw > 0) WRITE (pao%iw, *) "PAO| energy improvement:", energy_diff
-         ! IF(energy_diff>0.0_dp) CPWARN("PAO| energy increased")
+         ! CPWARN_IF(energy_diff>0.0_dp, "PAO| energy increased")
 
          ! print one-liner
          IF (pao%iw > 0) WRITE (pao%iw, '(A,I6,11X,F20.9,1X,E10.3,1X,E10.3,1X,F9.3)') &
@@ -584,7 +599,7 @@ CONTAINS
          cs_pos = dbcsr_checksum(matrix_tmp, pos=.TRUE.)
          IF (pao%iw > 0) WRITE (pao%iw, *) "PAO| Read restart DM "// &
             TRIM(pao%preopt_dm_file)//" with checksum: ", cs_pos
-         CALL dbcsr_copy_into_existing(rho_ao(ispin)%matrix, matrix_tmp)
+         CALL dbcsr_copy(rho_ao(ispin)%matrix, matrix_tmp, keep_sparsity=.TRUE.)
          CALL dbcsr_release(matrix_tmp)
       END DO
 
@@ -867,7 +882,7 @@ CONTAINS
             pao%need_initial_scf = .FALSE.
             pao%preopt_dm_file = "" ! load only for first MD step
          ELSE
-            CALL ls_scf_qs_atomic_guess(qs_env, ls_scf_env%energy_init)
+            CALL ls_scf_qs_atomic_guess(qs_env, ls_scf_env, ls_scf_env%energy_init)
             IF (pao%iw > 0) WRITE (pao%iw, '(A,F20.9)') &
                " PAO| Energy from initial atomic guess:", ls_scf_env%energy_init
             pao%need_initial_scf = .TRUE.
@@ -986,6 +1001,9 @@ CONTAINS
 
       IF (SIZE(pao%ml_training_set) > 0) &
          CALL pao_ml_forces(pao, qs_env, pao%matrix_G, forces)
+
+      IF (ALLOCATED(pao%models)) &
+         CALL pao_model_forces(pao, qs_env, pao%matrix_G, forces)
 
       CALL para_env%sum(forces)
       DO iatom = 1, natoms

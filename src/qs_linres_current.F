@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -24,6 +24,10 @@ MODULE qs_linres_current
    USE cp_array_utils,                  ONLY: cp_2d_i_p_type,&
                                               cp_2d_r_p_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_convert_offsets_to_sizes, dbcsr_copy, dbcsr_create, dbcsr_deallocate_matrix, &
+        dbcsr_distribution_type, dbcsr_finalize, dbcsr_get_block_p, dbcsr_p_type, dbcsr_put_block, &
+        dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_no_symmetry
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_plus_fm_fm_t,&
                                               cp_dbcsr_sm_fm_multiply,&
@@ -51,10 +55,6 @@ MODULE qs_linres_current
    USE cube_utils,                      ONLY: compute_cube_center,&
                                               cube_info_type,&
                                               return_cube
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add_block_node, dbcsr_convert_offsets_to_sizes, dbcsr_copy, dbcsr_create, &
-        dbcsr_deallocate_matrix, dbcsr_distribution_type, dbcsr_finalize, dbcsr_get_block_p, &
-        dbcsr_p_type, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_no_symmetry
    USE gaussian_gridlevels,             ONLY: gridlevel_info_type
    USE grid_api,                        ONLY: &
         GRID_FUNC_AB, GRID_FUNC_ADBmDAB_X, GRID_FUNC_ADBmDAB_Y, GRID_FUNC_ADBmDAB_Z, &
@@ -83,12 +83,9 @@ MODULE qs_linres_current
                                               pw_integrate_function,&
                                               pw_scale,&
                                               pw_zero
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: REALDATA3D,&
-                                              REALSPACE,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_kind_types,                   ONLY: get_qs_kind,&
@@ -144,8 +141,8 @@ MODULE qs_linres_current
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'qs_linres_current'
 
    TYPE box_type
-      INTEGER :: n
-      REAL(dp), POINTER, DIMENSION(:, :) :: r
+      INTEGER :: n = -1
+      REAL(dp), POINTER, DIMENSION(:, :) :: r => NULL()
    END TYPE box_type
    REAL(dp), DIMENSION(3, 3, 3), PARAMETER  :: Levi_Civita = RESHAPE((/ &
                                                           0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, -1.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, &
@@ -215,10 +212,11 @@ CONTAINS
          POINTER                                         :: sab_all
       TYPE(particle_list_type), POINTER                  :: particles
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: jrho1_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: wf_r
-      TYPE(pw_type), DIMENSION(:), POINTER               :: jrho1_g, jrho1_r
+      TYPE(pw_r3d_rs_type)                               :: wf_r
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: jrho1_r
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_matrix_pools_type), POINTER                :: mpools
       TYPE(qs_subsys_type), POINTER                      :: subsys
@@ -301,7 +299,7 @@ CONTAINS
                            name="density_matrix0", &
                            dist=dbcsr_dist, matrix_type=dbcsr_type_no_symmetry, &
                            row_blk_size=row_blk_sizes, col_blk_size=row_blk_sizes, &
-                           nze=0, mutable_work=.TRUE.)
+                           mutable_work=.TRUE.)
          CALL cp_dbcsr_alloc_block_from_nbl(density_matrix0(ispin)%matrix, sab_all)
          !
          !density_matrix_a
@@ -480,8 +478,7 @@ CONTAINS
          CALL pw_env_get(pw_env, auxbas_rs_desc=auxbas_rs_desc, &
                          auxbas_pw_pool=auxbas_pw_pool)
          !
-         CALL pw_pool_create_pw(auxbas_pw_pool, wf_r, use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(wf_r)
          !
          DO idir = 1, 3
             CALL pw_zero(wf_r)
@@ -513,7 +510,7 @@ CONTAINS
                  &                            "PRINT%CURRENT_CUBES", mpi_io=mpi_io)
          END DO
          !
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_r)
+         CALL auxbas_pw_pool%give_back_pw(wf_r)
       END IF ! current cube
       !
       ! Integrated current response checksum
@@ -581,7 +578,8 @@ CONTAINS
 
       TYPE(dbcsr_type), POINTER                          :: mat_d0, mat_jp, mat_jp_rii, mat_jp_riii
       INTEGER, INTENT(IN)                                :: iB, idir
-      TYPE(pw_type), INTENT(INOUT)                       :: current_rs, current_gs
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: current_rs
+      TYPE(pw_c1d_gs_type), INTENT(INOUT)                :: current_gs
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(current_env_type)                             :: current_env
       LOGICAL, INTENT(IN), OPTIONAL                      :: soft_valid, retain_rsgrid
@@ -608,8 +606,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(3)                        :: ra, rab, rb, rp
       REAL(KIND=dp), DIMENSION(:), POINTER               :: set_radius_a, set_radius_b
       REAL(KIND=dp), DIMENSION(:, :), POINTER :: jp_block_a, jp_block_b, jp_block_c, jp_block_d, &
-         jpab_a, jpab_b, jpab_c, jpab_d, jpblock_a, jpblock_b, jpblock_c, jpblock_d, rpgfa, rpgfb, &
-         sphi_a, sphi_b, work, zeta, zetb
+         jpab_a, jpab_b, jpab_c, jpab_d, rpgfa, rpgfb, sphi_a, sphi_b, work, zeta, zetb
       REAL(KIND=dp), DIMENSION(:, :, :), POINTER         :: jpabt_a, jpabt_b, jpabt_c, jpabt_d, workt
       TYPE(atom_pair_type), DIMENSION(:), POINTER        :: atom_pair_recv, atom_pair_send
       TYPE(cell_type), POINTER                           :: cell
@@ -645,7 +642,6 @@ CONTAINS
                workt, mat_a, mat_b, mat_c, mat_d, rs_gauge)
       NULLIFY (deltajp_a, deltajp_b, deltajp_c, deltajp_d)
       NULLIFY (jp_block_a, jp_block_b, jp_block_c, jp_block_d)
-      NULLIFY (jpblock_a, jpblock_b, jpblock_c, jpblock_d)
       NULLIFY (jpabt_a, jpabt_b, jpabt_c, jpabt_d)
       NULLIFY (atom_pair_send, atom_pair_recv)
 
@@ -841,22 +837,12 @@ CONTAINS
          IF (.NOT. ASSOCIATED(jp_block_a)) CYCLE
 
          IF (distributed_rs_grids) THEN
-            NULLIFY (jpblock_a, jpblock_b, jpblock_c, jpblock_d)
-            CALL dbcsr_add_block_node(deltajp_a(1)%matrix, brow, bcol, jpblock_a)
-            jpblock_a = jp_block_a
-            CALL dbcsr_add_block_node(deltajp_b(1)%matrix, brow, bcol, jpblock_b)
-            jpblock_b = jp_block_b
-            CALL dbcsr_add_block_node(deltajp_c(1)%matrix, brow, bcol, jpblock_c)
-            jpblock_c = jp_block_c
+            CALL dbcsr_put_block(deltajp_a(1)%matrix, brow, bcol, jp_block_a)
+            CALL dbcsr_put_block(deltajp_b(1)%matrix, brow, bcol, jp_block_b)
+            CALL dbcsr_put_block(deltajp_c(1)%matrix, brow, bcol, jp_block_c)
             IF (do_igaim) THEN
-               CALL dbcsr_add_block_node(deltajp_d(1)%matrix, brow, bcol, jpblock_d)
-               jpblock_d = jp_block_d
+               CALL dbcsr_put_block(deltajp_d(1)%matrix, brow, bcol, jp_block_d)
             END IF
-         ELSE
-            jpblock_a => jp_block_a
-            jpblock_b => jp_block_b
-            jpblock_c => jp_block_c
-            IF (do_igaim) jpblock_d => jp_block_d
          END IF
 
          CALL task_list_inner_loop(tasks, ntasks, curr_tasks, rs_descs, &
@@ -2376,7 +2362,7 @@ CONTAINS
                         name="op_mom", &
                         dist=dbcsr_dist, matrix_type=dbcsr_type_no_symmetry, &
                         row_blk_size=row_blk_sizes, col_blk_size=row_blk_sizes, &
-                        nze=0, mutable_work=.TRUE.)
+                        mutable_work=.TRUE.)
       CALL cp_dbcsr_alloc_block_from_nbl(op_mom_ao(1)%matrix, sab_all)
 
       DO idir2 = 1, 3
@@ -2402,7 +2388,7 @@ CONTAINS
                         name="op_p_ao", &
                         dist=dbcsr_dist, matrix_type=dbcsr_type_antisymmetric, &
                         row_blk_size=row_blk_sizes, col_blk_size=row_blk_sizes, &
-                        nze=0, mutable_work=.TRUE.)
+                        mutable_work=.TRUE.)
       CALL cp_dbcsr_alloc_block_from_nbl(op_p_ao(1)%matrix, sab_orb)
 
       DO idir = 2, 3
@@ -2788,7 +2774,7 @@ CONTAINS
                         name="op_mom", &
                         dist=dbcsr_dist, matrix_type=dbcsr_type_no_symmetry, &
                         row_blk_size=row_blk_sizes, col_blk_size=row_blk_sizes, &
-                        nze=0, mutable_work=.TRUE.)
+                        mutable_work=.TRUE.)
       CALL cp_dbcsr_alloc_block_from_nbl(op_mom_ao(1)%matrix, sab_all)
 
       DO idir2 = 1, 3
@@ -2814,7 +2800,7 @@ CONTAINS
                         name="op_p_ao", &
                         dist=dbcsr_dist, matrix_type=dbcsr_type_antisymmetric, &
                         row_blk_size=row_blk_sizes, col_blk_size=row_blk_sizes, &
-                        nze=0, mutable_work=.TRUE.)
+                        mutable_work=.TRUE.)
       CALL cp_dbcsr_alloc_block_from_nbl(op_p_ao(1)%matrix, sab_orb)
 
       DO idir = 2, 3

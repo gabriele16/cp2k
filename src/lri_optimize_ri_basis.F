@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -20,6 +20,9 @@ MODULE lri_optimize_ri_basis
                                               gto_basis_set_type,&
                                               init_orb_basis_set
    USE cell_types,                      ONLY: cell_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_get_block_p,&
+                                              dbcsr_p_type,&
+                                              dbcsr_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_type
    USE cp_output_handling,              ONLY: cp_p_file,&
@@ -27,9 +30,6 @@ MODULE lri_optimize_ri_basis
                                               cp_print_key_generate_filename,&
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_get_block_p,&
-                                              dbcsr_p_type,&
-                                              dbcsr_type
    USE generic_os_integrals,            ONLY: int_overlap_aabb_os
    USE input_constants,                 ONLY: do_lri_opt_all,&
                                               do_lri_opt_coeff,&
@@ -882,12 +882,12 @@ CONTAINS
          work = 0.0_dp
          lwork = -1
          ! get lwork
-         CALL DSYTRD('U', nn, smat, nn, diag, off_diag, tau, work, lwork, info)
+         CALL dsytrd('U', nn, smat, nn, diag, off_diag, tau, work, lwork, info)
          lwork = INT(work(1))
          CALL reallocate(work, 1, lwork)
          ! get the eigenvalues
-         CALL DSYTRD('U', nn, smat, nn, diag, off_diag, tau, work, lwork, info)
-         CALL DSTERF(nn, diag, off_diag, info)
+         CALL dsytrd('U', nn, smat, nn, diag, off_diag, tau, work, lwork, info)
+         CALL dsterf(nn, diag, off_diag, info)
 
          lrii%cond_num = MAXVAL(ABS(diag))/MINVAL(ABS(diag))
 

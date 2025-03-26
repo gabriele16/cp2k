@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -74,8 +74,7 @@ CONTAINS
       INTEGER, INTENT(out), OPTIONAL                     :: max_deriv
 
       IF (PRESENT(reference)) THEN
-         reference = "N.C. Handy and A.J. Cohen, J. Chem. Phys., 116, 5411 (2002)"// &
-                     "{LDA version}"
+         reference = "N.C. Handy and A.J. Cohen, J. Chem. Phys., 116, 5411 (2002) {LDA version}"
       END IF
       IF (PRESENT(shortform)) THEN
          shortform = "CS1: Handy improved LYP correlation energy functional {LDA}"

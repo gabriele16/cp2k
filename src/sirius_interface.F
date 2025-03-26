@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -44,6 +44,7 @@ MODULE sirius_interface
                                               section_vals_val_get
    USE kinds,                           ONLY: default_string_length,&
                                               dp
+   USE machine,                         ONLY: m_flush
    USE mathconstants,                   ONLY: fourpi,&
                                               gamma1
    USE message_passing,                 ONLY: mp_para_env_type
@@ -131,7 +132,7 @@ CONTAINS
       CHARACTER(len=default_string_length)               :: label
       INTEGER                                            :: i, iatom, ibeta, ifun, ikind, iwf, j, l, &
                                                             n, natom, nbeta, nkind, nmesh, &
-                                                            num_mag_dims, sirius_mpi_comm, vdw_func, nu, lu
+                                                            num_mag_dims, sirius_mpi_comm, vdw_func, nu, lu, output_unit
       INTEGER, DIMENSION(:), POINTER                     :: mpi_grid_dims
       INTEGER(KIND=C_INT), DIMENSION(3)                  :: k_grid, k_shift
       INTEGER, DIMENSION(:), POINTER                     :: kk
@@ -166,6 +167,7 @@ CONTAINS
 
       CPASSERT(ASSOCIATED(pwdft_env))
 
+      output_unit = cp_logger_get_default_io_unit()
       ! create context of simulation
       CALL pwdft_env_get(pwdft_env, para_env=para_env)
       sirius_mpi_comm = para_env%get_handle()
@@ -175,6 +177,8 @@ CONTAINS
 
       CALL pwdft_env_get(pwdft_env=pwdft_env, pwdft_input=pwdft_section, xc_input=xc_section)
 
+      CALL section_vals_val_get(pwdft_section, "ignore_convergence_failure", &
+                                l_val=pwdft_env%ignore_convergence_failure)
       ! cp2k should *have* a function that return all xc_functionals. Doing
       ! manually is prone to errors
 
@@ -397,7 +401,8 @@ CONTAINS
             DO iwf = 1, SIZE(wavefunction, 2)
                focc = wfninfo(1, iwf)
                l = NINT(wfninfo(2, iwf))
-               nu = NINT(wfninfo(3, iwf))
+! we can not easily get the principal quantum number
+               nu = -1
                IF (up) THEN
                   fun(1:nmesh) = wavefunction(1:nmesh, iwf)*rp(i)
                ELSE
@@ -421,39 +426,6 @@ CONTAINS
             CALL sirius_add_atom_type_radial_function(sctx, label, "ps_rho_total", &
                                                       fun(1), nmesh)
 
-            CALL get_qs_kind(qs_kind_set(ikind), &
-                             dft_plus_u_atom=dft_plus_u_atom, &
-                             l_of_dft_plus_u=lu, &
-                             n_of_dft_plus_u=nu, &
-                             u_minus_j_target=u_minus_j, &
-                             U_of_dft_plus_u=U_u, &
-                             J_of_dft_plus_u=J_u, &
-                             alpha_of_dft_plus_u=alpha_u, &
-                             beta_of_dft_plus_u=beta_u, &
-                             J0_of_dft_plus_u=J0_u, &
-                             occupation_of_dft_plus_u=occ_u)
-
-            IF (dft_plus_u_atom) THEN
-               IF (nu < 1) THEN
-                  CPABORT("CP2K/SIRIUS (hubbard): principal quantum number not specified")
-               END IF
-
-               IF (lu < 0) THEN
-                  CPABORT("CP2K/SIRIUS (hubbard): l can not be negative.")
-               END IF
-
-               IF (occ_u < 0.0) THEN
-                  CPABORT("CP2K/SIRIUS (hubbard): the occupation number can not be negative.")
-               END IF
-
-               IF (ABS(u_minus_j) < 1e-8) THEN
-                  CALL sirius_set_atom_type_hubbard(sctx, label, lu, nu, &
-                                                    occ_u, U_u, J_u, alpha_u, beta_u, J0_u)
-               ELSE
-                  CALL sirius_set_atom_type_hubbard(sctx, label, lu, nu, &
-                                                    occ_u, u_minus_j, 0.0_dp, alpha_u, beta_u, J0_u)
-               END IF
-            END IF
             IF (ASSOCIATED(density)) DEALLOCATE (density)
             IF (ASSOCIATED(wavefunction)) DEALLOCATE (wavefunction)
             IF (ASSOCIATED(wfninfo)) DEALLOCATE (wfninfo)
@@ -466,6 +438,41 @@ CONTAINS
             CALL cp_abort(__LOCATION__, &
                           "CP2K/SIRIUS: atomic kind needs UPF or GTH potential definition")
          END IF
+
+         CALL get_qs_kind(qs_kind_set(ikind), &
+                          dft_plus_u_atom=dft_plus_u_atom, &
+                          l_of_dft_plus_u=lu, &
+                          n_of_dft_plus_u=nu, &
+                          u_minus_j_target=u_minus_j, &
+                          U_of_dft_plus_u=U_u, &
+                          J_of_dft_plus_u=J_u, &
+                          alpha_of_dft_plus_u=alpha_u, &
+                          beta_of_dft_plus_u=beta_u, &
+                          J0_of_dft_plus_u=J0_u, &
+                          occupation_of_dft_plus_u=occ_u)
+
+         IF (dft_plus_u_atom) THEN
+            IF (nu < 1) THEN
+               CPABORT("CP2K/SIRIUS (hubbard): principal quantum number not specified")
+            END IF
+
+            IF (lu < 0) THEN
+               CPABORT("CP2K/SIRIUS (hubbard): l can not be negative.")
+            END IF
+
+            IF (occ_u < 0.0) THEN
+               CPABORT("CP2K/SIRIUS (hubbard): the occupation number can not be negative.")
+            END IF
+
+            IF (ABS(u_minus_j) < 1e-8) THEN
+               CALL sirius_set_atom_type_hubbard(sctx, label, lu, nu, &
+                                                 occ_u, U_u, J_u, alpha_u, beta_u, J0_u)
+            ELSE
+               CALL sirius_set_atom_type_hubbard(sctx, label, lu, nu, &
+                                                 occ_u, u_minus_j, 0.0_dp, alpha_u, beta_u, J0_u)
+            END IF
+         END IF
+
       END DO
 
 ! add atoms to the unit cell
@@ -672,26 +679,53 @@ CONTAINS
          POINTER                                         :: pwdft_env
       LOGICAL, INTENT(IN)                                :: calculate_forces, calculate_stress_tensor
 
-      INTEGER                                            :: n1, n2
-      LOGICAL                                            :: do_print
+      INTEGER                                            :: iw, n1, n2
+      LOGICAL                                            :: do_print, gs_converged
       REAL(KIND=C_DOUBLE)                                :: etotal
       REAL(KIND=C_DOUBLE), ALLOCATABLE, DIMENSION(:, :)  :: cforces
       REAL(KIND=C_DOUBLE), DIMENSION(3, 3)               :: cstress
       REAL(KIND=dp), DIMENSION(3, 3)                     :: stress
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: forces
+      TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(pwdft_energy_type), POINTER                   :: energy
       TYPE(section_vals_type), POINTER                   :: print_section, pwdft_input
       TYPE(sirius_ground_state_handler)                  :: gs_handler
 
       CPASSERT(ASSOCIATED(pwdft_env))
 
+      NULLIFY (logger)
+      logger => cp_get_default_logger()
+      iw = cp_logger_get_default_io_unit(logger)
+
       CALL pwdft_env_get(pwdft_env=pwdft_env, gs_handler=gs_handler)
-      CALL sirius_find_ground_state(gs_handler)
+      CALL sirius_find_ground_state(gs_handler, converged=gs_converged)
+
+      IF (gs_converged) THEN
+         IF (iw > 0) WRITE (iw, '(A)') "CP2K/SIRIUS: ground state is converged"
+      ELSE
+         IF (pwdft_env%ignore_convergence_failure) THEN
+            IF (iw > 0) WRITE (iw, '(A)') "CP2K/SIRIUS Warning: ground state is not converged"
+         ELSE
+            CPABORT("CP2K/SIRIUS (ground state): SIRIUS did not converge.")
+         END IF
+      END IF
+      IF (iw > 0) CALL m_flush(iw)
+
       CALL pwdft_env_get(pwdft_env=pwdft_env, energy=energy)
       etotal = 0.0_C_DOUBLE
 
+      CALL sirius_get_energy(gs_handler, 'band-gap', etotal)
+      energy%band_gap = etotal
+
+      etotal = 0.0_C_DOUBLE
       CALL sirius_get_energy(gs_handler, 'total', etotal)
       energy%etotal = etotal
+
+      ! extract entropy (TS returned by sirius is always negative, sign
+      ! convention in QE)
+      etotal = 0.0_C_DOUBLE
+      CALL sirius_get_energy(gs_handler, 'demet', etotal)
+      energy%entropy = -etotal
 
       IF (calculate_forces) THEN
          CALL pwdft_env_get(pwdft_env=pwdft_env, forces=forces)
@@ -723,7 +757,6 @@ CONTAINS
       IF (do_print) THEN
          CALL cp_sirius_print_results(pwdft_env, print_section)
       END IF
-
    END SUBROUTINE cp_sirius_energy_force
 
 !***************************************************************************************************

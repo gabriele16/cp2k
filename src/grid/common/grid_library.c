@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -37,6 +37,11 @@ static grid_library_config config = {
 #error "OpenMP is required. Please add -fopenmp to your C compiler flags."
 #endif
 
+#if defined(NDEBUG)
+#error                                                                         \
+    "Please do not build CP2K with NDEBUG. There is no performance advantage and asserts will save your neck."
+#endif
+
 /*******************************************************************************
  * \brief Initializes the grid library.
  * \author Ole Schuett
@@ -47,7 +52,7 @@ void grid_library_init(void) {
     abort();
   }
 
-#if defined(__OFFLOAD)
+#if defined(__OFFLOAD) && !defined(__NO_OFFLOAD_GRID)
   // Reserve global GPU memory for storing the intermediate Cab matrix blocks.
   // CUDA does not allow to increase this limit after a kernel was launched.
   // Unfortunately, the required memory is hard to predict because we neither
@@ -58,6 +63,7 @@ void grid_library_init(void) {
 
   max_threads = omp_get_max_threads();
   per_thread_globals = malloc(max_threads * sizeof(grid_library_globals *));
+  assert(per_thread_globals != NULL);
 
 // Using parallel regions to ensure memory is allocated near a thread's core.
 #pragma omp parallel default(none) shared(per_thread_globals)                  \
@@ -65,6 +71,7 @@ void grid_library_init(void) {
   {
     const int ithread = omp_get_thread_num();
     per_thread_globals[ithread] = malloc(sizeof(grid_library_globals));
+    assert(per_thread_globals[ithread] != NULL);
     memset(per_thread_globals[ithread], 0, sizeof(grid_library_globals));
   }
 

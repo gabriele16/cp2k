@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -13,11 +13,11 @@
 ! **************************************************************************************************
 MODULE qs_energy_init
    USE cp_control_types,                ONLY: dft_control_type
-   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
                                               dbcsr_p_type,&
                                               dbcsr_set,&
                                               dbcsr_type
+   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set
    USE efield_utils,                    ONLY: calculate_ecore_efield
    USE input_constants,                 ONLY: kg_tnadd_atomic,&
                                               kg_tnadd_embed,&
@@ -29,7 +29,8 @@ MODULE qs_energy_init
    USE kg_environment_types,            ONLY: kg_environment_type
    USE kinds,                           ONLY: dp
    USE kpoint_methods,                  ONLY: kpoint_init_cell_index
-   USE kpoint_types,                    ONLY: kpoint_type
+   USE kpoint_types,                    ONLY: kpoint_type,&
+                                              set_kpoint_info
    USE lri_environment_methods,         ONLY: build_lri_matrices,&
                                               calculate_lri_integrals
    USE lri_environment_types,           ONLY: lri_environment_type
@@ -190,7 +191,7 @@ CONTAINS
                                        subset_of_mol=kg_env%subset_of_mol, current_subset=isubset)
          END DO
       CASE (kg_tnadd_embed_ri)
-!deb should be deleted as soon as atomic grids work
+         ! should be deleted as soon as atomic grids work
          ! allocate the subset list
          IF (.NOT. ASSOCIATED(kg_env%subset_of_mol)) THEN
             ALLOCATE (kg_env%subset_of_mol(SIZE(molecule_set)))
@@ -203,7 +204,7 @@ CONTAINS
             CALL kg_build_neighborlist(qs_env, sab_orb=kg_env%subset(isubset)%sab_orb, molecular=.TRUE., &
                                        subset_of_mol=kg_env%subset_of_mol, current_subset=isubset)
          END DO
-!deb
+         !
          ! LRI neighborlist
          NULLIFY (soo_list)
          CALL kg_build_neighborlist(qs_env, sab_orb=soo_list, molecular=.TRUE.)
@@ -255,7 +256,7 @@ CONTAINS
       TYPE(lri_environment_type), POINTER                :: lri_env
       TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
-         POINTER                                         :: sab_nl
+         POINTER                                         :: sab_nl, sab_nl_nosym
       TYPE(qs_dispersion_type), POINTER                  :: dispersion_env
       TYPE(qs_energy_type), POINTER                      :: energy
       TYPE(qs_gcp_type), POINTER                         :: gcp_env
@@ -276,8 +277,9 @@ CONTAINS
 
       ! calculate cell index for k-point calculations
       IF (do_kpoints) THEN
-         CALL get_qs_env(qs_env, sab_kp=sab_nl)
+         CALL get_qs_env(qs_env, sab_kp=sab_nl, sab_kp_nosym=sab_nl_nosym)
          CALL kpoint_init_cell_index(kpoints, sab_nl, para_env, dft_control)
+         CALL set_kpoint_info(kpoints, sab_nl_nosym=sab_nl_nosym)
       END IF
       IF (dft_control%qs_control%cdft) THEN
          IF (.NOT. (dft_control%qs_control%cdft_control%external_control)) &
@@ -304,10 +306,7 @@ CONTAINS
                                         calculate_forces=.FALSE.)
          CALL qs_env_update_s_mstruct(qs_env)
       ELSEIF (dft_control%qs_control%xtb) THEN
-         CALL build_xtb_matrices(qs_env=qs_env, para_env=para_env, &
-                                 calculate_forces=.FALSE.)
-         CALL get_qs_env(qs_env=qs_env, dispersion_env=dispersion_env, energy=energy)
-         CALL calculate_dispersion_pairpot(qs_env, dispersion_env, energy%dispersion, calc_forces)
+         CALL build_xtb_matrices(qs_env=qs_env, calculate_forces=.FALSE.)
          CALL qs_env_update_s_mstruct(qs_env)
       ELSE
          CALL build_core_hamiltonian_matrix(qs_env=qs_env, calculate_forces=.FALSE.)

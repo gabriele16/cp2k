@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -275,8 +275,7 @@ CONTAINS
 
          iwarn = ((rmsd > eps_pol) .AND. (iter == max_ipol_iter))
          IF (iwarn .AND. iw > 0) WRITE (iw, FMT='(T5,"POL_SCF|",1X,"Self-consistent Polarization not converged!")')
-         IF (iwarn) &
-            CPWARN("Self-consistent Polarization not converged! ")
+         CPWARN_IF(iwarn, "Self-consistent Polarization not converged!")
       END DO pol_scf
 
       ! Now evaluate after convergence to obtain forces and converged energies

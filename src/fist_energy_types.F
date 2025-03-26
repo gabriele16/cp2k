@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -22,8 +22,9 @@ MODULE fist_energy_types
 
 ! **************************************************************************************************
    TYPE fist_energy_type
-      REAL(kind=dp) :: kin, pot, e_gspace, e_self, e_neut, e_bonded, e_induction
-      REAL(kind=dp) :: kin_shell, harm_shell
+      REAL(kind=dp) :: kin = 0.0_dp, pot = 0.0_dp, e_gspace = 0.0_dp, e_self = 0.0_dp, &
+                       e_neut = 0.0_dp, e_bonded = 0.0_dp, e_induction = 0.0_dp
+      REAL(kind=dp) :: kin_shell = 0.0_dp, harm_shell = 0.0_dp
    END TYPE fist_energy_type
 
 ! *** Public data types ***

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -326,8 +326,9 @@ CONTAINS
       IF (ANY(ABS(tmc_env%params%Temp(:) - tmp_temp(:)) .GE. 0.005)) &
          CALL cp_abort(__LOCATION__, "the temperatures differ from the previous calculation. "// &
                        "There were the following temperatures used:")
-      IF (ANY(mv_weight_tmp(:) .NE. tmc_env%params%move_types%mv_weight(:))) &
+      IF (ANY(mv_weight_tmp(:) .NE. tmc_env%params%move_types%mv_weight(:))) THEN
          CPWARN("The amount of mv types differs between the original and the restart run.")
+      END IF
 
       DO i = 1, SIZE(tmc_env%params%Temp)
          tmc_env%m_env%gt_act%conf(i)%elem => tmc_env%m_env%result_list(i)%elem
@@ -856,8 +857,9 @@ CONTAINS
       ELSE IF (status .LT. 0) THEN ! end of file reached
          stat = TMC_STATUS_WAIT_FOR_NEW_TASK
       ELSE
-         IF (status .NE. 0) &
+         IF (status .NE. 0) THEN
             CPWARN("configuration dipole read error at line: "//cp_to_string(tmc_ana%lc_dip))
+         END IF
          stat = TMC_STATUS_FAILED
       END IF
 

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -18,7 +18,7 @@ MODULE mathlib
                                               dp
    USE mathconstants,                   ONLY: euler,&
                                               fac,&
-                                              pi
+                                              oorootpi
 #include "../base/base_uses.f90"
 
    IMPLICIT NONE
@@ -41,7 +41,8 @@ MODULE mathlib
              symmetrize_matrix, &
              unit_matrix, diag, &
              erfc_cutoff, &
-             complex_diag
+             diag_antisym, &
+             diag_complex
 
    ! Public functions
 
@@ -172,7 +173,6 @@ CONTAINS
 !> \version 1.0
 ! **************************************************************************************************
    PURE FUNCTION angle(a, b) RESULT(angle_ab)
-
       REAL(KIND=dp), DIMENSION(:), INTENT(IN)            :: a, b
       REAL(KIND=dp)                                      :: angle_ab
 
@@ -203,7 +203,6 @@ CONTAINS
 !> \version 1.0
 ! **************************************************************************************************
    ELEMENTAL FUNCTION binomial(n, k) RESULT(n_over_k)
-
       INTEGER, INTENT(IN)                                :: n, k
       REAL(KIND=dp)                                      :: n_over_k
 
@@ -228,7 +227,6 @@ CONTAINS
 !> \version 1.0
 ! **************************************************************************************************
    ELEMENTAL FUNCTION binomial_gen(z, k) RESULT(z_over_k)
-
       REAL(KIND=dp), INTENT(IN)                          :: z
       INTEGER, INTENT(IN)                                :: k
       REAL(KIND=dp)                                      :: z_over_k
@@ -254,7 +252,6 @@ CONTAINS
 !> \author Ole Schuett
 ! **************************************************************************************************
    PURE FUNCTION multinomial(n, k) RESULT(res)
-
       INTEGER, INTENT(IN)                                :: n
       INTEGER, DIMENSION(:), INTENT(IN)                  :: k
       REAL(KIND=dp)                                      :: res
@@ -445,7 +442,6 @@ CONTAINS
       END IF
 
       ! Release work storage
-
       DEALLOCATE (work)
 
       IF (divide_and_conquer) THEN
@@ -517,7 +513,6 @@ CONTAINS
 !> \version 1.0
 ! **************************************************************************************************
    PURE FUNCTION inv_3x3(a) RESULT(a_inv)
-
       REAL(KIND=dp), DIMENSION(3, 3), INTENT(IN)         :: a
       REAL(KIND=dp), DIMENSION(3, 3)                     :: a_inv
 
@@ -548,9 +543,13 @@ CONTAINS
       REAL(KIND=dp), INTENT(INOUT)                       :: a(:, :)
       INTEGER, INTENT(OUT)                               :: info
 
-      INTEGER                                            :: lwork, n
+      CHARACTER(LEN=*), PARAMETER                        :: routineN = 'invmat'
+
+      INTEGER                                            :: handle, lwork, n
       INTEGER, ALLOCATABLE                               :: ipiv(:)
       REAL(KIND=dp), ALLOCATABLE                         :: work(:)
+
+      CALL timeset(routineN, handle)
 
       n = SIZE(a, 1)
       lwork = 20*n
@@ -564,59 +563,56 @@ CONTAINS
          CALL dgetri(n, a, n, ipiv, work, lwork, info)
       END IF
       DEALLOCATE (ipiv, work)
+
+      CALL timestop(handle)
+
    END SUBROUTINE invmat
 
 ! **************************************************************************************************
 !> \brief returns inverse of real symmetric, positive definite matrix
 !> \param a matrix
-!> \param cholesky_triangle if cholesky decomposition of a was already done
-!>        using dpotrf, indicating if the upper or lower triangle of a is
-!>        stored. If not given, cholesky decomposition of a will be done
-!>        before inversion.
+!> \param potrf if cholesky decomposition of a was already done using dpotrf.
+!>        If not given, cholesky decomposition of a will be done before inversion.
+!> \param uplo indicating if the upper or lower triangle of a is stored.
 !> \author Dorothea Golze [02.2015]
 ! **************************************************************************************************
-   SUBROUTINE invmat_symm(a, cholesky_triangle)
+   SUBROUTINE invmat_symm(a, potrf, uplo)
       REAL(KIND=dp), INTENT(INOUT)                       :: a(:, :)
-      CHARACTER(LEN=1), INTENT(IN), OPTIONAL             :: cholesky_triangle
+      LOGICAL, INTENT(IN), OPTIONAL                      :: potrf
+      CHARACTER(LEN=1), INTENT(IN), OPTIONAL             :: uplo
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'invmat_symm'
 
-      CHARACTER(LEN=1)                                   :: my_triangle
-      INTEGER                                            :: handle, i, info, n
+      CHARACTER(LEN=1)                                   :: myuplo
+      INTEGER                                            :: handle, info, n
+      LOGICAL                                            :: do_potrf
 
       CALL timeset(routineN, handle)
+
+      do_potrf = .TRUE.
+      IF (PRESENT(potrf)) do_potrf = potrf
+
+      myuplo = 'U'
+      IF (PRESENT(uplo)) myuplo = uplo
 
       n = SIZE(a, 1)
       info = 0
 
-      IF (PRESENT(cholesky_triangle)) THEN
-         my_triangle = cholesky_triangle
-      ELSE
-         my_triangle = "U"
-      END IF
-
       ! do cholesky decomposition
-      IF (.NOT. PRESENT(cholesky_triangle)) THEN
-         CALL dpotrf(my_triangle, n, a, n, info)
-         IF (info /= 0) THEN
-            CPABORT("DPOTRF failed")
-         END IF
+      IF (do_potrf) THEN
+         CALL dpotrf(myuplo, n, a, n, info)
+         IF (info /= 0) CPABORT("DPOTRF failed")
       END IF
 
       ! do inversion using the cholesky decomposition
-      CALL dpotri(my_triangle, n, a, n, info)
-      IF (info /= 0) THEN
-         CPABORT("Matrix inversion failed")
-      END IF
+      CALL dpotri(myuplo, n, a, n, info)
+      IF (info /= 0) CPABORT("Matrix inversion failed")
 
-      IF (my_triangle == "U") THEN
-         DO i = 1, n - 1
-            a(i + 1:n, i) = a(i, i + 1:n)
-         END DO
+      ! complete the matrix
+      IF ((myuplo == "U") .OR. (myuplo == "u")) THEN
+         CALL symmetrize_matrix(a, "upper_to_lower")
       ELSE
-         DO i = 1, n - 1
-            a(i, i + 1:n) = a(i + 1:n, i)
-         END DO
+         CALL symmetrize_matrix(a, "lower_to_upper")
       END IF
 
       CALL timestop(handle)
@@ -696,17 +692,11 @@ CONTAINS
 
       ! Allocate work storage
       ALLOCATE (a_lu(n, n))
-
       ALLOCATE (b(n, n))
-
       ALLOCATE (berr(n))
-
       ALLOCATE (ferr(n))
-
       ALLOCATE (ipiv(n))
-
       ALLOCATE (iwork(n))
-
       ALLOCATE (work(4*n))
 
       a_lu(1:n, 1:n) = a(1:n, 1:n)
@@ -851,17 +841,11 @@ CONTAINS
 
       ! Allocate work storage
       ALLOCATE (a_lu(n, n))
-
       ALLOCATE (b(n, n))
-
       ALLOCATE (berr(n))
-
       ALLOCATE (ferr(n))
-
       ALLOCATE (ipiv(n))
-
       ALLOCATE (rwork(2*n))
-
       ALLOCATE (work(2*n))
 
       a_lu(1:n, 1:n) = a(1:n, 1:n)
@@ -951,7 +935,6 @@ CONTAINS
 !> \author Dorothea Golze [02.2015]
 ! **************************************************************************************************
    SUBROUTINE get_pseudo_inverse_svd(a, a_pinverse, rskip, determinant, sval)
-
       REAL(KIND=dp), DIMENSION(:, :)                     :: a, a_pinverse
       REAL(KIND=dp), INTENT(IN)                          :: rskip
       REAL(KIND=dp), INTENT(OUT), OPTIONAL               :: determinant
@@ -1033,7 +1016,6 @@ CONTAINS
 !> \author Dorothea Golze [02.2015]
 ! **************************************************************************************************
    SUBROUTINE get_pseudo_inverse_diag(a, a_pinverse, rskip)
-
       REAL(KIND=dp), DIMENSION(:, :)                     :: a, a_pinverse
       REAL(KIND=dp), INTENT(IN)                          :: rskip
 
@@ -1101,7 +1083,6 @@ CONTAINS
 !> \version 1.0
 ! **************************************************************************************************
    PURE FUNCTION reflect_vector(a, b) RESULT(a_mirror)
-
       REAL(KIND=dp), DIMENSION(3), INTENT(IN)            :: a, b
       REAL(KIND=dp), DIMENSION(3)                        :: a_mirror
 
@@ -1469,7 +1450,7 @@ CONTAINS
          END DO
          CPABORT("series failed in expint")
       END IF
-      RETURN
+
    END FUNCTION expint
 
 ! **************************************************************************************************
@@ -1512,18 +1493,20 @@ CONTAINS
 !>         - Creation (20.11.98, Matthias Krack)
 ! **************************************************************************************************
    SUBROUTINE diag(n, a, d, v)
-
       INTEGER, INTENT(IN)                                :: n
       REAL(KIND=dp), DIMENSION(:, :), INTENT(INOUT)      :: a
       REAL(KIND=dp), DIMENSION(:), INTENT(OUT)           :: d
       REAL(KIND=dp), DIMENSION(:, :), INTENT(OUT)        :: v
 
+      CHARACTER(len=*), PARAMETER                        :: routineN = 'diag'
       REAL(KIND=dp), PARAMETER                           :: a_eps = 1.0E-10_dp, d_eps = 1.0E-3_dp
 
-      INTEGER                                            :: i, ip, iq
+      INTEGER                                            :: handle, i, ip, iq
       REAL(KIND=dp)                                      :: a_max, apq, c, d_min, dip, diq, g, h, s, &
                                                             t, tau, theta, tresh
       REAL(KIND=dp), DIMENSION(n)                        :: b, z
+
+      CALL timeset(routineN, handle)
 
       a_max = 0.0_dp
       DO ip = 1, n - 1
@@ -1538,7 +1521,10 @@ CONTAINS
       DO i = 1, 50
          d = b
          d_min = MAX(d_eps, MINVAL(ABS(b)))
-         IF (a_max < a_eps*d_min) RETURN
+         IF (a_max < a_eps*d_min) THEN
+            CALL timestop(handle)
+            RETURN
+         END IF
          tresh = MERGE(a_max, 0.0_dp, (i < 4))
          z = 0.0_dp
          DO ip = 1, n - 1
@@ -1583,6 +1569,8 @@ CONTAINS
          END DO
       END DO
       WRITE (*, '(/,T2,A,/)') 'Too many iterations in jacobi'
+
+      CALL timestop(handle)
 
    END SUBROUTINE diag
 
@@ -1736,29 +1724,37 @@ CONTAINS
       REAL(dp), INTENT(in)                               :: r, eps, omega
       REAL(dp), INTENT(out)                              :: fn, df
 
-         fn = erfc(omega*r) - r*eps
-         df = -omega*2*EXP(-omega**2*r**2)/SQRT(pi) - eps
+      REAL(dp)                                           :: qr
+
+         qr = omega*r
+         fn = ERFC(qr) - r*eps
+         df = -2.0_dp*oorootpi*omega*EXP(-qr**2) - eps
       END SUBROUTINE eval_transc_func
    END SUBROUTINE erfc_cutoff
 
 ! **************************************************************************************************
 !> \brief Diagonalizes a local complex Hermitian matrix using LAPACK. Based on cp_cfm_heevd
-!> \param matrix ...
+!> \param matrix Hermitian matrix is preserved
 !> \param eigenvectors ...
 !> \param eigenvalues ...
 !> \author A. Bussy
 ! **************************************************************************************************
-   SUBROUTINE complex_diag(matrix, eigenvectors, eigenvalues)
-
-      COMPLEX(KIND=dp), DIMENSION(:, :), INTENT(INOUT)    :: matrix, eigenvectors
+   SUBROUTINE diag_complex(matrix, eigenvectors, eigenvalues)
+      COMPLEX(KIND=dp), DIMENSION(:, :), INTENT(IN)      :: matrix
+      COMPLEX(KIND=dp), DIMENSION(:, :), INTENT(OUT)     :: eigenvectors
       REAL(KIND=dp), DIMENSION(:), INTENT(OUT)           :: eigenvalues
 
+      CHARACTER(len=*), PARAMETER                        :: routineN = 'diag_complex'
+
       COMPLEX(KIND=dp), DIMENSION(:), ALLOCATABLE        :: work
-      INTEGER                                            :: info, liwork, lrwork, lwork, n
+      INTEGER                                            :: handle, info, liwork, lrwork, lwork, n
       INTEGER, DIMENSION(:), ALLOCATABLE                 :: iwork
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: rwork
 
-      eigenvectors(:, :) = matrix(:, :)
+      CALL timeset(routineN, handle)
+
+      IF (SIZE(matrix, 1) /= SIZE(matrix, 2)) CPABORT("Expected square matrix")
+      ! IF (MAXVAL(ABS(matrix - CONJG(TRANSPOSE(matrix)))) > 1e-14_dp) CPABORT("Expected hermitian matrix")
 
       n = SIZE(matrix, 1)
       ALLOCATE (iwork(1), rwork(1), work(1))
@@ -1768,28 +1764,53 @@ CONTAINS
       lrwork = -1
       liwork = -1
 
-      CALL ZHEEVD('V', 'U', n, eigenvectors, n, eigenvalues, work, lwork, rwork, lrwork, iwork, liwork, info)
+      CALL zheevd('V', 'U', n, eigenvectors, n, eigenvalues, work, lwork, rwork, lrwork, iwork, liwork, info)
 
       lwork = CEILING(REAL(work(1), KIND=dp))
-      lrwork = CEILING(REAL(rwork(1), KIND=dp))
+      lrwork = CEILING(rwork(1))
       liwork = iwork(1)
 
       DEALLOCATE (iwork, rwork, work)
+      ALLOCATE (iwork(liwork), rwork(lrwork), work(lwork))
+      eigenvectors(:, :) = matrix(:, :)
 
-      ALLOCATE (iwork(liwork))
-      iwork(:) = 0
-      ALLOCATE (rwork(lrwork))
-      rwork(:) = 0.0_dp
-      ALLOCATE (work(lwork))
-      work(:) = CMPLX(0.0_dp, 0.0_dp, KIND=dp)
+      ! final diagonalization
+      CALL zheevd('V', 'U', n, eigenvectors, n, eigenvalues, work, lwork, rwork, lrwork, iwork, liwork, info)
 
-      !diagonalization proper
-      CALL ZHEEVD('V', 'U', n, eigenvectors, n, eigenvalues, work, lwork, rwork, lrwork, iwork, liwork, info)
-
-      IF (info /= 0) &
-         CPABORT("Diagonalisation of a complex matrix failed")
       DEALLOCATE (iwork, rwork, work)
 
-   END SUBROUTINE complex_diag
+      IF (info /= 0) CPABORT("Diagonalisation of a complex matrix failed")
+
+      CALL timestop(handle)
+
+   END SUBROUTINE diag_complex
+
+! **************************************************************************************************
+!> \brief Helper routine for diagonalizing anti symmetric matrices
+!> \param matrix ...
+!> \param evecs ...
+!> \param evals ...
+! **************************************************************************************************
+   SUBROUTINE diag_antisym(matrix, evecs, evals)
+      REAL(dp), DIMENSION(:, :)                          :: matrix
+      COMPLEX(dp), DIMENSION(:, :)                       :: evecs
+      COMPLEX(dp), DIMENSION(:)                          :: evals
+
+      COMPLEX(dp), ALLOCATABLE, DIMENSION(:, :)          :: matrix_c
+      INTEGER                                            :: n
+      REAL(dp), ALLOCATABLE, DIMENSION(:)                :: eigenvalues
+
+      IF (SIZE(matrix, 1) /= SIZE(matrix, 2)) CPABORT("Expected square matrix")
+      ! IF (MAXVAL(ABS(matrix + TRANSPOSE(matrix))) > 1e-14_dp) CPABORT("Expected anti-symmetric matrix")
+
+      n = SIZE(matrix, 1)
+      ALLOCATE (matrix_c(n, n), eigenvalues(n))
+
+      matrix_c(:, :) = CMPLX(0.0_dp, -matrix, kind=dp)
+      CALL diag_complex(matrix_c, evecs, eigenvalues)
+      evals = CMPLX(0.0_dp, eigenvalues, kind=dp)
+
+      DEALLOCATE (matrix_c, eigenvalues)
+   END SUBROUTINE diag_antisym
 
 END MODULE mathlib

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -124,15 +124,15 @@ CONTAINS
          "The first entry corresponds to the original basis sets. Every further value is assigned to the combinations "// &
          "in the order given for BASIS_COMBINATIONS.", &
          repeats=.TRUE., &
-         usage="CONTITION_WEIGHT REAL ", default_r_val=1.0_dp)
+         usage="CONDITION_WEIGHT REAL ", default_r_val=1.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="GROUP_PARTITION", &
                           description="Allows the specification of the group mpi group sizes in parallel "// &
                           "runs. If less Groups than tasks are speciefied, consecutive calculations "// &
-                          " Will be assigned to one group (derived basis sets and then training sets)"// &
-                          " If keyword is skipped, equal group sizes will be generated trying to fit all calculations.", &
+                          "Will be assigned to one group (derived basis sets and then training sets) "// &
+                          "If keyword is skipped, equal group sizes will be generated trying to fit all calculations.", &
                           repeats=.TRUE., &
                           usage="GROUP_PARTITION INT INT ... ", type_of_var=integer_t, n_var=-1)
       CALL section_add_keyword(section, keyword)
@@ -177,12 +177,12 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="BASIS_SET", &
                           description="The name of the basis set for the kind. Has to be specified in BASIS_TEMPLATE_FILE.", &
-                          usage="H", default_c_val="DEFAULT")
+                          usage="BASIS_SET H", default_c_val="DEFAULT")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="INITIAL_DEGREES_OF_FREEDOM", &
-                          description="Specifies the initial degrees of freedom in the basis optimization."// &
+                          description="Specifies the initial degrees of freedom in the basis optimization. "// &
                           "This can be used to make further specifications easier", &
                           usage="INITIAL_DEGREES_OF_FREEDOM ALL", &
                           enum_c_vals=s2a("ALL", "NONE", "COEFFICIENTS", "EXPONENTS"), &
@@ -249,9 +249,9 @@ CONTAINS
       NULLIFY (keyword)
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="DERIVED_BASIS_SETS", &
-                          description="This section can be used to create subsets of a basis "// &
+                          description="This section can be used to create subsets of a basis"// &
                           " which will be fitted at the same time. This is especially useful if connected"// &
-                          " bsis sets e.g. TZVP, DZVP, SZV should be fitted. ", &
+                          " bsis sets e.g. TZVP, DZVP, SZV should be fitted.", &
                           repeats=.TRUE.)
 
       CALL keyword_create(keyword, __LOCATION__, name="BASIS_SET_NAME", &
@@ -268,7 +268,7 @@ CONTAINS
                           description="Specifies the reference basis ID which is used as template to create the new set. "// &
                           "The original basis has ID 0. All following sets are counted in order as specified in the Input."// &
                           " The descriptors always assume the structure of the input basis set.", &
-                          repeats=.FALSE., usage="REFERNCE_SET INTEGER", default_i_val=0)
+                          repeats=.FALSE., usage="REFERENCE_SET INTEGER", default_i_val=0)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 

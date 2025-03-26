@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -25,13 +25,17 @@ MODULE qs_scf_diagonalization
                                               cp_cfm_to_fm,&
                                               cp_cfm_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_copy, dbcsr_create, dbcsr_deallocate_matrix, dbcsr_desymmetrize, dbcsr_p_type, &
+        dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_no_symmetry, &
+        dbcsr_type_symmetric
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr,&
                                               cp_dbcsr_sm_fm_multiply,&
                                               dbcsr_allocate_matrix_set
    USE cp_fm_basic_linalg,              ONLY: cp_fm_symm,&
-                                              cp_fm_upper_to_full
+                                              cp_fm_uplo_to_full
    USE cp_fm_cholesky,                  ONLY: cp_fm_cholesky_reduce,&
                                               cp_fm_cholesky_restore
    USE cp_fm_diag,                      ONLY: choose_eigv_solver,&
@@ -51,10 +55,6 @@ MODULE qs_scf_diagonalization
                                               cp_logger_type
    USE cp_output_handling,              ONLY: cp_print_key_finished_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_copy, dbcsr_create, dbcsr_deallocate_matrix, dbcsr_desymmetrize, dbcsr_p_type, &
-        dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_no_symmetry, &
-        dbcsr_type_symmetric
    USE input_constants,                 ONLY: &
         cholesky_dbcsr, cholesky_inverse, cholesky_off, cholesky_reduce, cholesky_restore, &
         core_guess, general_roks, high_spin_roks, restart_guess
@@ -277,6 +277,22 @@ CONTAINS
 
          IF (do_level_shift) THEN
          DO ispin = 1, nspin
+         IF (ASSOCIATED(scf_env%scf_work1_red) .AND. ASSOCIATED(scf_env%scf_work2_red) &
+             .AND. ASSOCIATED(scf_env%ortho_red) .AND. ASSOCIATED(scf_env%ortho_m1_red)) THEN
+            CALL eigensolver_symm(matrix_ks_fm=scf_env%scf_work1(ispin), &
+                                  mo_set=mos(ispin), &
+                                  ortho=ortho, &
+                                  work=scf_env%scf_work2, &
+                                  do_level_shift=do_level_shift, &
+                                  level_shift=scf_control%level_shift, &
+                                  matrix_u_fm=scf_env%ortho_m1, &
+                                  use_jacobi=use_jacobi, &
+                                  jacobi_threshold=scf_control%diagonalization%jacobi_threshold, &
+                                  matrix_ks_fm_red=scf_env%scf_work1_red(ispin), &
+                                  ortho_red=scf_env%ortho_red, &
+                                  work_red=scf_env%scf_work2_red, &
+                                  matrix_u_fm_red=scf_env%ortho_m1_red)
+         ELSE
             CALL eigensolver_symm(matrix_ks_fm=scf_env%scf_work1(ispin), &
                                   mo_set=mos(ispin), &
                                   ortho=ortho, &
@@ -286,9 +302,24 @@ CONTAINS
                                   matrix_u_fm=scf_env%ortho_m1, &
                                   use_jacobi=use_jacobi, &
                                   jacobi_threshold=scf_control%diagonalization%jacobi_threshold)
+         END IF
          END DO
          ELSE
          DO ispin = 1, nspin
+         IF (ASSOCIATED(scf_env%scf_work1_red) .AND. ASSOCIATED(scf_env%scf_work2_red) &
+             .AND. ASSOCIATED(scf_env%ortho_red)) THEN
+            CALL eigensolver_symm(matrix_ks_fm=scf_env%scf_work1(ispin), &
+                                  mo_set=mos(ispin), &
+                                  ortho=ortho, &
+                                  work=scf_env%scf_work2, &
+                                  do_level_shift=do_level_shift, &
+                                  level_shift=scf_control%level_shift, &
+                                  use_jacobi=use_jacobi, &
+                                  jacobi_threshold=scf_control%diagonalization%jacobi_threshold, &
+                                  matrix_ks_fm_red=scf_env%scf_work1_red(ispin), &
+                                  ortho_red=scf_env%ortho_red, &
+                                  work_red=scf_env%scf_work2_red)
+         ELSE
             CALL eigensolver_symm(matrix_ks_fm=scf_env%scf_work1(ispin), &
                                   mo_set=mos(ispin), &
                                   ortho=ortho, &
@@ -297,6 +328,7 @@ CONTAINS
                                   level_shift=scf_control%level_shift, &
                                   use_jacobi=use_jacobi, &
                                   jacobi_threshold=scf_control%diagonalization%jacobi_threshold)
+         END IF
          END DO
          END IF
 
@@ -960,7 +992,7 @@ CONTAINS
          DO i = 1, nspin
             ALLOCATE (subspace_env%p_matrix_store(i)%matrix)
             CALL dbcsr_create(matrix=subspace_env%p_matrix_store(i)%matrix, template=matrix_s(1)%matrix, &
-                              name="DENSITY_STORE", matrix_type=dbcsr_type_symmetric, nze=0)
+                              name="DENSITY_STORE", matrix_type=dbcsr_type_symmetric)
             CALL cp_dbcsr_alloc_block_from_nbl(subspace_env%p_matrix_store(i)%matrix, &
                                                sab_orb)
             CALL dbcsr_set(subspace_env%p_matrix_store(i)%matrix, 0.0_dp)
@@ -1168,7 +1200,6 @@ CONTAINS
          CALL calculate_subspace_eigenvalues(mo_coeff, matrix_ks(ispin)%matrix, &
                                              evals_arg=eigenvalues, &
                                              do_rotation=.TRUE.)
-         !MK WRITE(*,*) routinen//' copy_dbcsr_to_fm'
          CALL copy_fm_to_dbcsr(mos(ispin)%mo_coeff, &
                                mos(ispin)%mo_coeff_b)
          !fm->dbcsr
@@ -1307,7 +1338,7 @@ CONTAINS
             ! Q = S*C
             mo2ao => mob
 !MK     CALL copy_sm_to_fm(matrix_s(1)%matrix,work)
-!MK     CALL cp_fm_symm("L","U",nao,nao,1.0_dp,work,moa,0.0_dp,mo2ao)
+!MK     CALL cp_fm_symm("L", "U",nao, nao, 1.0_dp, work, moa, 0.0_dp, mo2ao)
             CALL cp_dbcsr_sm_fm_multiply(matrix_s(1)%matrix, moa, mo2ao, nao)
          END IF
 
@@ -1340,6 +1371,7 @@ CONTAINS
                                 eps_diis=scf_control%eps_diis, &
                                 scf_section=scf_section, &
                                 roks=.TRUE.)
+            CPASSERT(scf_env%iter_delta == scf_env%iter_delta)
          ELSE
             CALL qs_diis_b_step(diis_buffer=scf_env%scf_diis_buffer, &
                                 mo_array=mos, &
@@ -1394,13 +1426,13 @@ CONTAINS
          CASE (cholesky_reduce)
             CALL cp_fm_cholesky_reduce(ksa, ortho)
          CASE (cholesky_restore)
-            CALL cp_fm_upper_to_full(ksa, work)
+            CALL cp_fm_uplo_to_full(ksa, work)
             CALL cp_fm_cholesky_restore(ksa, nao, ortho, work, &
                                         "SOLVE", pos="RIGHT")
             CALL cp_fm_cholesky_restore(work, nao, ortho, ksa, &
                                         "SOLVE", pos="LEFT", transa="T")
          CASE (cholesky_inverse)
-            CALL cp_fm_upper_to_full(ksa, work)
+            CALL cp_fm_uplo_to_full(ksa, work)
             CALL cp_fm_cholesky_restore(ksa, nao, ortho, work, &
                                         "MULTIPLY", pos="RIGHT")
             CALL cp_fm_cholesky_restore(work, nao, ortho, ksa, &
@@ -1534,7 +1566,7 @@ CONTAINS
       DO ispin = 1, SIZE(matrix_ks)
 
          ks => scf_env%scf_work1(ispin)
-         CALL cp_fm_upper_to_full(ks, work)
+         CALL cp_fm_uplo_to_full(ks, work)
 
          CALL get_mo_set(mo_set=mos(ispin), &
                          nao=nao, &
@@ -1549,7 +1581,7 @@ CONTAINS
          SELECT CASE (scf_env%cholesky_method)
          CASE (cholesky_reduce)
             CALL cp_fm_cholesky_reduce(ks, ortho)
-            CALL cp_fm_upper_to_full(ks, work)
+            CALL cp_fm_uplo_to_full(ks, work)
             CALL cp_fm_cholesky_restore(mo_coeff, nmo, ortho, c0, "MULTIPLY")
          CASE (cholesky_restore)
             CALL cp_fm_cholesky_restore(ks, nao, ortho, work, &

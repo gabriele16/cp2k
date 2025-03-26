@@ -1,13 +1,13 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
 
 MODULE qs_fb_com_tasks_types
 
-   USE dbcsr_api,                       ONLY: dbcsr_get_block_p,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_get_block_p,&
                                               dbcsr_get_info,&
                                               dbcsr_put_block,&
                                               dbcsr_type
@@ -96,10 +96,10 @@ MODULE qs_fb_com_tasks_types
 ! **********************************************************************
    TYPE fb_com_tasks_data
       ! use pure integer arrays to facilitate easier MPI coms
-      INTEGER(KIND=int_8), DIMENSION(:, :), POINTER :: tasks
-      INTEGER :: task_dim
-      INTEGER :: ntasks
-      INTEGER :: nencode
+      INTEGER(KIND=int_8), DIMENSION(:, :), POINTER :: tasks => NULL()
+      INTEGER :: task_dim = -1
+      INTEGER :: ntasks = -1
+      INTEGER :: nencode = -1
    END TYPE fb_com_tasks_data
 
 !**********************************************************************
@@ -107,7 +107,7 @@ MODULE qs_fb_com_tasks_types
 !> \author Lianheng Tong (LT) lianheng.tong@kcl.ac.uk
 !**********************************************************************
    TYPE fb_com_tasks_obj
-      TYPE(fb_com_tasks_data), POINTER, PRIVATE :: obj
+      TYPE(fb_com_tasks_data), POINTER, PRIVATE :: obj => NULL()
    END TYPE fb_com_tasks_obj
 
 ! **********************************************************************
@@ -126,9 +126,9 @@ MODULE qs_fb_com_tasks_types
 !> \author Lianheng Tong (LT) lianheng.tong@kcl.ac.uk
 ! **********************************************************************
    TYPE fb_com_atom_pairs_data
-      INTEGER(KIND=int_8), DIMENSION(:), POINTER :: pairs
-      INTEGER :: npairs
-      INTEGER :: natoms_encode
+      INTEGER(KIND=int_8), DIMENSION(:), POINTER :: pairs => NULL()
+      INTEGER :: npairs = -1
+      INTEGER :: natoms_encode = -1
    END TYPE fb_com_atom_pairs_data
 
 ! **********************************************************************
@@ -136,7 +136,7 @@ MODULE qs_fb_com_tasks_types
 !> \author Lianheng Tong (LT) lianheng.tong@kcl.ac.uk
 ! **********************************************************************
    TYPE fb_com_atom_pairs_obj
-      TYPE(fb_com_atom_pairs_data), POINTER, PRIVATE :: obj
+      TYPE(fb_com_atom_pairs_data), POINTER, PRIVATE :: obj => NULL()
    END TYPE fb_com_atom_pairs_obj
 
 CONTAINS
@@ -1122,7 +1122,8 @@ CONTAINS
          recv_sizes, send_disps, send_pair_count, send_pair_disps, send_sizes
       INTEGER, DIMENSION(:), POINTER                     :: col_block_size_data, row_block_size_data
       LOGICAL                                            :: check_ok, found
-      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: recv_buf, send_buf
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:), TARGET   :: recv_buf, send_buf
+      REAL(kind=dp), DIMENSION(:), POINTER               :: vector
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: mat_block
 
       CALL timeset(routineN, handle)
@@ -1237,9 +1238,10 @@ CONTAINS
             nrows_blk = row_block_size_data(iatom)
             ncols_blk = col_block_size_data(jatom)
             ind = recv_disps(ipe) + recv_sizes(ipe)
+            vector => recv_buf((ind + 1):(ind + nrows_blk*ncols_blk))
             CALL dbcsr_put_block(dbcsr_mat, &
                                  iatom, jatom, &
-                                 recv_buf((ind + 1):(ind + nrows_blk*ncols_blk)))
+                                 block=RESHAPE(vector, [nrows_blk, ncols_blk]))
             recv_sizes(ipe) = recv_sizes(ipe) + nrows_blk*ncols_blk
          END DO ! ipair
       END DO ! ipe

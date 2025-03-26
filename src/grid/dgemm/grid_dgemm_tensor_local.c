@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -10,7 +10,7 @@
 #include "grid_dgemm_utils.h"
 
 size_t realloc_tensor(tensor *t) {
-  assert(t);
+  assert(t != NULL);
 
   if (t->alloc_size_ == 0) {
     /* there is a mistake somewhere. We can not have t->old_alloc_size_ != 0 and
@@ -29,8 +29,7 @@ size_t realloc_tensor(tensor *t) {
 
   if (t->data == NULL) {
     t->data = malloc(sizeof(double) * t->alloc_size_);
-    if (!t->data)
-      abort();
+    assert(t->data != NULL);
     t->old_alloc_size_ = t->alloc_size_;
   }
 
@@ -38,13 +37,10 @@ size_t realloc_tensor(tensor *t) {
 }
 
 void alloc_tensor(tensor *t) {
-  if (t == NULL) {
-    abort();
-  }
+  assert(t != NULL);
 
   t->data = malloc(sizeof(double) * t->alloc_size_);
-  if (!t->data)
-    abort();
+  assert(t->data != NULL);
   t->old_alloc_size_ = t->alloc_size_;
 }
 

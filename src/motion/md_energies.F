@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -69,7 +69,7 @@ MODULE md_energies
                                               set_md_env
    USE message_passing,                 ONLY: mp_para_env_type
    USE motion_utils,                    ONLY: write_simulation_cell,&
-                                              write_stress_tensor,&
+                                              write_stress_tensor_to_file,&
                                               write_trajectory
    USE particle_list_types,             ONLY: particle_list_type
    USE particle_methods,                ONLY: write_structure_data
@@ -78,7 +78,8 @@ MODULE md_energies
                                               kelvin
    USE qmmm_types,                      ONLY: qmmm_env_type
    USE qs_linres_polar_utils,           ONLY: write_polarisability_tensor
-   USE reftraj_types,                   ONLY: reftraj_type
+   USE reftraj_types,                   ONLY: REFTRAJ_EVAL_NONE,&
+                                              reftraj_type
    USE simpar_types,                    ONLY: simpar_type
    USE thermal_region_types,            ONLY: thermal_regions_type
    USE thermal_region_utils,            ONLY: print_thermal_regions_temperature
@@ -228,7 +229,7 @@ CONTAINS
       CALL zero_md_ener(md_ener, tkind=.FALSE., tshell=.FALSE.)
       CALL get_md_env(md_env=md_env, force_env=force_env, reftraj=reftraj)
 
-      IF (reftraj%info%eval_ef) THEN
+      IF (reftraj%info%eval /= REFTRAJ_EVAL_NONE) THEN
          CALL force_env_get(force_env, potential_energy=md_ener%epot)
       ELSE
          md_ener%epot = reftraj%epot
@@ -466,7 +467,7 @@ CONTAINS
          CALL print_barostat_status(barostat, simpar, my_pos, my_act, cell, itimes, time)
 
          ! Print Stress Tensor
-         CALL write_stress_tensor(virial, cell, motion_section, itimes, time*femtoseconds, my_pos, my_act)
+         CALL write_stress_tensor_to_file(virial, cell, motion_section, itimes, time*femtoseconds, my_pos, my_act)
 
          ! Print Polarisability Tensor
          IF (ASSOCIATED(force_env%qs_env)) THEN

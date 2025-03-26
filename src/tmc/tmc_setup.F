@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -368,8 +368,9 @@ CONTAINS
       ! -- spiltting communicator
       ALLOCATE (tmc_env%tmc_comp_set%para_env_m_ana)
       CALL tmc_env%tmc_comp_set%para_env_m_ana%from_split(para_env, para_env%mepos, 0)
-      IF (para_env%num_pe .NE. 1) &
+      IF (para_env%num_pe .NE. 1) THEN
          CPWARN("just one out of "//cp_to_string(para_env%num_pe)//"cores is used ")
+      END IF
       ! distribute work to availuble cores
       IF (para_env%mepos .EQ. 0) THEN
          !TODO get the correct usage of creating and handling the logger...
@@ -594,13 +595,13 @@ CONTAINS
       CALL section_vals_val_get(tmc_section, "GROUP_ENERGY_SIZE", i_val=tmc_env%tmc_comp_set%group_ener_size)
       CALL section_vals_val_get(tmc_section, "GROUP_ENERGY_NR", i_val=tmc_env%tmc_comp_set%group_ener_nr)
       CALL section_vals_val_get(tmc_section, "GROUP_CC_SIZE", i_val=tmc_env%tmc_comp_set%group_cc_size)
-      CALL section_vals_val_get(tmc_section, "GROUP_ANLYSIS_NR", i_val=itmp)
+      CALL section_vals_val_get(tmc_section, "GROUP_ANALYSIS_NR", i_val=itmp)
       IF (tmc_env%tmc_comp_set%ana_on_the_fly .GT. 0) &
          tmc_env%tmc_comp_set%ana_on_the_fly = itmp
       IF (tmc_env%tmc_comp_set%ana_on_the_fly .GT. 1) &
          CALL cp_abort(__LOCATION__, &
                        "analysing on the fly is up to now not supported for multiple cores. "// &
-                       " Restart file witing for this case and temperature "// &
+                       "Restart file witing for this case and temperature "// &
                        "distribution has to be solved.!.")
       CALL section_vals_val_get(tmc_section, "RESULT_LIST_IN_MEMORY", l_val=tmc_env%params%USE_REDUCED_TREE)
       ! swap the variable, because of oposit meaning
@@ -753,7 +754,7 @@ CONTAINS
          IF (SIZE(r_arr_tmp) .NE. tmc_env%params%dim_per_elem) &
             CPABORT("The entered sub box sizes does not fit in number of dimensions.")
          IF (ANY(r_arr_tmp .LE. 0.0_dp)) &
-            CPABORT("The entered sub box lenghts should be greater than 0.")
+            CPABORT("The entered sub box lengths should be greater than 0.")
          DO itmp = 1, SIZE(tmc_env%params%sub_box_size)
             tmc_env%params%sub_box_size(itmp) = r_arr_tmp(itmp)/au2a
          END DO
@@ -830,13 +831,15 @@ CONTAINS
          success = .FALSE.
       ELSE
          ! check if there are enougth cores available
-         IF (tmc_comp_set%group_ener_size*tmc_comp_set%group_ener_nr .GT. (para_env%num_pe - 1)) &
+         IF (tmc_comp_set%group_ener_size*tmc_comp_set%group_ener_nr .GT. (para_env%num_pe - 1)) THEN
             CPWARN("The selected energy group size is too huge. ")
+         END IF
          IF (flag) THEN
             tmc_comp_set%group_ener_nr = INT((para_env%num_pe - 1)/ &
                                              REAL(tmc_comp_set%group_ener_size, KIND=dp))
-            IF (tmc_comp_set%group_ener_nr .LT. 1) &
+            IF (tmc_comp_set%group_ener_nr .LT. 1) THEN
                CPWARN("The selected energy group size is too huge. ")
+            END IF
             IF (flag) success = .FALSE.
          END IF
 
@@ -856,8 +859,9 @@ CONTAINS
          total_used = tmc_comp_set%group_ener_size*tmc_comp_set%group_ener_nr + &
                       tmc_comp_set%group_cc_size*tmc_comp_set%group_cc_nr + &
                       tmc_comp_set%ana_on_the_fly
-         IF (para_env%num_pe - 1 .GT. total_used) &
+         IF (para_env%num_pe - 1 .GT. total_used) THEN
             CPWARN(" mpi ranks are unused, but can be used for analysis.")
+         END IF
 
          ! determine the master node
          IF (para_env%mepos == para_env%num_pe - 1) THEN

@@ -6,8 +6,8 @@
 [ "${BASH_SOURCE[0]}" ] && SCRIPT_NAME="${BASH_SOURCE[0]}" || SCRIPT_NAME=$0
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_NAME")/.." && pwd -P)"
 
-libxsmm_ver="1.17"
-libxsmm_sha256="8b642127880e92e8a75400125307724635ecdf4020ca4481e5efe7640451bb92"
+libxsmm_ver="e0c4a2389afba36c453233ad7de07bd92c715bec"
+libxsmm_sha256="7140650d7ce58be08af2af3f49d27641f35a131e0f712c033e5c787ac9916c9d"
 source "${SCRIPT_DIR}"/common_vars.sh
 source "${SCRIPT_DIR}"/tool_kit.sh
 source "${SCRIPT_DIR}"/signal_trap.sh
@@ -40,7 +40,11 @@ EOF
       if [ -f libxsmm-${libxsmm_ver}.tar.gz ]; then
         echo "libxsmm-${libxsmm_ver}.tar.gz is found"
       else
-        download_pkg_from_cp2k_org "${libxsmm_sha256}" "libxsmm-${libxsmm_ver}.tar.gz"
+        if ! download_pkg_from_cp2k_org "${libxsmm_sha256}" "libxsmm-${libxsmm_ver}.tar.gz"; then
+          download_pkg_from_urlpath "${libxsmm_sha256}" "${libxsmm_ver}.tar.gz" \
+            https://github.com/libxsmm/libxsmm/archive \
+            "libxsmm-${libxsmm_ver}.tar.gz"
+        fi
       fi
       [ -d libxsmm-${libxsmm_ver} ] && rm -rf libxsmm-${libxsmm_ver}
       tar -xzf libxsmm-${libxsmm_ver}.tar.gz
@@ -59,14 +63,14 @@ EOF
         CXX=$CXX \
         CC=$CC \
         FC=$FC \
-        INTRINSICS=1 \
+        WRAP=0 \
         PREFIX=${pkg_install_dir} \
         > make.log 2>&1 || tail -n ${LOG_LINES} make.log
       make -j $(get_nprocs) \
         CXX=$CXX \
         CC=$CC \
         FC=$FC \
-        INTRINSICS=1 \
+        WRAP=0 \
         PREFIX=${pkg_install_dir} \
         install > install.log 2>&1 || tail -n ${LOG_LINES} install.log
       cd ..
@@ -81,6 +85,7 @@ EOF
     echo "==================== Finding Libxsmm from system paths ===================="
     check_lib -lxsmm "libxsmm"
     check_lib -lxsmmf "libxsmm"
+    check_lib -lxsmmext "libxsmm"
     add_include_from_paths LIBXSMM_CFLAGS "libxsmm.h" $INCLUDE_PATHS
     add_lib_from_paths LIBXSMM_LDFLAGS "libxsmm.*" $LIB_PATHS
     ;;
@@ -97,9 +102,12 @@ EOF
     ;;
 esac
 if [ "$with_libxsmm" != "__DONTUSE__" ]; then
-  LIBXSMM_LIBS="-lxsmmf -lxsmm -ldl -lpthread"
+  LIBXSMM_LIBS="-lxsmmf -lxsmmext -lxsmm -ldl -lpthread"
+  cat << EOF > "${BUILDDIR}/setup_libxsmm"
+export LIBXSMM_VER="${libxsmm_ver}"
+EOF
   if [ "$with_libxsmm" != "__SYSTEM__" ]; then
-    cat << EOF > "${BUILDDIR}/setup_libxsmm"
+    cat << EOF >> "${BUILDDIR}/setup_libxsmm"
 prepend_path PATH "${pkg_install_dir}/bin"
 prepend_path LD_LIBRARY_PATH "${pkg_install_dir}/lib"
 prepend_path LD_RUN_PATH "${pkg_install_dir}/lib"

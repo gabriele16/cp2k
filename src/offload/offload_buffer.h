@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -20,7 +20,7 @@ typedef struct {
 } offload_buffer;
 
 /*******************************************************************************
- * \brief Allocates a buffer of given length, ie. number of elements.
+ * \brief Allocates a buffer of given length, ie., number of elements.
  * \author Ole Schuett
  ******************************************************************************/
 void offload_create_buffer(const int length, offload_buffer **buffer);

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -29,21 +29,17 @@ MODULE qs_dispersion_nonloc
                                               xc_vdw_fun_nonloc
    USE kinds,                           ONLY: default_string_length,&
                                               dp
-   USE mathconstants,                   ONLY: pi
+   USE mathconstants,                   ONLY: pi,&
+                                              rootpi
    USE message_passing,                 ONLY: mp_para_env_type
    USE pw_grid_types,                   ONLY: HALFSPACE,&
                                               pw_grid_type
    USE pw_methods,                      ONLY: pw_axpy,&
                                               pw_derive,&
                                               pw_transfer
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_dispersion_types,             ONLY: qs_dispersion_type
    USE virial_types,                    ONLY: virial_type
 #include "./base/base_uses.f90"
@@ -166,7 +162,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE calculate_dispersion_nonloc(vxc_rho, rho_r, rho_g, edispersion, &
                                           dispersion_env, energy_only, pw_pool, xc_pw_pool, para_env, virial)
-      TYPE(pw_type), DIMENSION(:), POINTER               :: vxc_rho, rho_r, rho_g
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: vxc_rho, rho_r
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho_g
       REAL(KIND=dp), INTENT(OUT)                         :: edispersion
       TYPE(qs_dispersion_type), POINTER                  :: dispersion_env
       LOGICAL, INTENT(IN)                                :: energy_only
@@ -185,10 +182,11 @@ CONTAINS
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: dq0_dgradrho, dq0_drho, hpot, potential, &
                                                             q0, rho
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :)        :: drho, thetas
+      TYPE(pw_c1d_gs_type)                               :: tmp_g, vxc_g
+      TYPE(pw_c1d_gs_type), ALLOCATABLE, DIMENSION(:)    :: thetas_g
       TYPE(pw_grid_type), POINTER                        :: grid
-      TYPE(pw_type)                                      :: tmp_g, tmp_r, vxc_g, vxc_r
-      TYPE(pw_type), ALLOCATABLE, DIMENSION(:)           :: thetas_g
-      TYPE(pw_type), ALLOCATABLE, DIMENSION(:, :)        :: drho_r
+      TYPE(pw_r3d_rs_type)                               :: tmp_r, vxc_r
+      TYPE(pw_r3d_rs_type), ALLOCATABLE, DIMENSION(:, :) :: drho_r
 
       CALL timeset(routineN, handle)
 
@@ -214,29 +212,28 @@ CONTAINS
       beta = 0.03125_dp*(3.0_dp/(b_value**2.0_dp))**0.75_dp
       nspin = SIZE(rho_r)
 
-      const = 1.0_dp/(3.0_dp*SQRT(pi)*b_value**1.5_dp)/(pi**0.75_dp)
+      const = 1.0_dp/(3.0_dp*rootpi*b_value**1.5_dp)/(pi**0.75_dp)
 
       ! temporary arrays for FFT
-      CALL pw_pool_create_pw(pw_pool, tmp_g, use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
-      CALL pw_pool_create_pw(pw_pool, tmp_r, use_data=REALDATA3D, in_space=REALSPACE)
+      CALL pw_pool%create_pw(tmp_g)
+      CALL pw_pool%create_pw(tmp_r)
 
       ! get density derivatives
       ALLOCATE (drho_r(3, nspin))
       DO ispin = 1, nspin
          DO idir = 1, 3
-            CALL pw_pool_create_pw(pw_pool, drho_r(idir, ispin), &
-                                   use_data=REALDATA3D, in_space=REALSPACE)
+            CALL pw_pool%create_pw(drho_r(idir, ispin))
             CALL pw_transfer(rho_g(ispin), tmp_g)
             CALL pw_derive(tmp_g, nd(:, idir))
             CALL pw_transfer(tmp_g, drho_r(idir, ispin))
          END DO
       END DO
 
-      np = SIZE(tmp_r%cr3d)
+      np = SIZE(tmp_r%array)
       ALLOCATE (rho(np), drho(np, 3)) !in the following loops, rho and drho _will_ have the same bounds
       DO i = 1, 3
-         lo(i) = LBOUND(tmp_r%cr3d, i)
-         hi(i) = UBOUND(tmp_r%cr3d, i)
+         lo(i) = LBOUND(tmp_r%array, i)
+         hi(i) = UBOUND(tmp_r%array, i)
          n(i) = hi(i) - lo(i) + 1
       END DO
 !$OMP PARALLEL DO DEFAULT(NONE)              &
@@ -264,7 +261,6 @@ CONTAINS
 !$OMP END PARALLEL DO
       END DO
       DO ispin = 1, nspin
-         CPASSERT(rho_r(ispin)%in_use == REALDATA3D)
          CALL pw_transfer(rho_g(ispin), tmp_g)
          CALL pw_transfer(tmp_g, tmp_r)
 !$OMP PARALLEL DO DEFAULT(NONE)            &
@@ -275,7 +271,7 @@ CONTAINS
             DO q = 0, n(2) - 1
                DO p = 0, n(1) - 1
                   s = r*n(2)*n(1) + q*n(1) + p + 1
-                  rho(s) = rho(s) + tmp_r%cr3d(p + lo(1), q + lo(2), r + lo(3))
+                  rho(s) = rho(s) + tmp_r%array(p + lo(1), q + lo(2), r + lo(3))
                END DO
             END DO
          END DO
@@ -289,7 +285,7 @@ CONTAINS
                DO q = 0, n(2) - 1
                   DO p = 0, n(1) - 1
                      s = r*n(2)*n(1) + q*n(1) + p + 1
-                     drho(s, i) = drho(s, i) + drho_r(i, ispin)%cr3d(p + lo(1), q + lo(2), r + lo(3))
+                     drho(s, i) = drho(s, i) + drho_r(i, ispin)%array(p + lo(1), q + lo(2), r + lo(3))
                   END DO
                END DO
             END DO
@@ -377,8 +373,8 @@ CONTAINS
       !! ------------------------------------------------------------------------------------
       !! Get thetas in reciprocal space.
       DO i = 1, 3
-         lo(i) = LBOUND(tmp_r%cr3d, i)
-         hi(i) = UBOUND(tmp_r%cr3d, i)
+         lo(i) = LBOUND(tmp_r%array, i)
+         hi(i) = UBOUND(tmp_r%array, i)
          n(i) = hi(i) - lo(i) + 1
       END DO
       ALLOCATE (thetas_g(dispersion_env%nqs))
@@ -389,12 +385,12 @@ CONTAINS
          DO r = 0, n(3) - 1
             DO q = 0, n(2) - 1
                DO p = 0, n(1) - 1
-                  tmp_r%cr3d(p + lo(1), q + lo(2), r + lo(3)) = thetas(r*n(2)*n(1) + q*n(1) + p + 1, i)
+                  tmp_r%array(p + lo(1), q + lo(2), r + lo(3)) = thetas(r*n(2)*n(1) + q*n(1) + p + 1, i)
                END DO
             END DO
          END DO
 !$OMP END PARALLEL DO
-         CALL pw_pool_create_pw(pw_pool, thetas_g(i), use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+         CALL pw_pool%create_pw(thetas_g(i))
          CALL pw_transfer(tmp_r, thetas_g(i))
       END DO
       grid => thetas_g(1)%pw_grid
@@ -435,8 +431,8 @@ CONTAINS
          !! Inverse Fourier transform the u_i(k) to get the u_i(r) of SOLER equation 11.
          !!-----------------------------------------------------------------------------
          DO i = 1, 3
-            lo(i) = LBOUND(tmp_r%cr3d, i)
-            hi(i) = UBOUND(tmp_r%cr3d, i)
+            lo(i) = LBOUND(tmp_r%array, i)
+            hi(i) = UBOUND(tmp_r%array, i)
             n(i) = hi(i) - lo(i) + 1
          END DO
          DO i = 1, dispersion_env%nqs
@@ -447,7 +443,7 @@ CONTAINS
             DO r = 0, n(3) - 1
                DO q = 0, n(2) - 1
                   DO p = 0, n(1) - 1
-                     thetas(r*n(2)*n(1) + q*n(1) + p + 1, i) = tmp_r%cr3d(p + lo(1), q + lo(2), r + lo(3))
+                     thetas(r*n(2)*n(1) + q*n(1) + p + 1, i) = tmp_r%array(p + lo(1), q + lo(2), r + lo(3))
                   END DO
                END DO
             END DO
@@ -475,10 +471,10 @@ CONTAINS
             potential(:) = (0.5_dp*potential(:) + beta)*dispersion_env%scale_rvv10
             hpot(:) = 0.5_dp*dispersion_env%scale_rvv10*hpot(:)
          END SELECT
-         CALL pw_pool_create_pw(pw_pool, vxc_r, use_data=REALDATA3D, in_space=REALSPACE)
+         CALL pw_pool%create_pw(vxc_r)
          DO i = 1, 3
-            lo(i) = LBOUND(vxc_r%cr3d, i)
-            hi(i) = UBOUND(vxc_r%cr3d, i)
+            lo(i) = LBOUND(vxc_r%array, i)
+            hi(i) = UBOUND(vxc_r%array, i)
             n(i) = hi(i) - lo(i) + 1
          END DO
 !$OMP PARALLEL DO DEFAULT(NONE)                         &
@@ -487,14 +483,14 @@ CONTAINS
          DO r = 0, n(3) - 1
             DO q = 0, n(2) - 1
                DO p = 0, n(1) - 1
-                  vxc_r%cr3d(p + lo(1), q + lo(2), r + lo(3)) = potential(r*n(2)*n(1) + q*n(1) + p + 1)
+                  vxc_r%array(p + lo(1), q + lo(2), r + lo(3)) = potential(r*n(2)*n(1) + q*n(1) + p + 1)
                END DO
             END DO
          END DO
 !$OMP END PARALLEL DO
          DO i = 1, 3
-            lo(i) = LBOUND(tmp_r%cr3d, i)
-            hi(i) = UBOUND(tmp_r%cr3d, i)
+            lo(i) = LBOUND(tmp_r%array, i)
+            hi(i) = UBOUND(tmp_r%array, i)
             n(i) = hi(i) - lo(i) + 1
          END DO
          DO idir = 1, 3
@@ -504,7 +500,7 @@ CONTAINS
             DO r = 0, n(3) - 1
                DO q = 0, n(2) - 1
                   DO p = 0, n(1) - 1
-                     tmp_r%cr3d(p + lo(1), q + lo(2), r + lo(3)) = 0.0_dp
+                     tmp_r%array(p + lo(1), q + lo(2), r + lo(3)) = 0.0_dp
                   END DO
                END DO
             END DO
@@ -516,9 +512,9 @@ CONTAINS
                DO r = 0, n(3) - 1
                   DO q = 0, n(2) - 1
                      DO p = 0, n(1) - 1
-                        tmp_r%cr3d(p + lo(1), q + lo(2), r + lo(3)) = tmp_r%cr3d(p + lo(1), q + lo(2), r + lo(3)) &
-                                                                      + hpot(r*n(2)*n(1) + q*n(1) + p + 1) &
-                                                                      *drho_r(idir, ispin)%cr3d(p + lo(1), q + lo(2), r + lo(3))
+                        tmp_r%array(p + lo(1), q + lo(2), r + lo(3)) = tmp_r%array(p + lo(1), q + lo(2), r + lo(3)) &
+                                                                       + hpot(r*n(2)*n(1) + q*n(1) + p + 1) &
+                                                                       *drho_r(idir, ispin)%array(p + lo(1), q + lo(2), r + lo(3))
                      END DO
                   END DO
                END DO
@@ -530,31 +526,31 @@ CONTAINS
             CALL pw_axpy(tmp_r, vxc_r, -1._dp)
          END DO
          CALL pw_transfer(vxc_r, tmp_g)
-         CALL pw_pool_give_back_pw(pw_pool, vxc_r)
-         CALL pw_pool_create_pw(xc_pw_pool, vxc_r, use_data=REALDATA3D, in_space=REALSPACE)
-         CALL pw_pool_create_pw(xc_pw_pool, vxc_g, use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+         CALL pw_pool%give_back_pw(vxc_r)
+         CALL xc_pw_pool%create_pw(vxc_r)
+         CALL xc_pw_pool%create_pw(vxc_g)
          CALL pw_transfer(tmp_g, vxc_g)
          CALL pw_transfer(vxc_g, vxc_r)
          DO ispin = 1, nspin
             CALL pw_axpy(vxc_r, vxc_rho(ispin), 1._dp)
          END DO
-         CALL pw_pool_give_back_pw(xc_pw_pool, vxc_r)
-         CALL pw_pool_give_back_pw(xc_pw_pool, vxc_g)
+         CALL xc_pw_pool%give_back_pw(vxc_r)
+         CALL xc_pw_pool%give_back_pw(vxc_g)
          DEALLOCATE (q0, dq0_drho, dq0_dgradrho)
       END IF
 
       DEALLOCATE (thetas)
 
       DO i = 1, dispersion_env%nqs
-         CALL pw_pool_give_back_pw(pw_pool, thetas_g(i))
+         CALL pw_pool%give_back_pw(thetas_g(i))
       END DO
       DO ispin = 1, nspin
          DO idir = 1, 3
-            CALL pw_pool_give_back_pw(pw_pool, drho_r(idir, ispin))
+            CALL pw_pool%give_back_pw(drho_r(idir, ispin))
          END DO
       END DO
-      CALL pw_pool_give_back_pw(pw_pool, tmp_r)
-      CALL pw_pool_give_back_pw(pw_pool, tmp_g)
+      CALL pw_pool%give_back_pw(tmp_r)
+      CALL pw_pool%give_back_pw(tmp_g)
 
       DEALLOCATE (rho, drho, drho_r, thetas_g)
 
@@ -576,7 +572,7 @@ CONTAINS
 !>    OpenMP added: Aug 2016  MTucker
 ! **************************************************************************************************
    SUBROUTINE vdW_energy(thetas_g, dispersion_env, vdW_xc_energy, energy_only, virial)
-      TYPE(pw_type), DIMENSION(:), INTENT(IN)            :: thetas_g
+      TYPE(pw_c1d_gs_type), DIMENSION(:), INTENT(IN)     :: thetas_g
       TYPE(qs_dispersion_type), POINTER                  :: dispersion_env
       REAL(KIND=dp), INTENT(OUT)                         :: vdW_xc_energy
       LOGICAL, INTENT(IN)                                :: energy_only
@@ -644,7 +640,7 @@ CONTAINS
             IF (use_virial) CALL interpolate_dkernel_dk(g, dkernel_of_dk, dispersion_env)
          END IF
          DO iq = 1, nqs
-            theta(iq) = thetas_g(iq)%cc(ig)
+            theta(iq) = thetas_g(iq)%array(ig)
          END DO
          DO q2_i = 1, nqs
             uu = CMPLX(0.0_dp, 0.0_dp, KIND=dp)
@@ -683,7 +679,7 @@ CONTAINS
 !$OMP DO
          DO ig = 1, grid%ngpts_cut_local
             DO iq = 1, nqs
-               thetas_g(iq)%cc(ig) = u_vdW(ig, iq)
+               thetas_g(iq)%array(ig) = u_vdW(ig, iq)
             END DO
          END DO
 !$OMP END DO

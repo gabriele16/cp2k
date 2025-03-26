@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -1248,7 +1248,7 @@ CONTAINS
          CALL cp_abort(__LOCATION__, &
                        " Unknown element for KIND <"//TRIM(atom_name_in)//">."// &
                        " This problem can be fixed specifying properly elements in PDB"// &
-                       " or specifying a KIND section or getting in touch with one of "// &
+                       " or specifying a KIND section or getting in touch with one of"// &
                        " the developers!")
       END IF
 

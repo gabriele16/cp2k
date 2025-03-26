@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -266,7 +266,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="MOLECULE", &
                           description="Specifies the index of the molecule kind (in input file order)"// &
-                          "on which the constraint will be applied."// &
+                          " on which the constraint will be applied."// &
                           " MOLECULE and MOLNAME keyword exclude themself mutually.", &
                           usage="MOLECULE {integer}", n_var=1, type_of_var=integer_t)
       CALL section_add_keyword(section, keyword)
@@ -516,16 +516,16 @@ CONTAINS
       NULLIFY (keyword)
       ! Character
       CALL keyword_create(keyword, __LOCATION__, name="ATOM_TYPE", &
-                          description="Defines the atoms' type forming a bond with an hydrogen. If not specified "// &
+                          description="Defines the atoms' type forming a bond with an hydrogen. If not specified"// &
                           " the default bond value of the first molecule is used as constraint target", &
-                          usage="ATOMS <CHARACTER>", &
+                          usage="ATOM_TYPE <CHARACTER>", &
                           n_var=-1, type_of_var=char_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="MOLECULE", &
                           description="Specifies the indexes of the molecule kind (in input file order)"// &
-                          "on which the constraint will be applied."// &
+                          " on which the constraint will be applied."// &
                           " MOLECULE and MOLNAME keyword exclude themself mutually.", &
                           usage="MOLECULE {integer} .. {integer} ", n_var=-1, &
                           type_of_var=integer_t)
@@ -684,7 +684,7 @@ CONTAINS
 
       ! Real
       CALL keyword_create(keyword, __LOCATION__, name="PARAMETERS", &
-                          description="The constrained parameters' values to construct virtual site."// &
+                          description="The constrained parameters' values to construct virtual site. "// &
                           "r_v=a*r_ij+b*r_kj", &
                           usage="PARAMETERS {real} {real}", &
                           type_of_var=real_t, n_var=2, unit_str="internal_cp2k")

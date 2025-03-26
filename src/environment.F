@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -17,6 +17,7 @@
 MODULE environment
    USE bibliography,                    ONLY: Frigo2005,&
                                               Marek2014,&
+                                              Solca2024,&
                                               cite_reference
    USE cp2k_info,                       ONLY: &
         compile_arch, compile_date, compile_host, compile_revision, cp2k_flags, cp2k_home, &
@@ -26,6 +27,7 @@ MODULE environment
                                               get_data_dir,&
                                               open_file
    USE cp_fm_diag,                      ONLY: FM_DIAG_TYPE_CUSOLVER,&
+                                              FM_DIAG_TYPE_DLAF,&
                                               FM_DIAG_TYPE_ELPA,&
                                               FM_DIAG_TYPE_SCALAPACK,&
                                               diag_finalize,&
@@ -47,7 +49,8 @@ MODULE environment
                                               low_print_level,&
                                               medium_print_level,&
                                               silent_print_level
-   USE fft_tools,                       ONLY: fft3d,&
+   USE fft_tools,                       ONLY: FWFFT,&
+                                              fft3d,&
                                               finalize_fft,&
                                               init_fft
    USE force_env_types,                 ONLY: multiple_fe_list
@@ -81,8 +84,8 @@ MODULE environment
                                               print_kind_info
    USE local_gemm_api,                  ONLY: local_gemm_set_library
    USE machine,                         ONLY: &
-        flush_should_flush, m_cpuid, m_cpuid_name, m_cpuid_static, m_cpuinfo, m_energy, &
-        m_get_omp_stacksize, m_memory_details, m_procrun
+        flush_should_flush, m_cpuid, m_cpuid_name, m_cpuid_static, m_cpuid_vlen, m_cpuinfo, &
+        m_energy, m_memory_details, m_omp_get_stacksize, m_omp_trace_issues, m_procrun
    USE message_passing,                 ONLY: mp_collect_timings,&
                                               mp_para_env_type
    USE mp_perf_env,                     ONLY: add_mp_perf_env,&
@@ -98,8 +101,7 @@ MODULE environment
                                               write_rng_matrices
    USE physcon,                         ONLY: write_physcon
    USE reference_manager,               ONLY: collect_citations_from_ranks,&
-                                              print_all_references,&
-                                              print_format_journal
+                                              print_cited_references
    USE string_utilities,                ONLY: ascii_to_string,&
                                               integer_to_string,&
                                               string_to_ascii
@@ -226,9 +228,14 @@ CONTAINS
                    " and is therefore no longer supported.")
 
 #if !defined(__FORCE_USE_FAST_MATH)
-#error -ffast-math (GCC) or -hfpN (N>0, Cray) can lead to wrong results and numerical instabilities and are therefore no longer supported
+#error "-ffast-math (GCC) or -hfpN (N>0, Cray) can lead to wrong results and numerical instabilities and are therefore no longer supported"
 #endif
 #endif
+
+#if defined(NDEBUG)
+#error "Please do not build CP2K with NDEBUG. There is no performance advantage and asserts will save your neck."
+#endif
+
    END SUBROUTINE cp2k_init
 
 ! **************************************************************************************************
@@ -344,7 +351,7 @@ CONTAINS
       TYPE(global_environment_type), POINTER             :: globenv
 
       CHARACTER(LEN=3*default_string_length)             :: message
-      CHARACTER(len=default_string_length)               :: c_val
+      CHARACTER(LEN=default_string_length)               :: c_val
       INTEGER                                            :: i, iw
       TYPE(cp_logger_type), POINTER                      :: logger
 
@@ -499,9 +506,9 @@ CONTAINS
 
       CHARACTER(LEN=6), PARAMETER                        :: start_section_label = "GLOBAL"
 
-      CHARACTER(len=13)                                  :: omp_stacksize, tracing_string
-      CHARACTER(len=6)                                   :: print_level_string
-      CHARACTER(len=default_path_length)                 :: basis_set_file_name, coord_file_name, &
+      CHARACTER(LEN=13)                                  :: omp_stacksize, tracing_string
+      CHARACTER(LEN=6)                                   :: print_level_string
+      CHARACTER(LEN=default_path_length)                 :: basis_set_file_name, coord_file_name, &
                                                             mm_potential_file_name, &
                                                             potential_file_name
       CHARACTER(LEN=default_string_length)               :: env_num, model_name, project_name
@@ -545,6 +552,7 @@ CONTAINS
       unit_nr = cp_print_key_unit_nr(logger, global_section, "PRINT_ELPA", extension=".Log")
       IF (unit_nr > 0) globenv%elpa_print = .TRUE.
       CALL cp_print_key_finished_output(unit_nr, logger, global_section, "PRINT_ELPA")
+      CALL section_vals_val_get(global_section, "DLAF_NEIGVEC_MIN", i_val=globenv%dlaf_neigvec_min)
       CALL section_vals_val_get(global_section, "PREFERRED_FFT_LIBRARY", i_val=i_fft)
       CALL section_vals_val_get(global_section, "PRINT_LEVEL", i_val=print_level)
       CALL section_vals_val_get(global_section, "PROGRAM_NAME", i_val=globenv%prog_name_id)
@@ -600,6 +608,9 @@ CONTAINS
          CALL cite_reference(Marek2014)
       CASE (FM_DIAG_TYPE_CUSOLVER)
          globenv%diag_library = "cuSOLVER"
+      CASE (FM_DIAG_TYPE_DLAF)
+         globenv%diag_library = "DLAF"
+         CALL cite_reference(Solca2024)
       CASE DEFAULT
          CPABORT("Unknown diagonalization library specified")
       END SELECT
@@ -790,6 +801,12 @@ CONTAINS
                globenv%elpa_neigvec_min
          END IF
 
+         IF (globenv%diag_library == "DLAF") THEN
+            WRITE (UNIT=output_unit, FMT="(T2,A,T71,I10)") &
+               start_section_label//"| Minimum number of eigenvectors for DLAF usage", &
+               globenv%dlaf_neigvec_min
+         END IF
+
 #if defined(__CHECK_DIAG)
          ! Perform default check if no threshold value has been specified explicitly
          IF (globenv%eps_check_diag < 0.0_dp) THEN
@@ -878,10 +895,16 @@ CONTAINS
             num_threads, &
             start_section_label//"| This output is from process", para_env%mepos
 
-         CALL m_get_omp_stacksize(omp_stacksize)
+         CALL m_omp_get_stacksize(omp_stacksize)
          WRITE (UNIT=output_unit, FMT="(T2,A,T68,A13)") &
-            start_section_label//"| Stack size for threads created by OpenMP (OMP_STACKSIZE)", &
+            start_section_label//"| OpenMP stack size per thread (OMP_STACKSIZE)", &
             ADJUSTR(omp_stacksize)
+
+         IF (0 <= m_omp_trace_issues()) THEN ! only show in header if enabled
+            WRITE (UNIT=output_unit, FMT="(T2,A,T68,A13)") &
+               start_section_label//"| OpenMP issue trace (CP2K_OMP_TRACE)", &
+               "enabled"
+         END IF
 
          CALL m_cpuinfo(model_name)
          WRITE (UNIT=output_unit, FMT="(T2,A,T30,A51)") &
@@ -899,7 +922,8 @@ CONTAINS
             END IF
          END IF
 
-         IF (cpuid_static < cpuid) THEN
+         ! filter cpuids by vlen to show more relevant information
+         IF (m_cpuid_vlen(cpuid_static) < m_cpuid_vlen(cpuid)) THEN
             ! base/machine_cpuid.c relies on the (same) target flags as the Fortran code
             CALL cp_hint(__LOCATION__, "The compiler target flags ("// &
                          TRIM(m_cpuid_name(cpuid_static))//") used to build this binary cannot exploit "// &
@@ -1006,7 +1030,7 @@ CONTAINS
                     plan_style=globenv%fftw_plan_type)
 
       ! Check for FFT library
-      CALL fft3d(1, n, zz, status=stat)
+      CALL fft3d(FWFFT, n, zz, status=stat)
       IF (stat /= 0) THEN
          IF (try_fftw) THEN
             message = "FFT library "//TRIM(globenv%default_fft_library)// &
@@ -1020,7 +1044,7 @@ CONTAINS
                           wisdom_file=globenv%fftw_wisdom_file_name, &
                           plan_style=globenv%fftw_plan_type)
 
-            CALL fft3d(1, n, zz, status=stat)
+            CALL fft3d(FWFFT, n, zz, status=stat)
          END IF
          IF (stat /= 0) THEN
             message = "FFT library "//TRIM(globenv%default_fft_library)// &
@@ -1034,7 +1058,7 @@ CONTAINS
                           wisdom_file=globenv%fftw_wisdom_file_name, &
                           plan_style=globenv%fftw_plan_type)
 
-            CALL fft3d(1, n, zz, status=stat)
+            CALL fft3d(FWFFT, n, zz, status=stat)
             IF (stat /= 0) THEN
                CPABORT("FFT library FFTSG does not work. No FFT library available.")
             END IF
@@ -1062,6 +1086,7 @@ CONTAINS
                      elpa_qr=globenv%elpa_qr, &
                      elpa_print=globenv%elpa_print, &
                      elpa_qr_unsafe=globenv%elpa_qr_unsafe, &
+                     dlaf_neigvec_min_input=globenv%dlaf_neigvec_min, &
                      eps_check_diag_input=globenv%eps_check_diag)
 
       IF (fallback_applied) THEN
@@ -1079,7 +1104,7 @@ CONTAINS
    SUBROUTINE fm_setup(glob_section)
       TYPE(section_vals_type), POINTER                   :: glob_section
 
-      INTEGER                                            :: multiplication_type, ncb, nrb
+      INTEGER                                            :: mm_type, ncb, nrb
       LOGICAL                                            :: force_me
       TYPE(section_vals_type), POINTER                   :: fm_section
 
@@ -1088,13 +1113,10 @@ CONTAINS
       CALL section_vals_val_get(fm_section, "NROW_BLOCKS", i_val=nrb)
       CALL section_vals_val_get(fm_section, "NCOL_BLOCKS", i_val=ncb)
       CALL section_vals_val_get(fm_section, "FORCE_BLOCK_SIZE", l_val=force_me)
-
       CALL cp_fm_struct_config(nrow_block=nrb, ncol_block=ncb, force_block=force_me)
 
-      CALL section_vals_val_get(fm_section, "TYPE_OF_MATRIX_MULTIPLICATION", &
-                                i_val=multiplication_type)
-
-      CALL cp_fm_setup(multiplication_type)
+      CALL section_vals_val_get(fm_section, "TYPE_OF_MATRIX_MULTIPLICATION", i_val=mm_type)
+      CALL cp_fm_setup(mm_type)
 
    END SUBROUTINE fm_setup
 
@@ -1147,7 +1169,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE cp2k_get_walltime(section, keyword_name, walltime)
       TYPE(section_vals_type), POINTER                   :: section
-      CHARACTER(len=*), INTENT(in)                       :: keyword_name
+      CHARACTER(LEN=*), INTENT(in)                       :: keyword_name
       REAL(KIND=dp), INTENT(out)                         :: walltime
 
       CHARACTER(LEN=1)                                   :: c1, c2
@@ -1238,13 +1260,11 @@ CONTAINS
          WRITE (UNIT=iw, FMT="(T2,A,T30,A,T80,A)") "-", "R E F E R E N C E S", "-"
          WRITE (UNIT=iw, FMT="(T2,A,T80,A)") "-", "-"
          WRITE (UNIT=iw, FMT="(T2,A)") REPEAT("-", 79)
-
          WRITE (UNIT=iw, FMT="(T2,A)") ""
          WRITE (UNIT=iw, FMT="(T2,A)") TRIM(cp2k_version)//", the CP2K developers group ("//TRIM(cp2k_year)//")."
          WRITE (UNIT=iw, FMT="(T2,A)") "CP2K is freely available from "//TRIM(cp2k_home)//" ."
-
-         CALL print_all_references(sorted=.TRUE., cited_only=.TRUE., &
-                                   FORMAT=print_format_journal, unit=iw)
+         WRITE (UNIT=iw, FMT="(T2,A)") ""
+         CALL print_cited_references(unit=iw)
       END IF
       CALL cp_print_key_finished_output(iw, logger, root_section, &
                                         "GLOBAL%REFERENCES")
@@ -1302,8 +1322,11 @@ CONTAINS
             CALL close_file(unit_number=unit_exit, file_status="DELETE")
          END IF
 
-         ! Print warning counter
+         ! Print OpenMP issue counter and number of warnings for this workload
          IF (iw > 0) THEN
+            IF (0 <= m_omp_trace_issues()) THEN
+               WRITE (iw, "(T2,A,I0)") "The number of traced issues for OpenMP : ", m_omp_trace_issues()
+            END IF
             WRITE (iw, "(T2,A,I0)") "The number of warnings for this run is : ", warning_counter
             WRITE (iw, *) ""
             WRITE (UNIT=iw, FMT="(T2,A)") REPEAT("-", 79)

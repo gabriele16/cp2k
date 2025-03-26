@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -23,6 +23,9 @@ MODULE mp2_integrals
                                               get_cell
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_copy, dbcsr_create, dbcsr_get_info, dbcsr_multiply, dbcsr_p_type, dbcsr_release, &
+        dbcsr_release_p, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               cp_dbcsr_m_by_n_from_template
    USE cp_eri_mme_interface,            ONLY: cp_eri_mme_param,&
@@ -36,14 +39,11 @@ MODULE mp2_integrals
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_to_string
    USE cp_units,                        ONLY: cp_unit_from_cp2k
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_copy, dbcsr_create, dbcsr_get_info, dbcsr_multiply, dbcsr_p_type, dbcsr_release, &
-        dbcsr_release_p, dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry
    USE dbt_api,                         ONLY: &
         dbt_clear, dbt_contract, dbt_copy, dbt_create, dbt_destroy, dbt_distribution_destroy, &
         dbt_distribution_new, dbt_distribution_type, dbt_filter, dbt_get_block, dbt_get_info, &
         dbt_get_stored_coordinates, dbt_mp_environ_pgrid, dbt_pgrid_create, dbt_pgrid_destroy, &
-        dbt_pgrid_type, dbt_put_block, dbt_reserve_blocks, dbt_split_blocks, dbt_type
+        dbt_pgrid_type, dbt_put_block, dbt_reserve_blocks, dbt_scale, dbt_split_blocks, dbt_type
    USE group_dist_types,                ONLY: create_group_dist,&
                                               get_group_dist,&
                                               group_dist_d1_type
@@ -79,7 +79,8 @@ MODULE mp2_integrals
    USE pw_env_types,                    ONLY: pw_env_type
    USE pw_poisson_types,                ONLY: pw_poisson_type
    USE pw_pool_types,                   ONLY: pw_pool_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type,&
                                               set_qs_env
@@ -138,7 +139,6 @@ CONTAINS
 !> \param particle_set ...
 !> \param atomic_kind_set ...
 !> \param qs_kind_set ...
-!> \param mo_coeff ...
 !> \param fm_matrix_PQ ...
 !> \param fm_matrix_L_kpoints ...
 !> \param fm_matrix_Minv_L_kpoints ...
@@ -152,6 +152,8 @@ CONTAINS
 !> \param mo_coeff_v ...
 !> \param mo_coeff_all ...
 !> \param mo_coeff_gw ...
+!> \param mo_coeff_o_bse ...
+!> \param mo_coeff_v_bse ...
 !> \param eps_filter ...
 !> \param unit_nr ...
 !> \param mp2_memory ...
@@ -167,6 +169,7 @@ CONTAINS
 !> \param ends_array_mc_block ...
 !> \param gw_corr_lev_occ ...
 !> \param gw_corr_lev_virt ...
+!> \param bse_lev_virt ...
 !> \param do_im_time ...
 !> \param do_kpoints_cubic_RPA ...
 !> \param kpoints ...
@@ -181,16 +184,17 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE mp2_ri_gpw_compute_in(BIb_C, BIb_C_gw, BIb_C_bse_ij, BIb_C_bse_ab, gd_array, gd_B_virtual, &
                                     dimen_RI, dimen_RI_red, qs_env, para_env, para_env_sub, color_sub, &
-                                    cell, particle_set, atomic_kind_set, qs_kind_set, mo_coeff, &
+                                    cell, particle_set, atomic_kind_set, qs_kind_set, &
                                     fm_matrix_PQ, fm_matrix_L_kpoints, fm_matrix_Minv_L_kpoints, &
                                     fm_matrix_Minv, fm_matrix_Minv_Vtrunc_Minv, &
                                     nmo, homo, mat_munu, &
                                     sab_orb_sub, mo_coeff_o, mo_coeff_v, mo_coeff_all, &
-                                    mo_coeff_gw, eps_filter, unit_nr, &
+                                    mo_coeff_gw, mo_coeff_o_bse, mo_coeff_v_bse, eps_filter, unit_nr, &
                                     mp2_memory, calc_PQ_cond_num, calc_forces, blacs_env_sub, my_do_gw, do_bse, &
                                     gd_B_all, starts_array_mc, ends_array_mc, &
                                     starts_array_mc_block, ends_array_mc_block, &
                                     gw_corr_lev_occ, gw_corr_lev_virt, &
+                                    bse_lev_virt, &
                                     do_im_time, do_kpoints_cubic_RPA, kpoints, &
                                     t_3c_M, t_3c_O, t_3c_O_compressed, t_3c_O_ind, &
                                     ri_metric, gd_B_occ_bse, gd_B_virt_bse)
@@ -210,7 +214,6 @@ CONTAINS
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
-      TYPE(cp_fm_type), DIMENSION(:), INTENT(IN)         :: mo_coeff
       TYPE(cp_fm_type), INTENT(OUT)                      :: fm_matrix_PQ
       TYPE(cp_fm_type), ALLOCATABLE, DIMENSION(:, :)     :: fm_matrix_L_kpoints, &
                                                             fm_matrix_Minv_L_kpoints, &
@@ -222,7 +225,8 @@ CONTAINS
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
          INTENT(IN), POINTER                             :: sab_orb_sub
       TYPE(dbcsr_p_type), DIMENSION(:), INTENT(IN)       :: mo_coeff_o, mo_coeff_v, mo_coeff_all, &
-                                                            mo_coeff_gw
+                                                            mo_coeff_gw, mo_coeff_o_bse, &
+                                                            mo_coeff_v_bse
       REAL(KIND=dp), INTENT(IN)                          :: eps_filter
       INTEGER, INTENT(IN)                                :: unit_nr
       REAL(KIND=dp), INTENT(IN)                          :: mp2_memory
@@ -233,7 +237,8 @@ CONTAINS
       INTEGER, ALLOCATABLE, DIMENSION(:), INTENT(OUT)    :: starts_array_mc, ends_array_mc, &
                                                             starts_array_mc_block, &
                                                             ends_array_mc_block
-      INTEGER, INTENT(IN)                                :: gw_corr_lev_occ, gw_corr_lev_virt
+      INTEGER, INTENT(IN)                                :: gw_corr_lev_occ, gw_corr_lev_virt, &
+                                                            bse_lev_virt
       LOGICAL, INTENT(IN)                                :: do_im_time, do_kpoints_cubic_RPA
       TYPE(kpoint_type), POINTER                         :: kpoints
       TYPE(dbt_type), INTENT(OUT)                        :: t_3c_M
@@ -264,8 +269,9 @@ CONTAINS
                                                             periodic
       LOGICAL                                            :: do_gpw, do_kpoints_from_Gamma, do_svd, &
                                                             memory_info
-      REAL(KIND=dp) :: compression_factor, cutoff_old, eps_pgf_orb, eps_pgf_orb_old, mem_for_iaK, &
-         memory_3c, occ, omega_pot, rc_ang, relative_cutoff_old
+      REAL(KIND=dp) :: compression_factor, cutoff_old, eps_pgf_orb, eps_pgf_orb_old, eps_svd, &
+         mem_for_abK, mem_for_iaK, mem_for_ijK, memory_3c, occ, omega_pot, rc_ang, &
+         relative_cutoff_old
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: e_cutoff_old
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :)        :: my_Lrows, my_Vrows
       TYPE(cp_eri_mme_param), POINTER                    :: eri_param
@@ -282,10 +288,11 @@ CONTAINS
          DIMENSION(:)                                    :: intermed_mat, intermed_mat_gw
       TYPE(mp_cart_type)                                 :: mp_comm_t3c_2
       TYPE(neighbor_list_3c_type)                        :: nl_3c
+      TYPE(pw_c1d_gs_type)                               :: pot_g, rho_g
       TYPE(pw_env_type), POINTER                         :: pw_env_sub
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: pot_g, psi_L, rho_g, rho_r
+      TYPE(pw_r3d_rs_type)                               :: psi_L, rho_r
       TYPE(section_vals_type), POINTER                   :: qs_section
       TYPE(task_list_type), POINTER                      :: task_list_sub
 
@@ -302,6 +309,7 @@ CONTAINS
       eri_method = qs_env%mp2_env%eri_method
       eri_param => qs_env%mp2_env%eri_mme_param
       do_svd = qs_env%mp2_env%do_svd
+      eps_svd = qs_env%mp2_env%eps_svd
       potential_type = qs_env%mp2_env%potential_parameter%potential_type
       ri_metric_type = ri_metric%potential_type
       omega_pot = qs_env%mp2_env%potential_parameter%omega
@@ -326,10 +334,19 @@ CONTAINS
       END IF
 
       IF (do_bse) THEN
-         CPASSERT(my_do_gw)
-         CPASSERT(.NOT. do_im_time)
+         IF (.NOT. my_do_gw) THEN
+            CALL cp_abort(__LOCATION__, "BSE calculations require prior GW calculations.")
+         END IF
+         IF (do_im_time) THEN
+            CALL cp_abort(__LOCATION__, "BSE calculations are not implemented for low-scaling GW.")
+         END IF
          ! GPW integrals have to be implemented later
-         CPASSERT(.NOT. (eri_method == do_eri_gpw))
+         IF (eri_method == do_eri_gpw) THEN
+            CALL cp_abort(__LOCATION__, &
+                          "BSE calculations are not implemented for GPW integrals. "// &
+                          "This is probably caused by invoking a periodic calculation. "// &
+                          "Use PERIODIC NONE for BSE calculations.")
+         END IF
       END IF
 
       ngroup = para_env%num_pe/para_env_sub%num_pe
@@ -353,7 +370,7 @@ CONTAINS
       CALL get_2c_integrals(qs_env, eri_method, eri_param, para_env, para_env_sub, mp2_memory, &
                             my_Lrows, my_Vrows, fm_matrix_PQ, ngroup, color_sub, dimen_RI, dimen_RI_red, &
                             kpoints, my_group_L_size, my_group_L_start, my_group_L_end, &
-                            gd_array, calc_PQ_cond_num .AND. .NOT. do_svd, do_svd, &
+                            gd_array, calc_PQ_cond_num .AND. .NOT. do_svd, do_svd, eps_svd, &
                             qs_env%mp2_env%potential_parameter, ri_metric, &
                             fm_matrix_L_kpoints, fm_matrix_Minv_L_kpoints, fm_matrix_Minv, fm_matrix_Minv_Vtrunc_Minv, &
                             do_im_time, do_kpoints_from_Gamma .OR. do_kpoints_cubic_RPA, qs_env%mp2_env%mp2_gpw%eps_pgf_orb_S, &
@@ -417,6 +434,8 @@ CONTAINS
          END IF
 
          mem_for_iaK = dimen_RI*REAL(SUM(homo*virtual), KIND=dp)*8.0_dp/(1024_dp**2)
+         mem_for_ijK = dimen_RI*REAL(SUM([homo(1)]**2), KIND=dp)*8.0_dp/(1024_dp**2)
+         mem_for_abK = dimen_RI*REAL(SUM([bse_lev_virt]**2), KIND=dp)*8.0_dp/(1024_dp**2)
 
          IF (.NOT. do_im_time) THEN
             WRITE (unit_nr, '(T3,A,T66,F11.2,A4)') 'RI_INFO| Total memory for (ia|K) integrals:', &
@@ -427,6 +446,12 @@ CONTAINS
                WRITE (unit_nr, '(T3,A,T66,F11.2,A4)') 'RI_INFO| Total memory for G0W0-(nm|K) integrals:', &
                   mem_for_iaK, ' MiB'
             END IF
+         END IF
+         IF (do_bse) THEN
+            WRITE (unit_nr, '(T3,A,T66,F11.2,A4)') 'RI_INFO| Total memory for (ij|K) integrals:', &
+               mem_for_ijK, ' MiB'
+            WRITE (unit_nr, '(T3,A,T66,F11.2,A4)') 'RI_INFO| Total memory for (ab|K) integrals:', &
+               mem_for_abK, ' MiB'
          END IF
          CALL m_flush(unit_nr)
       END IF
@@ -465,16 +490,17 @@ CONTAINS
             CALL get_group_dist(gd_B_all, para_env_sub%mepos, my_B_all_start, my_B_all_end, my_B_all_size)
 
             IF (do_bse) THEN
-
                ! virt x virt matrices
-               CALL create_intermediate_matrices(intermed_mat_bse_ab, mo_coeff_v(1)%matrix, virtual(1), virtual(1), &
+               CALL create_intermediate_matrices(intermed_mat_bse_ab, mo_coeff_v_bse(1)%matrix, bse_lev_virt, bse_lev_virt, &
                                                  "bse_ab", blacs_env_sub, para_env_sub)
 
-               CALL create_group_dist(gd_B_virt_bse, para_env_sub%num_pe, virtual(1))
+               CALL create_group_dist(gd_B_virt_bse, para_env_sub%num_pe, bse_lev_virt)
                CALL get_group_dist(gd_B_virt_bse, para_env_sub%mepos, my_B_virt_bse_start, my_B_virt_bse_end, my_B_virt_bse_size)
 
                ! occ x occ matrices
-               CALL create_intermediate_matrices(intermed_mat_bse_ij, mo_coeff_o(1)%matrix, homo(1), homo(1), &
+               ! We do not implement bse_lev_occ here, because the small number of occupied levels
+               ! does not critically influence the memory
+               CALL create_intermediate_matrices(intermed_mat_bse_ij, mo_coeff_o_bse(1)%matrix, homo(1), homo(1), &
                                                  "bse_ij", blacs_env_sub, para_env_sub)
 
                CALL create_group_dist(gd_B_occ_bse, para_env_sub%num_pe, homo(1))
@@ -506,7 +532,7 @@ CONTAINS
             ALLOCATE (BIb_C_bse_ij(my_group_L_size, my_B_occ_bse_size, homo(1)))
             BIb_C_bse_ij = 0.0_dp
 
-            ALLOCATE (BIb_C_bse_ab(my_group_L_size, my_B_virt_bse_size, virtual(1)))
+            ALLOCATE (BIb_C_bse_ab(my_group_L_size, my_B_virt_bse_size, bse_lev_virt))
             BIb_C_bse_ab = 0.0_dp
 
          END IF
@@ -516,6 +542,15 @@ CONTAINS
          IF (eri_method == do_eri_mme .AND. &
              (ri_metric%potential_type == do_potential_coulomb .OR. ri_metric%potential_type == do_potential_long) .OR. &
              eri_method == do_eri_os .AND. ri_metric%potential_type == do_potential_coulomb) THEN
+
+            ! Add a warning for automatically generated RI_AUX basis sets
+            ! Tend to be not sufficiently converged
+            IF (qs_env%mp2_env%ri_aux_auto_generated) THEN
+               CALL cp_warn(__LOCATION__, &
+                            "At least one RI_AUX basis set was not explicitly invoked in &KIND-section. "// &
+                            "Automatically RI-basis sets and ERI_METHOD OS tend to be not converged. "// &
+                            "Consider specifying BASIS_SET RI_AUX explicitly with a sufficiently large basis.")
+            END IF
 
             NULLIFY (mat_munu_local_L)
             ALLOCATE (mat_munu_local_L(my_group_L_size))
@@ -565,7 +600,7 @@ CONTAINS
                DO LLL = 1, my_group_L_size
                   CALL ao_to_mo_and_store_B(para_env_sub, mat_munu_local_L(LLL), intermed_mat_bse_ab, &
                                             BIb_C_bse_ab(LLL, :, :), &
-                                            mo_coeff_v(1)%matrix, mo_coeff_v(1)%matrix, eps_filter, &
+                                            mo_coeff_v_bse(1)%matrix, mo_coeff_v_bse(1)%matrix, eps_filter, &
                                             my_B_all_end, my_B_all_start)
                END DO
                CALL contract_B_L(BIb_C_bse_ab, my_Lrows, gd_B_virt_bse%sizes, gd_array%sizes, qs_env%mp2_env%eri_blksize, &
@@ -595,7 +630,7 @@ CONTAINS
 
             DO i_counter = 1, my_group_L_size
 
-               CALL mp2_eri_3c_integrate_gpw(mo_coeff(1), psi_L, rho_g, atomic_kind_set, qs_kind_set, cell, dft_control, &
+               CALL mp2_eri_3c_integrate_gpw(psi_L, rho_g, atomic_kind_set, qs_kind_set, cell, dft_control, &
                                              particle_set, pw_env_sub, my_Lrows(:, i_counter), poisson_env, rho_r, pot_g, &
                                              ri_metric, mat_munu, qs_env, task_list_sub)
 
@@ -801,6 +836,10 @@ CONTAINS
                                 summation=.TRUE., move_data=.TRUE.)
                   CALL dbt_clear(t_3c_overl_int(i, j))
                   CALL dbt_filter(t_3c_O(i, j), qs_env%mp2_env%ri_rpa_im_time%eps_filter/2)
+                  ! rescaling, probably because of neighbor list
+                  IF (do_kpoints_cubic_RPA .AND. cm == cut_memory_int) THEN
+                     CALL dbt_scale(t_3c_O(i, j), 0.5_dp)
+                  END IF
                END DO
             END DO
             CALL timestop(handle4)
@@ -1180,13 +1219,9 @@ CONTAINS
       CALL timeset(routineN//"_E_Ex_"//TRIM(intermed_mat%descr), handle)
       CALL copy_dbcsr_to_fm(intermed_mat%matrix_ia_jb, intermed_mat%fm_BIb_jb)
 
-      IF (.NOT. (TRIM(intermed_mat%descr) .EQ. "bse_ab")) THEN
-
-         CALL grep_my_integrals(para_env, intermed_mat%fm_BIb_jb, BIb_jb, intermed_mat%max_row_col_local, &
-                                intermed_mat%local_col_row_info, &
-                                my_B_end, my_B_start)
-
-      END IF
+      CALL grep_my_integrals(para_env, intermed_mat%fm_BIb_jb, BIb_jb, intermed_mat%max_row_col_local, &
+                             intermed_mat%local_col_row_info, &
+                             my_B_end, my_B_start)
 
       CALL timestop(handle)
    END SUBROUTINE ao_to_mo_and_store_B

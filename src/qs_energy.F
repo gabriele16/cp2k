@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -18,6 +18,7 @@ MODULE qs_energy
    USE dm_ls_scf,                       ONLY: ls_scf
    USE energy_corrections,              ONLY: energy_correction
    USE excited_states,                  ONLY: excited_state_energy
+   USE input_constants,                 ONLY: smeagol_runtype_emtransport
    USE input_section_types,             ONLY: section_vals_get,&
                                               section_vals_get_subs_vals,&
                                               section_vals_type,&
@@ -31,9 +32,13 @@ MODULE qs_energy
    USE qs_environment_methods,          ONLY: qs_env_rebuild_pw_env
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
+   USE qs_harris_utils,                 ONLY: harris_energy_correction
    USE qs_ks_methods,                   ONLY: qs_ks_update_qs_env
-   USE qs_matrix_w,                     ONLY: qs_energies_compute_matrix_w
+   USE qs_matrix_w,                     ONLY: compute_matrix_w
+   USE qs_nonscf,                       ONLY: nonscf
    USE qs_scf,                          ONLY: scf
+   USE qs_tddfpt2_smearing_methods,     ONLY: deallocate_fermi_params
+   USE scf_control_types,               ONLY: scf_control_type
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -73,6 +78,7 @@ CONTAINS
                                                             my_calc_forces, run_rtp
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(qs_energy_type), POINTER                      :: energy
+      TYPE(scf_control_type), POINTER                    :: scf_control
       TYPE(section_vals_type), POINTER                   :: excited_state_section
 
       CALL timeset(routineN, handle)
@@ -90,7 +96,7 @@ CONTAINS
 
          NULLIFY (dft_control, energy)
          CALL qs_energies_init(qs_env, my_calc_forces)
-         CALL get_qs_env(qs_env=qs_env, dft_control=dft_control, energy=energy)
+         CALL get_qs_env(qs_env=qs_env, dft_control=dft_control, scf_control=scf_control, energy=energy)
 
          ! *** check if only overlap matrix is needed for couplings
          loverlap_deltat = .FALSE.
@@ -104,12 +110,20 @@ CONTAINS
 
          ! *** Perform a SCF run ***
          IF (.NOT. loverlap_deltat) THEN
-            IF (dft_control%qs_control%do_ls_scf) THEN
-               CALL ls_scf(qs_env=qs_env)
+            IF (scf_control%non_selfconsistent .AND. .NOT. scf_control%force_scf_calculation) THEN
+               CALL nonscf(qs_env)
+            ELSE IF (dft_control%qs_control%do_ls_scf) THEN
+               CALL ls_scf(qs_env)
             ELSE IF (dft_control%qs_control%do_almo_scf) THEN
-               CALL almo_entry_scf(qs_env=qs_env, calc_forces=my_calc_forces)
+               CALL almo_entry_scf(qs_env, calc_forces=my_calc_forces)
             ELSE
-               CALL scf(qs_env=qs_env)
+               ! current-induced forces
+               IF (dft_control%smeagol_control%smeagol_enabled .AND. &
+                   dft_control%smeagol_control%run_type == smeagol_runtype_emtransport) THEN
+                  dft_control%smeagol_control%emforces = my_calc_forces
+               END IF
+
+               CALL scf(qs_env)
             END IF
          END IF
 
@@ -122,10 +136,18 @@ CONTAINS
             CALL qs_energies_mp2(qs_env, my_calc_forces)
 
             IF (.NOT. ASSOCIATED(qs_env%mp2_env)) THEN
-               ! if calculate forces, time to compute the w matrix
-               CALL qs_energies_compute_matrix_w(qs_env, my_calc_forces)
+               ! do not overwrite w matrix computed by SMEAGOL (current-induced forces)
+               IF (.NOT. (dft_control%smeagol_control%smeagol_enabled .AND. &
+                          dft_control%smeagol_control%run_type == smeagol_runtype_emtransport)) THEN
+                  ! if calculate forces, time to compute the w matrix
+                  CALL compute_matrix_w(qs_env, my_calc_forces)
+               END IF
             END IF
+         END IF
 
+         ! Check for energy correction
+         IF (qs_env%harris_method) THEN
+            CALL harris_energy_correction(qs_env, my_calc_forces)
          END IF
 
          ! Do active space calculation
@@ -142,6 +164,11 @@ CONTAINS
             CALL excited_state_energy(qs_env, calculate_forces=.FALSE.)
          END IF
 
+         IF (dft_control%tddfpt2_control%do_smearing) THEN
+            IF (.NOT. ASSOCIATED(dft_control%tddfpt2_control%smeared_occup)) &
+               CPABORT("Smearing occupation not associated.")
+            CALL deallocate_fermi_params(dft_control%tddfpt2_control%smeared_occup)
+         END IF
          IF (dft_control%qs_control%lrigpw) THEN
             CALL lri_print_stat(qs_env)
          END IF

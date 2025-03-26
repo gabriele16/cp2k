@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -43,6 +43,7 @@ void grid_create_task_list(
 
   if (*task_list_out == NULL) {
     task_list = malloc(sizeof(grid_task_list));
+    assert(task_list != NULL);
     memset(task_list, 0, sizeof(grid_task_list));
 
     // Resolve AUTO to a concrete backend.
@@ -68,6 +69,7 @@ void grid_create_task_list(
   task_list->nlevels = nlevels;
   size_t size = nlevels * 3 * sizeof(int);
   task_list->npts_local = malloc(size);
+  assert(task_list->npts_local != NULL);
   memcpy(task_list->npts_local, npts_local, size);
 
   // Always create reference backend because it might be needed for validation.

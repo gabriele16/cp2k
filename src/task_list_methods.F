@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -25,14 +25,14 @@ MODULE task_list_methods
                          cube_info_type, &
                          return_cube, &
                          return_cube_nonortho
-   USE dbcsr_api, ONLY: dbcsr_convert_sizes_to_offsets, &
-                        dbcsr_finalize, &
-                        dbcsr_get_block_p, &
-                        dbcsr_get_info, &
-                        dbcsr_p_type, &
-                        dbcsr_put_block, &
-                        dbcsr_type, &
-                        dbcsr_work_create
+   USE cp_dbcsr_api, ONLY: dbcsr_convert_sizes_to_offsets, &
+                           dbcsr_finalize, &
+                           dbcsr_get_block_p, &
+                           dbcsr_get_info, &
+                           dbcsr_p_type, &
+                           dbcsr_put_block, &
+                           dbcsr_type, &
+                           dbcsr_work_create
    USE gaussian_gridlevels, ONLY: gaussian_gridlevel, &
                                   gridlevel_info_type
    USE kinds, ONLY: default_string_length, &
@@ -2205,10 +2205,11 @@ CONTAINS
                                             send_pair_disps, send_sizes
       INTEGER, DIMENSION(:), POINTER                     :: col_blk_size, row_blk_size
       LOGICAL                                            :: found
-      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: recv_buf_r, send_buf_r
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:), TARGET   :: recv_buf_r, send_buf_r
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: h_block, p_block
       TYPE(dbcsr_type), POINTER                          :: hmat, pmat
       TYPE(realspace_grid_desc_type), POINTER            :: desc
+      REAL(kind=dp), DIMENSION(:), POINTER                            :: vector
 
 !$    INTEGER(kind=omp_lock_kind), ALLOCATABLE, DIMENSION(:) :: locks
 
@@ -2294,7 +2295,7 @@ CONTAINS
 !$OMP          SHARED(atom_pair_recv,recv_buf_r,scatter,recv_pair_disps), &
 !$OMP          SHARED(recv_sizes,recv_disps,recv_pair_count,locks), &
 !$OMP          PRIVATE(i,img,arow,acol,nrow,ncol,p_block,found,j,k,l),&
-!$OMP          PRIVATE(nthread,h_block,nthread_left,hmat,pmat)
+!$OMP          PRIVATE(nthread,h_block,nthread_left,hmat,pmat,vector)
 
       nthread = 1
 !$    nthread = omp_get_num_threads()
@@ -2408,8 +2409,8 @@ CONTAINS
             END IF
 
             IF (scatter .AND. .NOT. ASSOCIATED(p_block)) THEN
-               CALL dbcsr_put_block(pmat, arow, acol, &
-                                    block=recv_buf_r(recv_disps(l) + recv_sizes(l) + 1:recv_disps(l) + recv_sizes(l) + nrow*ncol))
+               vector => recv_buf_r(recv_disps(l) + recv_sizes(l) + 1:recv_disps(l) + recv_sizes(l) + nrow*ncol)
+               CALL dbcsr_put_block(pmat, arow, acol, block=RESHAPE(vector, [nrow, ncol]))
             END IF
             IF (.NOT. scatter) THEN
 !$             call omp_set_lock(locks((arow - 1)*nthread*10/nblkrows_total + 1))

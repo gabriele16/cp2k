@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -16,13 +16,13 @@ MODULE rt_hfx_utils
    USE admm_types,                      ONLY: get_admm_env,&
                                               set_admm_env
    USE cp_control_types,                ONLY: dft_control_type
-   USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
-   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
-                                              dbcsr_deallocate_matrix_set
-   USE dbcsr_api,                       ONLY: dbcsr_create,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_create,&
                                               dbcsr_p_type,&
                                               dbcsr_set,&
                                               dbcsr_type_antisymmetric
+   USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
+   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
+                                              dbcsr_deallocate_matrix_set
    USE kinds,                           ONLY: dp
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -104,7 +104,7 @@ CONTAINS
       DO i = 1, nspins
          ALLOCATE (matrix_p(i)%matrix)
          CALL dbcsr_create(matrix=matrix_p(i)%matrix, template=matrix_s(1)%matrix, &
-                           name="Imaginary density matrix", matrix_type=dbcsr_type_antisymmetric, nze=0)
+                           name="Imaginary density matrix", matrix_type=dbcsr_type_antisymmetric)
          CALL cp_dbcsr_alloc_block_from_nbl(matrix_p(i)%matrix, sab_orb)
          CALL dbcsr_set(matrix_p(i)%matrix, 0.0_dp)
       END DO
@@ -117,7 +117,7 @@ CONTAINS
       DO i = 1, nspins
          ALLOCATE (matrix_ks(i)%matrix)
          CALL dbcsr_create(matrix=matrix_ks(i)%matrix, template=matrix_s(1)%matrix, &
-                           name="Imaginary Kohn-Sham matrix", matrix_type=dbcsr_type_antisymmetric, nze=0)
+                           name="Imaginary Kohn-Sham matrix", matrix_type=dbcsr_type_antisymmetric)
          CALL cp_dbcsr_alloc_block_from_nbl(matrix_ks(i)%matrix, sab_orb)
          CALL dbcsr_set(matrix_ks(i)%matrix, 0.0_dp)
       END DO

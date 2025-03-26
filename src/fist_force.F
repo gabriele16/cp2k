@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -79,16 +79,16 @@ MODULE fist_force
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'fist_force'
 
    TYPE debug_variables_type
-      REAL(KIND=dp)                           :: pot_manybody, pot_bend, pot_torsion
-      REAL(KIND=dp)                           :: pot_nonbond, pot_g, pot_bond
-      REAL(KIND=dp)                           :: pot_imptors, pot_urey_bradley
-      REAL(KIND=dp)                           :: pot_opbend
-      REAL(KIND=dp), DIMENSION(:, :), POINTER :: f_nonbond, f_g, f_bond, f_bend, &
-                                                 f_torsion, f_imptors, f_ub, &
-                                                 f_opbend
-      REAL(KIND=dp), DIMENSION(3, 3)          :: pv_nonbond, pv_g, pv_bond, pv_ub, &
-                                                 pv_bend, pv_torsion, pv_imptors, &
-                                                 pv_opbend
+      REAL(KIND=dp)                           :: pot_manybody = 0.0_dp, pot_bend = 0.0_dp, pot_torsion = 0.0_dp
+      REAL(KIND=dp)                           :: pot_nonbond = 0.0_dp, pot_g = 0.0_dp, pot_bond = 0.0_dp
+      REAL(KIND=dp)                           :: pot_imptors = 0.0_dp, pot_urey_bradley = 0.0_dp
+      REAL(KIND=dp)                           :: pot_opbend = 0.0_dp
+      REAL(KIND=dp), DIMENSION(:, :), POINTER :: f_nonbond => NULL(), f_g => NULL(), f_bond => NULL(), f_bend => NULL(), &
+                                                 f_torsion => NULL(), f_imptors => NULL(), f_ub => NULL(), &
+                                                 f_opbend => NULL()
+      REAL(KIND=dp), DIMENSION(3, 3)          :: pv_nonbond = 0.0_dp, pv_g = 0.0_dp, pv_bond = 0.0_dp, pv_ub = 0.0_dp, &
+                                                 pv_bend = 0.0_dp, pv_torsion = 0.0_dp, pv_imptors = 0.0_dp, &
+                                                 pv_opbend = 0.0_dp
    END TYPE debug_variables_type
 
 CONTAINS
@@ -130,7 +130,6 @@ CONTAINS
                                                             pv_g, pv_imptors, pv_nonbond, &
                                                             pv_opbend, pv_torsion, pv_urey_bradley
       REAL(KIND=dp), DIMENSION(:), POINTER               :: e_coulomb
-      REAL(KIND=dp), DIMENSION(:, :, :), POINTER         :: pv_coulomb
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(atomic_kind_type), POINTER                    :: atomic_kind
       TYPE(atprop_type), POINTER                         :: atprop_env
@@ -174,7 +173,7 @@ CONTAINS
                fist_nonbond_env, mm_section, local_molecules, local_particles, &
                molecule_kind_set, molecule_set, particle_set, print_section, &
                shell, shell_particle_set, core_particle_set, thermo, multipoles, &
-               e_coulomb, pv_coulomb)
+               e_coulomb)
 
       mm_section => section_vals_get_subs_vals(force_env_section, "MM")
       iw = cp_print_key_unit_nr(logger, mm_section, "PRINT%DERIVATIVES", &
@@ -290,7 +289,7 @@ CONTAINS
 
          ! Compute embedding function and manybody energy
          CALL energy_manybody(fist_nonbond_env, atomic_kind_set, local_particles, particle_set, &
-                              cell, pot_manybody, para_env, mm_section)
+                              cell, pot_manybody, para_env, mm_section, use_virial)
 
          ! Nonbond contribution + Manybody Forces
          IF (shell_present) THEN
@@ -396,13 +395,9 @@ CONTAINS
                      IF (atprop_env%energy) THEN
                         ALLOCATE (e_coulomb(fg_coulomb_size))
                      END IF
-                     IF (atprop_env%stress) THEN
-                        ALLOCATE (pv_coulomb(3, 3, fg_coulomb_size))
-                     END IF
                      CALL ewald_evaluate(ewald_env, ewald_pw, cell, atomic_kind_set, particle_set, &
                                          local_particles, fg_coulomb, vg_coulomb, pv_g, use_virial=use_virial, &
-                                         charges=fist_nonbond_env%charges, e_coulomb=e_coulomb, &
-                                         pv_coulomb=pv_coulomb)
+                                         charges=fist_nonbond_env%charges, e_coulomb=e_coulomb)
                   END IF
                END IF
             CASE (do_ewald_pme)
@@ -659,16 +654,10 @@ CONTAINS
                IF (atprop_env%energy) THEN
                   atprop_env%atener(ii) = atprop_env%atener(ii) + e_coulomb(node)
                END IF
-               IF (atprop_env%stress) THEN
-                  atprop_env%atstress(:, :, ii) = atprop_env%atstress(:, :, ii) + pv_coulomb(:, :, node)
-               END IF
             END DO
          END DO
          IF (atprop_env%energy) THEN
             DEALLOCATE (e_coulomb)
-         END IF
-         IF (atprop_env%stress) THEN
-            DEALLOCATE (pv_coulomb)
          END IF
       END IF
 

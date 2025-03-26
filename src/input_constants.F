@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -53,7 +53,8 @@ MODULE input_constants
                                                do_mixed = 6, &
                                                do_embed = 7, &
                                                do_sirius = 8, &
-                                               do_nnp = 9
+                                               do_nnp = 9, &
+                                               do_ipi = 10
 
    ! QMMM
    REAL(KIND=dp), PARAMETER, PUBLIC         :: RADIUS_QMMM_DEFAULT = 0.80_dp, & ! Angstrom
@@ -124,7 +125,6 @@ MODULE input_constants
                                                mol_dyn_run = 4, &
                                                geo_opt_run = 5, &
                                                mon_car_run = 6, &
-                                               electronic_spectra_run = 7, &
                                                debug_run = 8, &
                                                bsse_run = 9, &
                                                linear_response_run = 10, &
@@ -207,7 +207,8 @@ MODULE input_constants
                                                mopac_guess = 7, &
                                                sparse_guess = 8, &
                                                almo_scf_guess = 9, &
-                                               molecular_guess = 10
+                                               molecular_guess = 10, &
+                                               eht_guess = 11
 
    ! Projection formulas for the maximum overlap method
    INTEGER, PARAMETER, PUBLIC               :: momproj_norm = 0, &
@@ -594,7 +595,8 @@ MODULE input_constants
                                                xc_vdw_fun_nonloc = 102
    INTEGER, PARAMETER, PUBLIC               :: vdw_pairpot_dftd2 = 1, &
                                                vdw_pairpot_dftd3 = 2, &
-                                               vdw_pairpot_dftd3bj = 3
+                                               vdw_pairpot_dftd3bj = 3, &
+                                               vdw_pairpot_dftd4 = 4
    INTEGER, PARAMETER, PUBLIC               :: vdw_nl_DRSLL = 1, &
                                                vdw_nl_LMKLL = 2, &
                                                vdw_nl_RVV10 = 3
@@ -621,6 +623,10 @@ MODULE input_constants
 
    INTEGER, PARAMETER, PUBLIC               :: xc_pot_none = 1000, &
                                                xc_pot_saop = 1001
+
+   INTEGER, PARAMETER, PUBLIC               :: xtb_vdw_type_none = 0, &
+                                               xtb_vdw_type_d3 = 1, &
+                                               xtb_vdw_type_d4 = 2
 
    ! Hirshfeld partitioning
    INTEGER, PARAMETER, PUBLIC               :: shape_function_gaussian = 1, &
@@ -874,6 +880,13 @@ MODULE input_constants
    ! Define scaling of the exchange correction
    INTEGER, PARAMETER, PUBLIC               :: do_admm_exch_scaling_none = 0, &
                                                do_admm_exch_scaling_merlot = 1
+   ! ADMM TYPES
+   INTEGER, PARAMETER, PUBLIC               :: no_admm_type = 0, &
+                                               admm1_type = 1, &
+                                               admm2_type = 2, &
+                                               admms_type = 3, &
+                                               admmp_type = 4, &
+                                               admmq_type = 5
 
    ! Define DFT+U method identifier codes
    INTEGER, PARAMETER, PUBLIC               :: plus_u_lowdin = 1, &
@@ -911,7 +924,8 @@ MODULE input_constants
    INTEGER, PARAMETER, PUBLIC               :: do_taylor = 1, &
                                                do_pade = 2, &
                                                do_arnoldi = 3, &
-                                               do_bch = 4
+                                               do_bch = 4, &
+                                               do_exact = 5
 
    INTEGER, PARAMETER, PUBLIC               :: do_etrs = 1, &
                                                do_cn = 2, &
@@ -926,6 +940,13 @@ MODULE input_constants
                                                ramp_env = 3, &
                                                custom_env = 4
 
+   INTEGER, PARAMETER, PUBLIC               :: rtp_method_tddft = 1, &
+                                               rtp_method_bse = 2
+
+   INTEGER, PARAMETER, PUBLIC               :: rtp_bse_ham_ks = 1, &
+                                               rtp_bse_ham_g0w0 = 2
+
+   ! type of reference for RTP%PRINT%PROJECTION_MO
    INTEGER, PARAMETER, PUBLIC               :: proj_mo_ref_scf = 1, &
                                                proj_mo_ref_xas_tdp = 2
 
@@ -1045,6 +1066,10 @@ MODULE input_constants
                                                wfc_mm_style_gemm = 11, &
                                                wfc_mm_style_syrk = 12
 
+   ! RPA exchange corrections
+   INTEGER, PARAMETER, PUBLIC               :: rpa_exchange_none = 0, &
+                                               rpa_exchange_axk = 1, rpa_exchange_sosex = 2
+
    ! solvers of the z-vector equations
    INTEGER, PARAMETER, PUBLIC               :: z_solver_pople = 1, &
                                                z_solver_cg = 2, &
@@ -1068,7 +1093,16 @@ MODULE input_constants
                                                gw_gf_gamma = 15, &
                                                soc_none = 16, &
                                                soc_lda = 17, &
-                                               soc_pbe = 18
+                                               soc_pbe = 18, &
+                                               int_ldos_x = 19, &
+                                               int_ldos_y = 20, &
+                                               int_ldos_z = 21, &
+                                               int_ldos_none = 22, &
+                                               small_cell_full_kp = 31, &
+                                               large_cell_Gamma = 32, &
+                                               G0W0 = 35, &
+                                               evGW0 = 36, &
+                                               evGW = 37
 
    ! periodic RESP parameters
    INTEGER, PARAMETER, PUBLIC               :: do_resp_x_dir = 0, &
@@ -1122,9 +1156,15 @@ MODULE input_constants
 
    INTEGER, PARAMETER, PUBLIC               :: kg_cholesky = 3001
 
+   ! Harris method
+   INTEGER, PARAMETER, PUBLIC               :: hfun_harris = 1
+   INTEGER, PARAMETER, PUBLIC               :: hden_atomic = 10
+   INTEGER, PARAMETER, PUBLIC               :: horb_default = 100
+
    ! non-scf energy corrections
    INTEGER, PARAMETER, PUBLIC               :: ec_functional_harris = 2001, &
-                                               ec_functional_dc = 2002
+                                               ec_functional_dc = 2002, &
+                                               ec_functional_ext = 2003
 
    ! Energy correction solver
    INTEGER, PARAMETER, PUBLIC               :: ec_diagonalization = 1001, &
@@ -1208,7 +1248,8 @@ MODULE input_constants
                                                eri_operator_yukawa = 2, &
                                                eri_operator_erf = 3, &
                                                eri_operator_erfc = 4, &
-                                               eri_operator_gaussian = 5
+                                               eri_operator_gaussian = 5, &
+                                               eri_operator_trunc = 6
 
    INTEGER, PARAMETER, PUBLIC               :: do_eri_gpw = 0, &
                                                do_eri_mme = 1, &
@@ -1256,5 +1297,58 @@ MODULE input_constants
                                                scan_xz = 13, &
                                                scan_yz = 23, &
                                                scan_xyz = 123
+
+   ! DFT%PRINT%WFN_MIX orgine type
+   INTEGER, PARAMETER, PUBLIC               :: wfn_mix_orig_occ = 1, &
+                                               wfn_mix_orig_virtual = 2, &
+                                               wfn_mix_orig_external = 3
+
+   ! DFT%PRINT%E_DENSITY_CUBE density type
+   INTEGER, PARAMETER, PUBLIC               :: e_dens_total_hard_approx = 1, &
+                                               e_dens_total_density = 2, &
+                                               e_dens_soft_density = 3
+   ! BSE spin configuration
+   INTEGER, PARAMETER, PUBLIC               :: bse_singlet = 0, &
+                                               bse_triplet = 1
+
+   ! BSE method of diagonalization (full diagonalization or iteratively)
+   INTEGER, PARAMETER, PUBLIC               :: bse_fulldiag = 0, &
+                                               bse_iterdiag = 1
+
+   ! BSE level of approximation to the ABBA matrix (i.e. with/without TDA)
+   INTEGER, PARAMETER, PUBLIC               :: bse_tda = 0, &
+                                               bse_abba = 1, &
+                                               bse_both = 2
+
+   ! BSE level of approximation to the screening
+   INTEGER, PARAMETER, PUBLIC               :: bse_screening_w0 = 0, &
+                                               bse_screening_tdhf = 1, &
+                                               bse_screening_rpa = 2, &
+                                               bse_screening_alpha = 3
+
+   ! BSE iterative abortion condition
+   INTEGER, PARAMETER, PUBLIC               :: bse_iter_en_cond = 0, &
+                                               bse_iter_res_cond = 1, &
+                                               bse_iter_both_cond = 2
+   ! SIGMA_functional parameters selection
+   INTEGER, PARAMETER, PUBLIC               :: sigma_none = 0, &
+                                               sigma_PBE_S2 = 1, &
+                                               sigma_PBE0_S1 = 2, &
+                                               sigma_PBE0_S2 = 3, &
+                                               sigma_PBE_S1 = 4
+
+   ! SMEAGOL interface
+   INTEGER, PARAMETER, PUBLIC               :: smeagol_bulklead_leftright = 1, &
+                                               smeagol_bulklead_left = 2, &
+                                               smeagol_bulklead_right = 3
+
+   INTEGER, PARAMETER, PUBLIC               :: smeagol_gridmethod_traditional = 0, &
+                                               smeagol_gridmethod_adaptive = 1
+
+   INTEGER, PARAMETER, PUBLIC               :: smeagol_integraltype_gauss_legendre = 1, &
+                                               smeagol_integraltype_gauss_chebyshev = 2
+
+   INTEGER, PARAMETER, PUBLIC               :: smeagol_runtype_bulktransport = 0, &
+                                               smeagol_runtype_emtransport = 1
 
 END MODULE input_constants

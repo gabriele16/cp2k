@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -22,8 +22,10 @@ MODULE input_cp2k_kpoints
                                               section_type
    USE input_val_types,                 ONLY: char_t,&
                                               real_t
-   USE kinds,                           ONLY: dp
-   USE string_utilities,                ONLY: s2a
+   USE kinds,                           ONLY: default_path_length,&
+                                              dp
+   USE string_utilities,                ONLY: newline,&
+                                              s2a
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -69,11 +71,16 @@ CONTAINS
 
       NULLIFY (keyword)
       CALL keyword_create(keyword, __LOCATION__, name="SCHEME", &
-                          description="Kpoint scheme to be used.<br>"// &
-                          "Available options: NONE, GAMMA, MONKHORST-PACK, MACDONALD, and GENERAL.<br>"// &
-                          "For MONKHORST-PACK and MACDONALD the number of k points in all "// &
+                          description="Kpoint scheme to be used. Available options are:"//newline// &
+                          "- `NONE`"//newline// &
+                          "- `GAMMA`"//newline// &
+                          "- `MONKHORST-PACK`"//newline// &
+                          "- `MACDONALD`"//newline// &
+                          "- `GENERAL`"//newline// &
+                          newline// &
+                          "For `MONKHORST-PACK` and `MACDONALD` the number of k points in all "// &
                           "3 dimensions has to be supplied along with the keyword. "// &
-                          "E.g. <pre>MONKHORST-PACK 12 12 8.</pre>", &
+                          "E.g. `MONKHORST-PACK 12 12 8`", &
                           usage="SCHEME {KPMETHOD} {integer} {integer} ..", &
                           citations=(/Monkhorst1976, MacDonald1978/), &
                           n_var=-1, type_of_var=char_t)
@@ -126,7 +133,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="PARALLEL_GROUP_SIZE", &
-                          description="Number of processors to be used for a single kpoint. "// &
+                          description="Number of processors to be used for a single kpoint."// &
                           " This number must divide the total number of processes."// &
                           " The number of groups must divide the total number of kpoints."// &
                           " Value=-1 (smallest possible number of processes per group, satisfying the constraints)."// &
@@ -153,15 +160,24 @@ CONTAINS
 ! **************************************************************************************************
 !> \brief ...
 !> \param section ...
-!> \author JGH (moved to a new routine by Jan Wilhelm, 11.2021)
+!> \param section_name ...
+!> \author JGH
 ! **************************************************************************************************
-   SUBROUTINE create_kpoint_set_section(section)
+   SUBROUTINE create_kpoint_set_section(section, section_name)
       TYPE(section_type), POINTER                        :: section
+      CHARACTER(LEN=*), OPTIONAL                         :: section_name
 
+      CHARACTER(len=default_path_length)                 :: my_section_name
       TYPE(keyword_type), POINTER                        :: keyword
 
+      IF (PRESENT(section_name)) THEN
+         my_section_name = section_name
+      ELSE
+         my_section_name = "KPOINT_SET"
+      END IF
+
       CPASSERT(.NOT. ASSOCIATED(section))
-      CALL section_create(section, __LOCATION__, name="KPOINT_SET", &
+      CALL section_create(section, __LOCATION__, name=my_section_name, &
                           description="Specifies a k-point line to be calculated.", &
                           n_keywords=0, n_subsections=0, repeats=.TRUE.)
       ! keywords

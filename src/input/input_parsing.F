@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -111,6 +111,13 @@ CONTAINS
                        " should not repeat "//TRIM(parser_location(parser)))
       CALL section_vals_add_values(section_vals)
       irs = SIZE(section_vals%values, 2)
+
+      IF (ALLOCATED(section%deprecation_notice)) THEN
+         CALL cp_warn(__LOCATION__, &
+                      "The specified section '"//TRIM(section%name)// &
+                      "' is deprecated and may be removed in a future version: "// &
+                      section%deprecation_notice)
+      END IF
 
       IF (ASSOCIATED(section%keywords(-1)%keyword)) THEN ! reads section params
          keyword => section%keywords(-1)%keyword

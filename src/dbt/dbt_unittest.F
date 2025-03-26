@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -10,7 +10,7 @@
 !> \author Patrick Seewald
 ! **************************************************************************************************
 PROGRAM dbt_unittest
-   USE dbcsr_api,                       ONLY: dbcsr_finalize_lib,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_finalize_lib,&
                                               dbcsr_init_lib
    USE dbm_api,                         ONLY: dbm_library_finalize,&
                                               dbm_library_init,&

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -14,10 +14,8 @@
 MODULE dielectric_types
 
    USE kinds,                           ONLY: dp
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_r3d_rs_type
 #include "../base/base_uses.f90"
 
    IMPLICIT NONE
@@ -63,9 +61,9 @@ MODULE dielectric_types
 
    TYPE dielectric_type
       TYPE(dielectric_parameters)       :: params = dielectric_parameters()
-      TYPE(pw_type), POINTER            :: eps => NULL()
-      TYPE(pw_type), POINTER            :: deps_drho => NULL()
-      TYPE(pw_type), DIMENSION(3)     :: dln_eps = pw_type()
+      TYPE(pw_r3d_rs_type), POINTER            :: eps => NULL()
+      TYPE(pw_r3d_rs_type), POINTER            :: deps_drho => NULL()
+      TYPE(pw_r3d_rs_type), DIMENSION(3)     :: dln_eps = pw_r3d_rs_type()
    END TYPE dielectric_type
 
    PUBLIC :: dielectric_type, dielectric_parameters
@@ -95,18 +93,18 @@ CONTAINS
          can_give_back = PRESENT(pw_pool)
          IF (can_give_back) can_give_back = ASSOCIATED(pw_pool)
          IF (can_give_back) THEN
-            CALL pw_pool_give_back_pw(pw_pool, dielectric%eps)
-            CALL pw_pool_give_back_pw(pw_pool, dielectric%deps_drho)
+            CALL pw_pool%give_back_pw(dielectric%eps)
+            CALL pw_pool%give_back_pw(dielectric%deps_drho)
             DEALLOCATE (dielectric%eps, dielectric%deps_drho)
             DO i = 1, 3
-               CALL pw_pool_give_back_pw(pw_pool, dielectric%dln_eps(i))
+               CALL pw_pool%give_back_pw(dielectric%dln_eps(i))
             END DO
          ELSE
-            CALL pw_release(dielectric%eps)
-            CALL pw_release(dielectric%deps_drho)
+            CALL dielectric%eps%release()
+            CALL dielectric%deps_drho%release()
             DEALLOCATE (dielectric%eps, dielectric%deps_drho)
             DO i = 1, 3
-               CALL pw_release(dielectric%dln_eps(i))
+               CALL dielectric%dln_eps(i)%release()
             END DO
          END IF
          CALL dielectric_parameters_dealloc(dielectric%params)

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -62,7 +62,7 @@ MODULE cp_output_handling
 
    LOGICAL, PRIVATE, PARAMETER :: debug_this_module = .TRUE.
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'cp_output_handling'
-   PUBLIC :: cp_print_key_should_output, cp_iterate, cp_add_iter_level, cp_rm_iter_level
+   PUBLIC :: cp_print_key_should_output, cp_iterate, cp_get_iter_level_by_name, cp_get_iter_nr, cp_add_iter_level, cp_rm_iter_level
    PUBLIC :: cp_iter_string, cp_print_key_section_create
    PUBLIC :: cp_print_key_unit_nr, cp_print_key_finished_output
    PUBLIC :: cp_print_key_generate_filename, cp_printkey_is_on
@@ -219,7 +219,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL section_create(subsection, __LOCATION__, name="EACH", &
-                          description="This section specifies how often this property is printed."// &
+                          description="This section specifies how often this property is printed. "// &
                           "Each keyword inside this section is mapping to a specific iteration level and "// &
                           "the value of each of these keywords is matched with the iteration level during "// &
                           "the calculation. How to handle the last iteration is treated "// &
@@ -601,6 +601,56 @@ CONTAINS
    END SUBROUTINE cp_iterate
 
 ! **************************************************************************************************
+!> \brief Return the index of an iteration level by its name.
+!> \param iteration_info the iteration info to query
+!> \param level_name     level name to query.
+!> \return iteration level index or 0 if there is no such level
+!> \author Sergey Chulkov
+! **************************************************************************************************
+   FUNCTION cp_get_iter_level_by_name(iteration_info, level_name) RESULT(rlevel)
+      TYPE(cp_iteration_info_type), INTENT(IN), POINTER  :: iteration_info
+      CHARACTER(LEN=*), INTENT(IN)                       :: level_name
+      INTEGER                                            :: rlevel
+
+      CPASSERT(ASSOCIATED(iteration_info))
+      CPASSERT(iteration_info%ref_count > 0)
+      DO rlevel = iteration_info%n_rlevel, 1, -1
+         IF (iteration_info%level_name(rlevel) == level_name) EXIT
+      END DO
+
+   END FUNCTION cp_get_iter_level_by_name
+
+! **************************************************************************************************
+!> \brief Return the current iteration number at a given level.
+!> \param iteration_info the iteration info to query
+!> \param rlevel         index of the iteration level. Use the level on top of the stack,
+!>                       if it is not given
+!> \param iter_nr        iteration number [out]
+!> \param last_iter      last iteration flag [out]
+!> \author Sergey Chulkov
+! **************************************************************************************************
+   SUBROUTINE cp_get_iter_nr(iteration_info, rlevel, iter_nr, last_iter)
+      TYPE(cp_iteration_info_type), INTENT(IN), POINTER  :: iteration_info
+      INTEGER, INTENT(IN), OPTIONAL                      :: rlevel
+      INTEGER, INTENT(OUT), OPTIONAL                     :: iter_nr
+      LOGICAL, INTENT(OUT), OPTIONAL                     :: last_iter
+
+      INTEGER                                            :: ilevel
+
+      CPASSERT(ASSOCIATED(iteration_info))
+      CPASSERT(iteration_info%ref_count > 0)
+      IF (PRESENT(rlevel)) THEN
+         CPASSERT(rlevel > 0 .AND. rlevel <= iteration_info%n_rlevel)
+         ilevel = rlevel
+      ELSE
+         ilevel = iteration_info%n_rlevel
+      END IF
+
+      IF (PRESENT(iter_nr)) iter_nr = iteration_info%iteration(ilevel)
+      IF (PRESENT(last_iter)) last_iter = iteration_info%last_iter(ilevel)
+   END SUBROUTINE cp_get_iter_nr
+
+! **************************************************************************************************
 !> \brief Adds an iteration level
 !> \param iteration_info the iteration info to which an iteration level has
 !>        to be added
@@ -637,7 +687,7 @@ CONTAINS
          IF (PRESENT(n_rlevel_new)) n_rlevel_new = iteration_info%n_rlevel
       ELSE
          CALL cp_abort(__LOCATION__, &
-                       "Trying to create an iteration level ("//TRIM(level_name)//") not defined."// &
+                       "Trying to create an iteration level ("//TRIM(level_name)//") not defined. "// &
                        "Please update the module: cp_iter_types.")
       END IF
 

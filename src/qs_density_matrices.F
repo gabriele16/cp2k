@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -13,6 +13,12 @@
 ! **************************************************************************************************
 MODULE qs_density_matrices
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
+                                              dbcsr_multiply,&
+                                              dbcsr_release,&
+                                              dbcsr_set,&
+                                              dbcsr_type
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_scale_by_vector
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr,&
                                               cp_dbcsr_plus_fm_fm_t,&
@@ -21,7 +27,7 @@ MODULE qs_density_matrices
                                               cp_fm_scale_and_add,&
                                               cp_fm_symm,&
                                               cp_fm_transpose,&
-                                              cp_fm_upper_to_full
+                                              cp_fm_uplo_to_full
    USE cp_fm_struct,                    ONLY: cp_fm_struct_create,&
                                               cp_fm_struct_release,&
                                               cp_fm_struct_type
@@ -33,12 +39,6 @@ MODULE qs_density_matrices
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
-                                              dbcsr_multiply,&
-                                              dbcsr_release,&
-                                              dbcsr_scale_by_vector,&
-                                              dbcsr_set,&
-                                              dbcsr_type
    USE kinds,                           ONLY: dp
    USE message_passing,                 ONLY: mp_para_env_type
    USE parallel_gemm_api,               ONLY: parallel_gemm
@@ -215,8 +215,7 @@ CONTAINS
       LOGICAL, PARAMETER                                 :: check_gradient = .FALSE., &
                                                             do_symm = .FALSE.
 
-      INTEGER                                            :: handle, iounit, ncol_block, ncol_global, &
-                                                            nrow_block, nrow_global
+      INTEGER                                            :: handle, iounit, ncol_global, nrow_global
       REAL(KIND=dp), DIMENSION(:), POINTER               :: occupation_numbers, scaling_factor
       TYPE(cp_fm_struct_type), POINTER                   :: fm_struct_tmp
       TYPE(cp_fm_type)                                   :: gradient, h_block, h_block_t, &
@@ -228,9 +227,7 @@ CONTAINS
 
       CALL cp_fm_get_info(matrix=mo_set%mo_coeff, &
                           ncol_global=ncol_global, &
-                          nrow_global=nrow_global, &
-                          nrow_block=nrow_block, &
-                          ncol_block=ncol_block)
+                          nrow_global=nrow_global)
 
       CALL cp_fm_create(weighted_vectors, mo_set%mo_coeff%matrix_struct, "weighted_vectors")
       CALL cp_fm_struct_create(fm_struct_tmp, nrow_global=ncol_global, ncol_global=ncol_global, &
@@ -335,7 +332,7 @@ CONTAINS
       CALL cp_fm_struct_release(fm_struct)
       CALL copy_dbcsr_to_fm(matrix_ks, ks)
       CALL copy_dbcsr_to_fm(matrix_p, p)
-      CALL cp_fm_upper_to_full(p, work)
+      CALL cp_fm_uplo_to_full(p, work)
       CALL cp_fm_symm("L", "U", nao, nao, 1.0_dp, ks, p, 0.0_dp, work)
       CALL parallel_gemm("T", "N", nao, nao, nao, 1.0_dp, p, work, 0.0_dp, ks)
       CALL dbcsr_set(matrix_w, 0.0_dp)

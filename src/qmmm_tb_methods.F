@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -17,12 +17,12 @@ MODULE qmmm_tb_methods
    USE cp_control_types,                ONLY: dft_control_type,&
                                               dftb_control_type,&
                                               xtb_control_type
-   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
-                                              dbcsr_deallocate_matrix_set
-   USE dbcsr_api,                       ONLY: &
+   USE cp_dbcsr_api,                    ONLY: &
         dbcsr_add, dbcsr_copy, dbcsr_get_block_p, dbcsr_iterator_blocks_left, &
         dbcsr_iterator_next_block, dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, &
         dbcsr_p_type, dbcsr_set
+   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
+                                              dbcsr_deallocate_matrix_set
    USE ewald_environment_types,         ONLY: ewald_env_create,&
                                               ewald_env_get,&
                                               ewald_env_release,&
@@ -108,8 +108,8 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'build_tb_qmmm_matrix'
 
-      INTEGER                                            :: blk, handle, i, iatom, ikind, jatom, &
-                                                            natom, natorb, nkind
+      INTEGER                                            :: handle, i, iatom, ikind, jatom, natom, &
+                                                            natorb, nkind
       INTEGER, DIMENSION(:), POINTER                     :: list
       LOGICAL                                            :: defined, do_dftb, do_xtb, found
       REAL(KIND=dp)                                      :: pc_ener, zeff
@@ -214,7 +214,7 @@ CONTAINS
 
       CALL dbcsr_iterator_start(iter, matrix_s(1)%matrix)
       DO WHILE (dbcsr_iterator_blocks_left(iter))
-         CALL dbcsr_iterator_next_block(iter, iatom, jatom, sblock, blk)
+         CALL dbcsr_iterator_next_block(iter, iatom, jatom, sblock)
          NULLIFY (hblock)
          CALL dbcsr_get_block_p(matrix=matrix_h(1)%matrix, &
                                 row=iatom, col=jatom, block=hblock, found=found)
@@ -316,9 +316,9 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'build_tb_qmmm_matrix_pc'
 
-      INTEGER                                            :: blk, do_ipol, ewald_type, handle, i, &
-                                                            iatom, ikind, imm, imp, indmm, ipot, &
-                                                            jatom, natom, natorb, nkind, nmm
+      INTEGER                                            :: do_ipol, ewald_type, handle, i, iatom, &
+                                                            ikind, imm, imp, indmm, ipot, jatom, &
+                                                            natom, natorb, nkind, nmm
       INTEGER, DIMENSION(:), POINTER                     :: list
       LOGICAL                                            :: defined, do_dftb, do_multipoles, do_xtb, &
                                                             found
@@ -550,7 +550,7 @@ CONTAINS
 
       CALL dbcsr_iterator_start(iter, matrix_s(1)%matrix)
       DO WHILE (dbcsr_iterator_blocks_left(iter))
-         CALL dbcsr_iterator_next_block(iter, iatom, jatom, sblock, blk)
+         CALL dbcsr_iterator_next_block(iter, iatom, jatom, sblock)
          NULLIFY (hblock)
          CALL dbcsr_get_block_p(matrix=matrix_h(1)%matrix, &
                                 row=iatom, col=jatom, block=hblock, found=found)
@@ -601,9 +601,9 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'deriv_tb_qmmm_matrix'
 
-      INTEGER                                            :: atom_a, blk, handle, i, iatom, ikind, &
-                                                            iqm, jatom, natom, natorb, nkind, &
-                                                            nspins, number_qm_atoms
+      INTEGER                                            :: atom_a, handle, i, iatom, ikind, iqm, &
+                                                            jatom, natom, natorb, nkind, nspins, &
+                                                            number_qm_atoms
       INTEGER, DIMENSION(:), POINTER                     :: list
       LOGICAL                                            :: defined, do_dftb, do_xtb, found
       REAL(KIND=dp)                                      :: fi, gmij, zeff
@@ -762,7 +762,7 @@ CONTAINS
          !
          CALL dbcsr_iterator_start(iter, matrix_s(1)%matrix)
          DO WHILE (dbcsr_iterator_blocks_left(iter))
-            CALL dbcsr_iterator_next_block(iter, iatom, jatom, sblock, blk)
+            CALL dbcsr_iterator_next_block(iter, iatom, jatom, sblock)
             !
             IF (iatom == jatom) CYCLE
             !
@@ -838,8 +838,8 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'deriv_tb_qmmm_matrix_pc'
 
-      INTEGER :: atom_a, blk, do_ipol, ewald_type, handle, i, iatom, ikind, imm, imp, indmm, ipot, &
-         iqm, jatom, natom, natorb, nkind, nmm, nspins, number_qm_atoms
+      INTEGER :: atom_a, do_ipol, ewald_type, handle, i, iatom, ikind, imm, imp, indmm, ipot, iqm, &
+         jatom, natom, natorb, nkind, nmm, nspins, number_qm_atoms
       INTEGER, DIMENSION(:), POINTER                     :: list
       LOGICAL                                            :: defined, do_dftb, do_multipoles, do_xtb, &
                                                             found
@@ -1178,7 +1178,7 @@ CONTAINS
          !
          CALL dbcsr_iterator_start(iter, matrix_s(1)%matrix)
          DO WHILE (dbcsr_iterator_blocks_left(iter))
-            CALL dbcsr_iterator_next_block(iter, iatom, jatom, sblock, blk)
+            CALL dbcsr_iterator_next_block(iter, iatom, jatom, sblock)
             !
             IF (iatom == jatom) CYCLE
             !

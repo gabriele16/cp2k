@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -49,7 +49,8 @@ MODULE atom_energy
                                               dp
    USE mathconstants,                   ONLY: dfac,&
                                               gamma1,&
-                                              pi
+                                              pi,&
+                                              rootpi
    USE periodic_table,                  ONLY: nelem,&
                                               ptable
    USE physcon,                         ONLY: bohr
@@ -90,8 +91,8 @@ CONTAINS
       INTEGER, DIMENSION(0:lmat)                         :: maxn
       INTEGER, DIMENSION(:), POINTER                     :: cn
       LOGICAL                                            :: dm, do_gh, do_zmp, doread, eri_c, eri_e, &
-                                                            had_ae, had_pp, lcomp, lcond, pp_calc, &
-                                                            read_vxc
+                                                            graph, had_ae, had_pp, lcomp, lcond, &
+                                                            pp_calc, read_vxc
       REAL(KIND=dp)                                      :: crad, delta, lambda
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: ext_density, ext_vxc
       REAL(KIND=dp), DIMENSION(0:lmat, 10)               :: pocc
@@ -356,8 +357,9 @@ CONTAINS
 
                ! Print out the orbitals if requested
                iw = cp_print_key_unit_nr(logger, atom_section, "PRINT%ORBITALS", extension=".log")
+               CALL section_vals_val_get(atom_section, "PRINT%ORBITALS%XMGRACE", l_val=graph)
                IF (iw > 0) THEN
-                  CALL atom_print_orbitals(atom_info(in, im)%atom, iw)
+                  CALL atom_print_orbitals(atom_info(in, im)%atom, iw, xmgrace=graph)
                END IF
                CALL cp_print_key_finished_output(iw, logger, atom_section, "PRINT%ORBITALS")
 
@@ -583,7 +585,7 @@ CONTAINS
          WRITE (iw, '(/,A,I0,A,I0,A)') "             Exponent     Coef.(Quickstep Normalization), first ", &
             n - nder, " valence ", nder, " response"
          expzet = 0.25_dp*REAL(2*l + 3, dp)
-         prefac = SQRT(SQRT(pi)/2._dp**(l + 2)*dfac(2*l + 1))
+         prefac = SQRT(rootpi/2._dp**(l + 2)*dfac(2*l + 1))
          DO i = 1, m
             zeta = (2._dp*atom%basis%am(i, l))**expzet
             WRITE (iw, '(4X,F20.10,4X,15ES20.6)') atom%basis%am(i, l), ((prefac*rbasis(i, k, l)/zeta), k=1, n)

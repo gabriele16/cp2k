@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -18,17 +18,13 @@ MODULE cp_spline_utils
    USE pw_methods,                      ONLY: do_standard_sum,&
                                               pw_axpy,&
                                               pw_zero
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
    USE pw_spline_utils,                 ONLY: &
         add_coarse2fine, add_fine2coarse, find_coeffs, pw_spline_do_precond, &
         pw_spline_precond_create, pw_spline_precond_release, pw_spline_precond_set_kind, &
         pw_spline_precond_type, spl3_1d_transf_border1, spl3_1d_transf_coeffs, spl3_nopbc, &
         spl3_nopbct, spl3_pbc
-   USE pw_types,                        ONLY: REALDATA3D,&
-                                              REALSPACE,&
-                                              pw_type
+   USE pw_types,                        ONLY: pw_r3d_rs_type
 #include "../base/base_uses.f90"
 
    IMPLICIT NONE
@@ -57,8 +53,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE pw_restrict_s3(pw_fine_in, pw_coarse_out, coarse_pool, param_section)
 
-      TYPE(pw_type), INTENT(IN)                          :: pw_fine_in
-      TYPE(pw_type), INTENT(INOUT)                       :: pw_coarse_out
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: pw_fine_in
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: pw_coarse_out
       TYPE(pw_pool_type), POINTER                        :: coarse_pool
       TYPE(section_vals_type), POINTER                   :: param_section
 
@@ -70,8 +66,8 @@ CONTAINS
       INTEGER, SAVE                                      :: ifile = 0
       LOGICAL                                            :: pbc, safe_computation, success
       REAL(kind=dp)                                      :: eps_r, eps_x
+      TYPE(pw_r3d_rs_type)                               :: coeffs, values
       TYPE(pw_spline_precond_type)                       :: precond
-      TYPE(pw_type)                                      :: coeffs, values
 
       ifile = ifile + 1
       CALL timeset(routineN, handle)
@@ -93,8 +89,7 @@ CONTAINS
       pbc = (interp_kind == spline3_pbc_interp)
       CPASSERT(pbc .OR. interp_kind == spline3_nopbc_interp)
       bo = pw_coarse_out%pw_grid%bounds_local
-      CALL pw_pool_create_pw(coarse_pool, values, use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL coarse_pool%create_pw(values)
       CALL pw_zero(values)
 
       CALL add_fine2coarse(fine_values_pw=pw_fine_in, &
@@ -103,8 +98,7 @@ CONTAINS
                            w_border1=spl3_1d_transf_border1/2._dp, pbc=pbc, &
                            safe_computation=safe_computation)
 
-      CALL pw_pool_create_pw(coarse_pool, coeffs, use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL coarse_pool%create_pw(coeffs)
       CALL pw_spline_precond_create(precond, precond_kind=aint_precond, &
                                     pool=coarse_pool, pbc=pbc, transpose=.TRUE.)
       CALL pw_spline_do_precond(precond, values, coeffs)
@@ -123,8 +117,8 @@ CONTAINS
       CALL pw_zero(pw_coarse_out)
       CALL pw_axpy(coeffs, pw_coarse_out)
 
-      CALL pw_pool_give_back_pw(coarse_pool, values)
-      CALL pw_pool_give_back_pw(coarse_pool, coeffs)
+      CALL coarse_pool%give_back_pw(values)
+      CALL coarse_pool%give_back_pw(coeffs)
       CALL timestop(handle)
 
    END SUBROUTINE pw_restrict_s3
@@ -141,7 +135,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE pw_prolongate_s3(pw_coarse_in, pw_fine_out, coarse_pool, &
                                param_section)
-      TYPE(pw_type), INTENT(IN)                          :: pw_coarse_in, pw_fine_out
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: pw_coarse_in, pw_fine_out
       TYPE(pw_pool_type), POINTER                        :: coarse_pool
       TYPE(section_vals_type), POINTER                   :: param_section
 
@@ -153,13 +147,12 @@ CONTAINS
       INTEGER, SAVE                                      :: ifile = 0
       LOGICAL                                            :: pbc, safe_computation, success
       REAL(kind=dp)                                      :: eps_r, eps_x
+      TYPE(pw_r3d_rs_type)                               :: coeffs
       TYPE(pw_spline_precond_type)                       :: precond
-      TYPE(pw_type)                                      :: coeffs
 
       ifile = ifile + 1
       CALL timeset(routineN, handle)
-      CALL pw_pool_create_pw(coarse_pool, coeffs, use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL coarse_pool%create_pw(coeffs)
       bo = pw_coarse_in%pw_grid%bounds_local
       CALL section_vals_val_get(param_section, "safe_computation", &
                                 l_val=safe_computation)
@@ -203,7 +196,7 @@ CONTAINS
                            w_border1=spl3_1d_transf_border1, &
                            pbc=pbc, safe_computation=safe_computation)
 
-      CALL pw_pool_give_back_pw(coarse_pool, coeffs)
+      CALL coarse_pool%give_back_pw(coeffs)
 
       CALL timestop(handle)
 

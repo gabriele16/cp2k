@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -42,17 +42,12 @@ MODULE pw_poisson_types
    USE pw_grid_types,                   ONLY: pw_grid_type
    USE pw_grids,                        ONLY: pw_grid_release
    USE pw_pool_types,                   ONLY: pw_pool_create,&
-                                              pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
                                               pw_pool_p_type,&
                                               pw_pool_release,&
                                               pw_pool_type,&
                                               pw_pools_dealloc
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA1D,&
-                                              RECIPROCALSPACE,&
-                                              pw_release,&
-                                              pw_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r1d_gs_type
    USE realspace_grid_types,            ONLY: realspace_grid_type,&
                                               rs_grid_release
 #include "../base/base_uses.f90"
@@ -64,8 +59,6 @@ MODULE pw_poisson_types
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'pw_poisson_types'
 
    PUBLIC :: pw_poisson_type
-   PUBLIC :: pw_poisson_create, pw_poisson_retain, &
-             pw_poisson_release
    PUBLIC :: greens_fn_type, pw_green_create, &
              pw_green_release
    PUBLIC :: pw_poisson_parameter_type
@@ -127,7 +120,6 @@ MODULE pw_poisson_types
 !> \author fawzi
 ! **************************************************************************************************
    TYPE pw_poisson_type
-      INTEGER :: ref_count = 0
       INTEGER :: pw_level = 0
       INTEGER :: method = pw_poisson_none
       INTEGER :: used_grid = 0
@@ -141,6 +133,9 @@ MODULE pw_poisson_types
       TYPE(ps_implicit_type), POINTER             :: implicit_env => NULL()
       TYPE(pw_grid_type), POINTER                 :: dct_pw_grid => NULL()
       TYPE(realspace_grid_type), POINTER          :: diel_rs_grid => NULL()
+   CONTAINS
+      PROCEDURE, PUBLIC, NON_OVERRIDABLE :: create => pw_poisson_create
+      PROCEDURE, PUBLIC, NON_OVERRIDABLE :: release => pw_poisson_release
    END TYPE pw_poisson_type
 
 ! **************************************************************************************************
@@ -163,10 +158,10 @@ MODULE pw_poisson_types
       LOGICAL :: sr_screening = .FALSE.
       REAL(KIND=dp) :: sr_alpha = 1.0_dp
       REAL(KIND=dp) :: sr_rc = 0.0_dp
-      TYPE(pw_type) :: influence_fn = pw_type()
-      TYPE(pw_type), POINTER :: dct_influence_fn => NULL()
-      TYPE(pw_type), POINTER :: screen_fn => NULL()
-      TYPE(pw_type), POINTER :: p3m_charge => NULL()
+      TYPE(pw_c1d_gs_type) :: influence_fn = pw_c1d_gs_type()
+      TYPE(pw_c1d_gs_type), POINTER :: dct_influence_fn => NULL()
+      TYPE(pw_c1d_gs_type), POINTER :: screen_fn => NULL()
+      TYPE(pw_r1d_gs_type), POINTER :: p3m_charge => NULL()
    END TYPE greens_fn_type
 
 CONTAINS
@@ -194,9 +189,9 @@ CONTAINS
       REAL(KIND=dp)                                      :: g2, g3d, gg, gxy, gz, j0g, j1g, k0g, &
                                                             k1g, rlength, zlength
       REAL(KIND=dp), DIMENSION(3)                        :: abc
+      TYPE(pw_c1d_gs_type), POINTER                      :: dct_gf
       TYPE(pw_grid_type), POINTER                        :: dct_grid
       TYPE(pw_pool_type), POINTER                        :: pw_pool_xpndd
-      TYPE(pw_type), POINTER                             :: dct_gf
 
       !CPASSERT(cell%orthorhombic)
       DO i = 1, 3
@@ -273,8 +268,7 @@ CONTAINS
       ! allocate influence function,...
       SELECT CASE (green%method)
       CASE (PERIODIC3D, ANALYTIC2D, ANALYTIC1D, ANALYTIC0D, MT2D, MT1D, MT0D, MULTIPOLE0D, PS_IMPLICIT)
-         CALL pw_pool_create_pw(pw_pool, green%influence_fn, &
-                                use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+         CALL pw_pool%create_pw(green%influence_fn)
 
          IF (poisson_params%ewald_type == do_ewald_spme) THEN
             green%p3m = .TRUE.
@@ -285,8 +279,7 @@ CONTAINS
             CALL spme_coeff_calculate(n, green%p3m_coeff)
             NULLIFY (green%p3m_charge)
             ALLOCATE (green%p3m_charge)
-            CALL pw_pool_create_pw(pw_pool, green%p3m_charge, use_data=REALDATA1D, &
-                                   in_space=RECIPROCALSPACE)
+            CALL pw_pool%create_pw(green%p3m_charge)
             CALL influence_factor(green)
             CALL calc_p3m_charge(green)
          ELSE
@@ -305,8 +298,7 @@ CONTAINS
                CALL pw_pool_create(pw_pool_xpndd, pw_grid=dct_pw_grid)
                NULLIFY (green%dct_influence_fn)
                ALLOCATE (green%dct_influence_fn)
-               CALL pw_pool_create_pw(pw_pool_xpndd, green%dct_influence_fn, &
-                                      use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+               CALL pw_pool_xpndd%create_pw(green%dct_influence_fn)
                CALL pw_pool_release(pw_pool_xpndd)
             END IF
          END SELECT
@@ -322,9 +314,9 @@ CONTAINS
 
             DO ig = grid%first_gne0, grid%ngpts_cut_local
                g2 = grid%gsq(ig)
-               gf%cc(ig) = fourpi/g2
+               gf%array(ig) = fourpi/g2
             END DO
-            IF (grid%have_g0) gf%cc(1) = 0.0_dp
+            IF (grid%have_g0) gf%array(1) = 0.0_dp
 
          CASE (ANALYTIC2D)
 
@@ -336,9 +328,9 @@ CONTAINS
                g3d = fourpi/g2
                gxy = MAX(0.0_dp, g2 - grid%g(iz, ig)*grid%g(iz, ig))
                gg = 0.5_dp*SQRT(gxy)
-               gf%cc(ig) = g3d*(1.0_dp - (-1.0_dp)**nz*EXP(-gg*zlength))
+               gf%array(ig) = g3d*(1.0_dp - (-1.0_dp)**nz*EXP(-gg*zlength))
             END DO
-            IF (grid%have_g0) gf%cc(1) = 0.0_dp
+            IF (grid%have_g0) gf%array(1) = 0.0_dp
 
          CASE (ANALYTIC1D)
             ! see 'ab initio molecular dynamics' table 3.1
@@ -360,10 +352,10 @@ CONTAINS
                   k0g = 0
                   k1g = 0
                END IF
-               gf%cc(ig) = g3d*(1.0_dp + rlength* &
-                                (gxy*j1g*k0g - gz*j0g*k1g))
+               gf%array(ig) = g3d*(1.0_dp + rlength* &
+                                   (gxy*j1g*k0g - gz*j0g*k1g))
             END DO
-            IF (grid%have_g0) gf%cc(1) = 0.0_dp
+            IF (grid%have_g0) gf%array(1) = 0.0_dp
 
          CASE (ANALYTIC0D)
 
@@ -372,28 +364,28 @@ CONTAINS
                g2 = grid%gsq(ig)
                gg = SQRT(g2)
                g3d = fourpi/g2
-               gf%cc(ig) = g3d*(1.0_dp - COS(rlength*gg))
+               gf%array(ig) = g3d*(1.0_dp - COS(rlength*gg))
             END DO
             IF (grid%have_g0) &
-               gf%cc(1) = 0.5_dp*fourpi*rlength*rlength
+               gf%array(1) = 0.5_dp*fourpi*rlength*rlength
 
          CASE (MT2D, MT1D, MT0D)
 
             DO ig = grid%first_gne0, grid%ngpts_cut_local
                g2 = grid%gsq(ig)
                g3d = fourpi/g2
-               gf%cc(ig) = g3d + green%screen_fn%cc(ig)
+               gf%array(ig) = g3d + green%screen_fn%array(ig)
             END DO
             IF (grid%have_g0) &
-               gf%cc(1) = green%screen_fn%cc(1)
+               gf%array(1) = green%screen_fn%array(1)
 
          CASE (PS_IMPLICIT)
 
             DO ig = grid%first_gne0, grid%ngpts_cut_local
                g2 = grid%gsq(ig)
-               gf%cc(ig) = fourpi/g2
+               gf%array(ig) = fourpi/g2
             END DO
-            IF (grid%have_g0) gf%cc(1) = 0.0_dp
+            IF (grid%have_g0) gf%array(1) = 0.0_dp
 
             IF (ASSOCIATED(green%dct_influence_fn)) THEN
                dct_gf => green%dct_influence_fn
@@ -401,9 +393,9 @@ CONTAINS
 
                DO ig = dct_grid%first_gne0, dct_grid%ngpts_cut_local
                   g2 = dct_grid%gsq(ig)
-                  dct_gf%cc(ig) = fourpi/g2
+                  dct_gf%array(ig) = fourpi/g2
                END DO
-               IF (dct_grid%have_g0) dct_gf%cc(1) = 0.0_dp
+               IF (dct_grid%have_g0) dct_gf%array(1) = 0.0_dp
             END IF
 
          CASE DEFAULT
@@ -431,31 +423,31 @@ CONTAINS
       can_give_back = PRESENT(pw_pool)
       IF (can_give_back) can_give_back = ASSOCIATED(pw_pool)
       IF (can_give_back) THEN
-         CALL pw_pool_give_back_pw(pw_pool, gftype%influence_fn)
+         CALL pw_pool%give_back_pw(gftype%influence_fn)
          IF (ASSOCIATED(gftype%dct_influence_fn)) THEN
-            CALL pw_pool_give_back_pw(pw_pool, gftype%dct_influence_fn)
+            CALL pw_pool%give_back_pw(gftype%dct_influence_fn)
             DEALLOCATE (gftype%dct_influence_fn)
          END IF
          IF (ASSOCIATED(gftype%screen_fn)) THEN
-            CALL pw_pool_give_back_pw(pw_pool, gftype%screen_fn)
+            CALL pw_pool%give_back_pw(gftype%screen_fn)
             DEALLOCATE (gftype%screen_fn)
          END IF
          IF (ASSOCIATED(gftype%p3m_charge)) THEN
-            CALL pw_pool_give_back_pw(pw_pool, gftype%p3m_charge)
+            CALL pw_pool%give_back_pw(gftype%p3m_charge)
             DEALLOCATE (gftype%p3m_charge)
          END IF
       ELSE
-         CALL pw_release(gftype%influence_fn)
+         CALL gftype%influence_fn%release()
          IF (ASSOCIATED(gftype%dct_influence_fn)) THEN
-            CALL pw_release(gftype%dct_influence_fn)
+            CALL gftype%dct_influence_fn%release()
             DEALLOCATE (gftype%dct_influence_fn)
          END IF
          IF (ASSOCIATED(gftype%screen_fn)) THEN
-            CALL pw_release(gftype%screen_fn)
+            CALL gftype%screen_fn%release()
             DEALLOCATE (gftype%screen_fn)
          END IF
          IF (ASSOCIATED(gftype%p3m_charge)) THEN
-            CALL pw_release(gftype%p3m_charge)
+            CALL gftype%p3m_charge%release()
             DEALLOCATE (gftype%p3m_charge)
          END IF
       END IF
@@ -549,8 +541,8 @@ CONTAINS
             l = grid%g_hat(1, ig)
             m = grid%g_hat(2, ig)
             n = grid%g_hat(3, ig)
-            gf%p3m_charge%cr(ig) = novol*EXP(-arg*grid%gsq(ig))* &
-                                   bm2(1, l)*bm2(2, m)*bm2(3, n)
+            gf%p3m_charge%array(ig) = novol*EXP(-arg*grid%gsq(ig))* &
+                                      bm2(1, l)*bm2(2, m)*bm2(3, n)
          END DO
       END ASSOCIATE
 
@@ -568,26 +560,12 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE pw_poisson_create(poisson_env)
 
-      TYPE(pw_poisson_type), POINTER                     :: poisson_env
+      CLASS(pw_poisson_type), INTENT(INOUT)              :: poisson_env
 
-      CPASSERT(.NOT. ASSOCIATED(poisson_env))
-      ALLOCATE (poisson_env)
-      poisson_env%ref_count = 1
+      ! Cleanup a potential previous poisson_env
+      CALL poisson_env%release()
 
    END SUBROUTINE pw_poisson_create
-
-! **************************************************************************************************
-!> \brief retains the pw_poisson_env
-!> \param poisson_env ...
-!> \author fawzi
-! **************************************************************************************************
-   SUBROUTINE pw_poisson_retain(poisson_env)
-      TYPE(pw_poisson_type), POINTER                     :: poisson_env
-
-      CPASSERT(ASSOCIATED(poisson_env))
-      CPASSERT(poisson_env%ref_count > 0)
-      poisson_env%ref_count = poisson_env%ref_count + 1
-   END SUBROUTINE pw_poisson_retain
 
 ! **************************************************************************************************
 !> \brief releases the poisson solver
@@ -598,34 +576,25 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE pw_poisson_release(poisson_env)
 
-      TYPE(pw_poisson_type), POINTER                     :: poisson_env
+      CLASS(pw_poisson_type), INTENT(INOUT)               :: poisson_env
 
-      IF (ASSOCIATED(poisson_env)) THEN
-         CPASSERT(poisson_env%ref_count > 0)
-         poisson_env%ref_count = poisson_env%ref_count - 1
-         IF (poisson_env%ref_count == 0) THEN
-            IF (ASSOCIATED(poisson_env%pw_pools)) THEN
-               CALL pw_pools_dealloc(poisson_env%pw_pools)
-            END IF
-
-            IF (ASSOCIATED(poisson_env%green_fft)) THEN
-               CALL pw_green_release(poisson_env%green_fft)
-               DEALLOCATE (poisson_env%green_fft)
-            END IF
-            CALL pw_grid_release(poisson_env%mt_super_ref_pw_grid)
-            CALL ps_wavelet_release(poisson_env%wavelet)
-            CALL ps_implicit_release(poisson_env%implicit_env, &
-                                     poisson_env%parameters%ps_implicit_params)
-            CALL pw_grid_release(poisson_env%dct_pw_grid)
-            IF (ASSOCIATED(poisson_env%diel_rs_grid)) THEN
-               CALL rs_grid_release(poisson_env%diel_rs_grid)
-               DEALLOCATE (poisson_env%diel_rs_grid)
-            END IF
-            DEALLOCATE (poisson_env)
-
-         END IF
+      IF (ASSOCIATED(poisson_env%pw_pools)) THEN
+         CALL pw_pools_dealloc(poisson_env%pw_pools)
       END IF
-      NULLIFY (poisson_env)
+
+      IF (ASSOCIATED(poisson_env%green_fft)) THEN
+         CALL pw_green_release(poisson_env%green_fft)
+         DEALLOCATE (poisson_env%green_fft)
+      END IF
+      CALL pw_grid_release(poisson_env%mt_super_ref_pw_grid)
+      CALL ps_wavelet_release(poisson_env%wavelet)
+      CALL ps_implicit_release(poisson_env%implicit_env, &
+                               poisson_env%parameters%ps_implicit_params)
+      CALL pw_grid_release(poisson_env%dct_pw_grid)
+      IF (ASSOCIATED(poisson_env%diel_rs_grid)) THEN
+         CALL rs_grid_release(poisson_env%diel_rs_grid)
+         DEALLOCATE (poisson_env%diel_rs_grid)
+      END IF
 
    END SUBROUTINE pw_poisson_release
 

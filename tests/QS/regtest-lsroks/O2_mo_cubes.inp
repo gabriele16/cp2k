@@ -1,0 +1,62 @@
+! Test PRINT MO CUBES, the program should only output orbitals for spin-1 only
+&GLOBAL
+  PRINT_LEVEL MEDIUM
+  PROJECT O2
+  RUN_TYPE ENERGY
+&END GLOBAL
+
+&FORCE_EVAL
+  METHOD Quickstep
+  &DFT
+    BASIS_SET_FILE_NAME GTH_BASIS_SETS
+    MULTIP 3
+    POTENTIAL_FILE_NAME GTH_POTENTIALS
+    ROKS
+    &LOW_SPIN_ROKS
+      ! Singlet: E(s) = E(t) - 2*E(t) + 2*E(m) = 2*E(m) - E(t)
+      ENERGY_SCALING -2.0 2.0
+      SPIN_CONFIGURATION 1 1  ! (t)
+      SPIN_CONFIGURATION 1 2  ! (m)
+    &END LOW_SPIN_ROKS
+    &MGRID
+      CUTOFF 280
+    &END MGRID
+    &PRINT
+      &MO_CUBES
+        NHOMO 2  ! SOMO-1 and SOMO-2
+      &END MO_CUBES
+    &END PRINT
+    &QS
+    &END QS
+    &SCF
+      EPS_SCF 1.0E-6
+      IGNORE_CONVERGENCE_FAILURE
+      MAX_SCF 3
+      SCF_GUESS ATOMIC
+      &OT
+        ROTATION
+      &END OT
+      &OUTER_SCF
+        EPS_SCF 1.0E-6
+        MAX_SCF 1
+      &END OUTER_SCF
+    &END SCF
+    &XC
+      &XC_FUNCTIONAL PADE
+      &END XC_FUNCTIONAL
+    &END XC
+  &END DFT
+  &SUBSYS
+    &CELL
+      ABC 4.0 4.0 6.0
+    &END CELL
+    &COORD
+      O  0.000000  0.000000  0.608000
+      O  0.000000  0.000000 -0.608000
+    &END COORD
+    &KIND O
+      BASIS_SET DZVP-GTH
+      POTENTIAL GTH-PADE-q6
+    &END KIND
+  &END SUBSYS
+&END FORCE_EVAL

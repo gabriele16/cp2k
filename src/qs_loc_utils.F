@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -20,6 +20,12 @@ MODULE qs_loc_utils
    USE cell_types,                      ONLY: cell_type,&
                                               pbc
    USE cp_array_utils,                  ONLY: cp_1d_r_p_type
+   USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
+                                              dbcsr_get_block_p,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set,&
+                                              dbcsr_type
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply
    USE cp_files,                        ONLY: close_file,&
                                               open_file
@@ -40,11 +46,6 @@ MODULE qs_loc_utils
                                               cp_print_key_generate_filename,&
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
-                                              dbcsr_get_block_p,&
-                                              dbcsr_p_type,&
-                                              dbcsr_set,&
-                                              dbcsr_type
    USE distribution_1d_types,           ONLY: distribution_1d_type
    USE input_constants,                 ONLY: &
         do_loc_crazy, do_loc_direct, do_loc_gapo, do_loc_jacobi, do_loc_l1_norm_sd, do_loc_none, &
@@ -1046,6 +1047,7 @@ CONTAINS
    SUBROUTINE qs_loc_init(qs_env, qs_loc_env, localize_section, mos_localized, &
                           do_homo, do_mo_cubes, mo_loc_history, evals, &
                           tot_zeff_corr, do_mixed)
+
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(qs_loc_env_type), POINTER                     :: qs_loc_env
       TYPE(section_vals_type), POINTER                   :: localize_section
@@ -1068,6 +1070,7 @@ CONTAINS
       TYPE(cp_fm_type), POINTER                          :: mo_coeff
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: ks_rmpv, mo_derivs
+      TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(localized_wfn_control_type), POINTER          :: localized_wfn_control
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(mp_para_env_type), POINTER                    :: para_env
@@ -1082,6 +1085,7 @@ CONTAINS
                       matrix_ks=ks_rmpv, &
                       mo_derivs=mo_derivs, &
                       scf_control=scf_control, &
+                      dft_control=dft_control, &
                       para_env=para_env)
 
       loc_print_section => section_vals_get_subs_vals(localize_section, "PRINT")
@@ -1162,7 +1166,7 @@ CONTAINS
                ! Get eigenstates (only needed if not already calculated before)
                IF ((.NOT. my_do_mo_cubes) &
                    !                  .OR. section_get_ival(dft_section,"PRINT%MO_CUBES%NHOMO")==0)&
-                   .AND. my_do_homo .AND. qs_env%scf_env%method == ot_method_nr) THEN
+                   .AND. my_do_homo .AND. qs_env%scf_env%method == ot_method_nr .AND. (.NOT. dft_control%restricted)) THEN
                   CALL make_mo_eig(mos, nspin, ks_rmpv, scf_control, mo_derivs)
                END IF
                IF (localized_wfn_control%set_of_states == state_loc_all .AND. my_do_homo) THEN
@@ -1209,7 +1213,7 @@ CONTAINS
                   IF (occupation(ilow) - occupation(iup) > localized_wfn_control%eps_occ) THEN
                      CALL cp_abort(__LOCATION__, &
                                    "The selected energy range includes orbitals with different occupation number. "// &
-                                   " The localization procedure cannot be applied.")
+                                   "The localization procedure cannot be applied.")
                   END IF
                   IF (output_unit > 0) WRITE (output_unit, "(/,T2,A,I4,A,I6,A)") "LOCALIZATION| Spin ", ispin, " : ", &
                      nmoloc(ispin), " orbitals in the selected energy range are localized."
@@ -1259,7 +1263,7 @@ CONTAINS
                            CALL cp_warn(__LOCATION__, &
                                         "User requested the calculation of localized wavefunction from a subset of MOs, "// &
                                         "including MOs with different occupations. Check the selected subset, "// &
-                                        " the electronic density is not invariant with "// &
+                                        "the electronic density is not invariant with "// &
                                         "respect to rotations among orbitals with different occupation numbers!")
                         END IF
                      END DO

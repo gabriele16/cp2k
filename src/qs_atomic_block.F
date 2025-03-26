@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -15,10 +15,12 @@ MODULE qs_atomic_block
    USE atom_kind_orbitals,              ONLY: calculate_atomic_orbitals
    USE atomic_kind_types,               ONLY: atomic_kind_type,&
                                               get_atomic_kind_set
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add_on_diag, dbcsr_dot, dbcsr_get_info, dbcsr_iterator_blocks_left, &
-        dbcsr_iterator_next_block, dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, &
-        dbcsr_p_type, dbcsr_scale, dbcsr_set, dbcsr_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_get_info, dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, &
+        dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_p_type, dbcsr_scale, &
+        dbcsr_set, dbcsr_type
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_add_on_diag,&
+                                              dbcsr_dot
    USE kinds,                           ONLY: dp
    USE message_passing,                 ONLY: mp_para_env_type
    USE qs_kind_types,                   ONLY: qs_kind_type
@@ -33,7 +35,7 @@ MODULE qs_atomic_block
    PUBLIC ::  calculate_atomic_block_dm
 
    TYPE atom_matrix_type
-      REAL(KIND=dp), DIMENSION(:, :, :), POINTER   :: mat
+      REAL(KIND=dp), DIMENSION(:, :, :), POINTER   :: mat => NULL()
    END TYPE atom_matrix_type
 
 CONTAINS
@@ -62,8 +64,8 @@ CONTAINS
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'calculate_atomic_block_dm'
 
-      INTEGER                                            :: blk, handle, icol, ikind, irow, ispin, &
-                                                            nc, nkind, nocc(2)
+      INTEGER                                            :: handle, icol, ikind, irow, ispin, nc, &
+                                                            nkind, nocc(2)
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of
       INTEGER, ALLOCATABLE, DIMENSION(:, :)              :: nok
       REAL(dp), DIMENSION(:, :), POINTER                 :: pdata
@@ -109,7 +111,7 @@ CONTAINS
          nocc(ispin) = 0
          CALL dbcsr_iterator_start(iter, matrix_p)
          DO WHILE (dbcsr_iterator_blocks_left(iter))
-            CALL dbcsr_iterator_next_block(iter, irow, icol, pdata, blk)
+            CALL dbcsr_iterator_next_block(iter, irow, icol, pdata)
             ikind = kind_of(irow)
             IF (icol .EQ. irow) THEN
                IF (ispin == 1) THEN

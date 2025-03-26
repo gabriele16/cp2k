@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -14,14 +14,14 @@
 ! **************************************************************************************************
 MODULE admm_utils
    USE admm_types,                      ONLY: admm_type
-   USE cp_dbcsr_operations,             ONLY: copy_fm_to_dbcsr
-   USE dbcsr_api,                       ONLY: dbcsr_add,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_add,&
                                               dbcsr_copy,&
                                               dbcsr_create,&
                                               dbcsr_deallocate_matrix,&
                                               dbcsr_set,&
                                               dbcsr_type,&
                                               dbcsr_type_symmetric
+   USE cp_dbcsr_operations,             ONLY: copy_fm_to_dbcsr
    USE input_constants,                 ONLY: do_admm_purify_cauchy,&
                                               do_admm_purify_cauchy_subspace,&
                                               do_admm_purify_mo_diag,&

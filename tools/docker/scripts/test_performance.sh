@@ -16,7 +16,7 @@ function run_benchmark {
   INPUT=$3
   OUTPUT=$4
   echo -n "Running ${INPUT} with ${OMP_THREADS} threads and ${MPI_RANKS} ranks... "
-  if OMP_NUM_THREADS="${OMP_THREADS}" mpiexec -bind-to socket -np "${MPI_RANKS}" \
+  if OMP_NUM_THREADS="${OMP_THREADS}" mpiexec -np "${MPI_RANKS}" \
     "/opt/cp2k/exe/${ARCH}/cp2k.psmp" "${INPUT}" &> "${OUTPUT}"; then
     echo "done."
   else
@@ -40,6 +40,7 @@ if make -j ARCH="${ARCH}" VERSION="psmp" &> make.out; then
 else
   echo -e "failed.\n\n"
   tail -n 100 make.out
+  cp make.out /workspace/artifacts/
   echo -e "\nSummary: Compilation failed."
   echo -e "Status: FAILED\n"
   exit 0

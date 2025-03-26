@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -15,6 +15,7 @@ MODULE optimize_embedding_potential
                                               cp_blacs_env_release,&
                                               cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_p_type
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               dbcsr_deallocate_matrix_set
    USE cp_files,                        ONLY: close_file,&
@@ -39,7 +40,6 @@ MODULE optimize_embedding_potential
    USE cp_realspace_grid_cube,          ONLY: cp_cube_to_pw,&
                                               cp_pw_to_cube,&
                                               cp_pw_to_simple_volumetric
-   USE dbcsr_api,                       ONLY: dbcsr_p_type
    USE embed_types,                     ONLY: opt_embed_pot_type
    USE force_env_types,                 ONLY: force_env_type
    USE input_constants,                 ONLY: &
@@ -67,17 +67,12 @@ MODULE optimize_embedding_potential
         pw_transfer, pw_zero
    USE pw_poisson_methods,              ONLY: pw_poisson_solve
    USE pw_poisson_types,                ONLY: pw_poisson_type
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_rho_resp_all,&
-                                              calculate_wavefunction
+                                              calculate_wavefunction,&
+                                              collocate_function
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type,&
                                               set_qs_env
@@ -210,11 +205,11 @@ CONTAINS
    SUBROUTINE init_embed_pot(qs_env, embed_pot, add_const_pot, Fermi_Amaldi, const_pot, open_shell_embed, &
                              spin_embed_pot, pot_diff, Coulomb_guess, grid_opt)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type), POINTER                             :: embed_pot
+      TYPE(pw_r3d_rs_type), POINTER                      :: embed_pot
       LOGICAL                                            :: add_const_pot, Fermi_Amaldi
-      TYPE(pw_type), POINTER                             :: const_pot
+      TYPE(pw_r3d_rs_type), POINTER                      :: const_pot
       LOGICAL                                            :: open_shell_embed
-      TYPE(pw_type), POINTER                             :: spin_embed_pot, pot_diff
+      TYPE(pw_r3d_rs_type), POINTER                      :: spin_embed_pot, pot_diff
       LOGICAL                                            :: Coulomb_guess, grid_opt
 
       INTEGER                                            :: nelectrons
@@ -222,7 +217,7 @@ CONTAINS
       REAL(KIND=dp)                                      :: factor
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), POINTER                             :: v_hartree_r_space
+      TYPE(pw_r3d_rs_type), POINTER                      :: v_hartree_r_space
 
       ! Extract  plane waves environment
       CALL get_qs_env(qs_env=qs_env, pw_env=pw_env, &
@@ -235,18 +230,14 @@ CONTAINS
       ! Create embedding potential and set to zero
       NULLIFY (embed_pot)
       ALLOCATE (embed_pot)
-      CALL pw_pool_create_pw(auxbas_pw_pool, embed_pot, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(embed_pot)
       CALL pw_zero(embed_pot)
 
       ! Spin embedding potential if asked
       IF (open_shell_embed) THEN
          NULLIFY (spin_embed_pot)
          ALLOCATE (spin_embed_pot)
-         CALL pw_pool_create_pw(auxbas_pw_pool, spin_embed_pot, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(spin_embed_pot)
          CALL pw_zero(spin_embed_pot)
       END IF
 
@@ -254,9 +245,7 @@ CONTAINS
       IF (Coulomb_guess) THEN
          NULLIFY (pot_diff)
          ALLOCATE (pot_diff)
-         CALL pw_pool_create_pw(auxbas_pw_pool, pot_diff, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(pot_diff)
          CALL pw_zero(pot_diff)
       END IF
 
@@ -265,9 +254,7 @@ CONTAINS
          ! Now the constant potential is the Coulomb one
          NULLIFY (const_pot)
          ALLOCATE (const_pot)
-         CALL pw_pool_create_pw(auxbas_pw_pool, const_pot, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(const_pot)
          CALL pw_zero(const_pot)
       END IF
 
@@ -400,9 +387,7 @@ CONTAINS
       size_prev_dens = SUM(opt_embed%all_nspins(1:(SIZE(opt_embed%all_nspins) - 1)))
       ALLOCATE (opt_embed%prev_subsys_dens(size_prev_dens))
       DO i_dens = 1, size_prev_dens
-         CALL pw_pool_create_pw(auxbas_pw_pool, opt_embed%prev_subsys_dens(i_dens), &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(opt_embed%prev_subsys_dens(i_dens))
          CALL pw_zero(opt_embed%prev_subsys_dens(i_dens))
       END DO
       ALLOCATE (opt_embed%max_subsys_dens_diff(size_prev_dens))
@@ -422,16 +407,12 @@ CONTAINS
       IF (opt_embed%fab) THEN
          NULLIFY (opt_embed%prev_embed_pot)
          ALLOCATE (opt_embed%prev_embed_pot)
-         CALL pw_pool_create_pw(auxbas_pw_pool, opt_embed%prev_embed_pot, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(opt_embed%prev_embed_pot)
          CALL pw_zero(opt_embed%prev_embed_pot)
          IF (opt_embed%open_shell_embed) THEN
             NULLIFY (opt_embed%prev_spin_embed_pot)
             ALLOCATE (opt_embed%prev_spin_embed_pot)
-            CALL pw_pool_create_pw(auxbas_pw_pool, opt_embed%prev_spin_embed_pot, &
-                                   use_data=REALDATA3D, &
-                                   in_space=REALSPACE)
+            CALL auxbas_pw_pool%create_pw(opt_embed%prev_spin_embed_pot)
             CALL pw_zero(opt_embed%prev_spin_embed_pot)
          END IF
       END IF
@@ -633,7 +614,7 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool_subsys
-      TYPE(pw_type), POINTER                             :: embed_pot, spin_embed_pot
+      TYPE(pw_r3d_rs_type), POINTER                      :: embed_pot, spin_embed_pot
       TYPE(section_vals_type), POINTER                   :: input, qs_section
 
       qs_env%given_embed_pot = .TRUE.
@@ -654,15 +635,11 @@ CONTAINS
       !CALL get_qs_env(qs_env=qs_env, &
       !                embed_pot=embed_pot)
       ALLOCATE (embed_pot)
-      CALL pw_pool_create_pw(auxbas_pw_pool_subsys, embed_pot, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool_subsys%create_pw(embed_pot)
       IF (open_shell_embed) THEN
          ! Create spin embedding potential
          ALLOCATE (spin_embed_pot)
-         CALL pw_pool_create_pw(auxbas_pw_pool_subsys, spin_embed_pot, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool_subsys%create_pw(spin_embed_pot)
       END IF
       ! Read the cubes
       CALL read_embed_pot_cube(embed_pot, spin_embed_pot, qs_section, open_shell_embed)
@@ -685,7 +662,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE read_embed_pot(qs_env, embed_pot, spin_embed_pot, section, opt_embed)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type), POINTER                             :: embed_pot, spin_embed_pot
+      TYPE(pw_r3d_rs_type), POINTER                      :: embed_pot, spin_embed_pot
       TYPE(section_vals_type), POINTER                   :: section
       TYPE(opt_embed_pot_type)                           :: opt_embed
 
@@ -707,7 +684,7 @@ CONTAINS
 !> \param open_shell_embed ...
 ! **************************************************************************************************
    SUBROUTINE read_embed_pot_cube(embed_pot, spin_embed_pot, section, open_shell_embed)
-      TYPE(pw_type), INTENT(IN)                          :: embed_pot, spin_embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: embed_pot, spin_embed_pot
       TYPE(section_vals_type), POINTER                   :: section
       LOGICAL                                            :: open_shell_embed
 
@@ -749,8 +726,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE read_embed_pot_vector(qs_env, embed_pot, spin_embed_pot, section, embed_pot_coef, open_shell_embed)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type), INTENT(INOUT)                       :: embed_pot
-      TYPE(pw_type), INTENT(IN), POINTER                 :: spin_embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN), POINTER          :: spin_embed_pot
       TYPE(section_vals_type), POINTER                   :: section
       TYPE(cp_fm_type), INTENT(IN)                       :: embed_pot_coef
       LOGICAL, INTENT(IN)                                :: open_shell_embed
@@ -908,7 +885,7 @@ CONTAINS
 
       IF (ASSOCIATED(opt_embed%prev_subsys_dens)) THEN
          DO i_dens = 1, SIZE(opt_embed%prev_subsys_dens)
-            CALL pw_release(opt_embed%prev_subsys_dens(i_dens))
+            CALL opt_embed%prev_subsys_dens(i_dens)%release()
          END DO
          DEALLOCATE (opt_embed%prev_subsys_dens)
       END IF
@@ -917,26 +894,26 @@ CONTAINS
       DEALLOCATE (opt_embed%all_nspins)
 
       IF (ASSOCIATED(opt_embed%const_pot)) THEN
-         CALL pw_release(opt_embed%const_pot)
+         CALL opt_embed%const_pot%release()
          DEALLOCATE (opt_embed%const_pot)
       END IF
 
       IF (ASSOCIATED(opt_embed%pot_diff)) THEN
-         CALL pw_release(opt_embed%pot_diff)
+         CALL opt_embed%pot_diff%release()
          DEALLOCATE (opt_embed%pot_diff)
       END IF
 
       IF (ASSOCIATED(opt_embed%prev_embed_pot)) THEN
-         CALL pw_release(opt_embed%prev_embed_pot)
+         CALL opt_embed%prev_embed_pot%release()
          DEALLOCATE (opt_embed%prev_embed_pot)
       END IF
       IF (ASSOCIATED(opt_embed%prev_spin_embed_pot)) THEN
-         CALL pw_release(opt_embed%prev_spin_embed_pot)
+         CALL opt_embed%prev_spin_embed_pot%release()
          DEALLOCATE (opt_embed%prev_spin_embed_pot)
       END IF
       IF (ASSOCIATED(opt_embed%v_w)) THEN
          DO i_spin = 1, SIZE(opt_embed%v_w)
-            CALL pw_release(opt_embed%v_w(i_spin))
+            CALL opt_embed%v_w(i_spin)%release()
          END DO
          DEALLOCATE (opt_embed%v_w)
       END IF
@@ -954,7 +931,7 @@ CONTAINS
 !> \param eta ...
 ! **************************************************************************************************
    SUBROUTINE Coulomb_guess(v_rspace, rhs, mapping_section, qs_env, nforce_eval, iforce_eval, eta)
-      TYPE(pw_type)                                      :: v_rspace
+      TYPE(pw_r3d_rs_type)                               :: v_rspace
       REAL(KIND=dp), DIMENSION(:), POINTER               :: rhs
       TYPE(section_vals_type), POINTER                   :: mapping_section
       TYPE(qs_environment_type), POINTER                 :: qs_env
@@ -966,10 +943,11 @@ CONTAINS
       REAL(KIND=dp)                                      :: dvol, normalize_factor
       REAL(KIND=dp), DIMENSION(:), POINTER               :: rhs_subsys
       TYPE(particle_list_type), POINTER                  :: particles
+      TYPE(pw_c1d_gs_type)                               :: v_resp_gspace
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rho_resp, v_resp_gspace, v_resp_rspace
+      TYPE(pw_r3d_rs_type)                               :: rho_resp, v_resp_rspace
       TYPE(qs_subsys_type), POINTER                      :: subsys
 
       ! Get available particles
@@ -996,30 +974,19 @@ CONTAINS
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, &
                       poisson_env=poisson_env)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             v_resp_gspace, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(v_resp_gspace)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             v_resp_rspace, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(v_resp_rspace)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, rho_resp, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(rho_resp)
 
       ! Calculate charge density
       CALL pw_zero(rho_resp)
       CALL calculate_rho_resp_all(rho_resp, rhs_subsys, natom, eta, qs_env)
 
       ! Calculate potential
-      CALL pw_zero(v_resp_gspace)
       CALL pw_poisson_solve(poisson_env, rho_resp, &
-                            vhartree=v_resp_gspace)
-      CALL pw_zero(v_resp_rspace)
-      CALL pw_transfer(v_resp_gspace, v_resp_rspace)
+                            vhartree=v_resp_rspace)
       dvol = v_resp_rspace%pw_grid%dvol
       CALL pw_scale(v_resp_rspace, dvol)
       normalize_factor = SQRT((eta/pi)**3)
@@ -1030,9 +997,9 @@ CONTAINS
       CALL pw_copy(v_resp_rspace, v_rspace)
 
       ! Release plane waves
-      CALL pw_release(v_resp_gspace)
-      CALL pw_release(v_resp_rspace)
-      CALL pw_release(rho_resp)
+      CALL v_resp_gspace%release()
+      CALL v_resp_rspace%release()
+      CALL rho_resp%release()
 
       ! Deallocate map_index array
       DEALLOCATE (map_index)
@@ -1056,10 +1023,10 @@ CONTAINS
                                     spin_embed_pot, spin_embed_pot_subsys, open_shell_embed, &
                                     change_spin_sign)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type), INTENT(IN)                          :: embed_pot
-      TYPE(pw_type), POINTER                             :: embed_pot_subsys
-      TYPE(pw_type), INTENT(IN), POINTER                 :: spin_embed_pot
-      TYPE(pw_type), POINTER                             :: spin_embed_pot_subsys
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: embed_pot
+      TYPE(pw_r3d_rs_type), POINTER                      :: embed_pot_subsys
+      TYPE(pw_r3d_rs_type), INTENT(IN), POINTER          :: spin_embed_pot
+      TYPE(pw_r3d_rs_type), POINTER                      :: spin_embed_pot_subsys
       LOGICAL                                            :: open_shell_embed, change_spin_sign
 
       TYPE(pw_env_type), POINTER                         :: pw_env
@@ -1074,9 +1041,7 @@ CONTAINS
       ! Create embedding potential and set to zero
       NULLIFY (embed_pot_subsys)
       ALLOCATE (embed_pot_subsys)
-      CALL pw_pool_create_pw(auxbas_pw_pool_subsys, embed_pot_subsys, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool_subsys%create_pw(embed_pot_subsys)
 
       ! Hard copy the grid
       CALL pw_copy(embed_pot, embed_pot_subsys)
@@ -1084,9 +1049,7 @@ CONTAINS
       IF (open_shell_embed) THEN
          NULLIFY (spin_embed_pot_subsys)
          ALLOCATE (spin_embed_pot_subsys)
-         CALL pw_pool_create_pw(auxbas_pw_pool_subsys, spin_embed_pot_subsys, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool_subsys%create_pw(spin_embed_pot_subsys)
          ! Hard copy the grid
          IF (change_spin_sign) THEN
             CALL pw_axpy(spin_embed_pot, spin_embed_pot_subsys, -1.0_dp, 0.0_dp, allow_noncompatible_grids=.TRUE.)
@@ -1108,7 +1071,7 @@ CONTAINS
 
    SUBROUTINE calculate_embed_pot_grad(qs_env, diff_rho_r, diff_rho_spin, opt_embed)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type), INTENT(IN)                          :: diff_rho_r, diff_rho_spin
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: diff_rho_r, diff_rho_spin
       TYPE(opt_embed_pot_type)                           :: opt_embed
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'calculate_embed_pot_grad'
@@ -1246,7 +1209,7 @@ CONTAINS
                                              open_shell_embed, lri)
       TYPE(qs_environment_type), POINTER                 :: qs_env
       INTEGER                                            :: dimen_aux
-      TYPE(pw_type), INTENT(IN)                          :: rho_r, rho_spin
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: rho_r, rho_spin
       TYPE(cp_fm_type), INTENT(IN)                       :: embed_pot_grad
       LOGICAL                                            :: open_shell_embed
       TYPE(lri_kind_type), DIMENSION(:), POINTER         :: lri
@@ -1354,7 +1317,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE compute_kinetic_mat(qs_env, kinetic_mat)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(cp_fm_type), INTENT(IN)                       :: kinetic_mat
+      TYPE(cp_fm_type), INTENT(INOUT)                    :: kinetic_mat
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'compute_kinetic_mat'
 
@@ -1396,16 +1359,17 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE grid_regularize(potential, pw_env, lambda, reg_term)
 
-      TYPE(pw_type), INTENT(INOUT)                       :: potential
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: potential
       TYPE(pw_env_type), POINTER                         :: pw_env
       REAL(KIND=dp)                                      :: lambda, reg_term
 
       INTEGER                                            :: i, j, k
       INTEGER, DIMENSION(3)                              :: lb, n, ub
+      TYPE(pw_c1d_gs_type)                               :: dr2_pot, grid_reg_g, potential_g
+      TYPE(pw_c1d_gs_type), DIMENSION(3)                 :: dpot_g
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: dr2_pot, grid_reg, grid_reg_g, &
-                                                            potential_g, square_norm_dpot
-      TYPE(pw_type), DIMENSION(3)                        :: dpot, dpot_g
+      TYPE(pw_r3d_rs_type)                               :: grid_reg, square_norm_dpot
+      TYPE(pw_r3d_rs_type), DIMENSION(3)                 :: dpot
 
       !
       ! First, the contribution to the gradient
@@ -1414,21 +1378,13 @@ CONTAINS
       ! Get some of the grids ready
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, potential_g, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(potential_g)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, dr2_pot, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(dr2_pot)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, grid_reg, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(grid_reg)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, grid_reg_g, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(grid_reg_g)
       CALL pw_zero(grid_reg_g)
 
       ! Transfer potential to the reciprocal space
@@ -1449,17 +1405,11 @@ CONTAINS
       ! Second, the contribution to the functional
       !
       DO i = 1, 3
-         CALL pw_pool_create_pw(auxbas_pw_pool, dpot(i), &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
-         CALL pw_pool_create_pw(auxbas_pw_pool, dpot_g(i), &
-                                use_data=COMPLEXDATA1D, &
-                                in_space=RECIPROCALSPACE)
+         CALL auxbas_pw_pool%create_pw(dpot(i))
+         CALL auxbas_pw_pool%create_pw(dpot_g(i))
       END DO
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, square_norm_dpot, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(square_norm_dpot)
 
       DO i = 1, 3
          n(:) = 0
@@ -1477,12 +1427,12 @@ CONTAINS
       DO k = lb(3), ub(3)
          DO j = lb(2), ub(2)
             DO i = lb(1), ub(1)
-               square_norm_dpot%cr3d(i, j, k) = (dpot(1)%cr3d(i, j, k)* &
-                                                 dpot(1)%cr3d(i, j, k) + &
-                                                 dpot(2)%cr3d(i, j, k)* &
-                                                 dpot(2)%cr3d(i, j, k) + &
-                                                 dpot(3)%cr3d(i, j, k)* &
-                                                 dpot(3)%cr3d(i, j, k))
+               square_norm_dpot%array(i, j, k) = (dpot(1)%array(i, j, k)* &
+                                                  dpot(1)%array(i, j, k) + &
+                                                  dpot(2)%array(i, j, k)* &
+                                                  dpot(2)%array(i, j, k) + &
+                                                  dpot(3)%array(i, j, k)* &
+                                                  dpot(3)%array(i, j, k))
             END DO
          END DO
       END DO
@@ -1491,14 +1441,14 @@ CONTAINS
       reg_term = 2*lambda*pw_integrate_function(fun=square_norm_dpot)
 
       ! Release
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, potential_g)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, dr2_pot)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, grid_reg)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, grid_reg_g)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, square_norm_dpot)
+      CALL auxbas_pw_pool%give_back_pw(potential_g)
+      CALL auxbas_pw_pool%give_back_pw(dr2_pot)
+      CALL auxbas_pw_pool%give_back_pw(grid_reg)
+      CALL auxbas_pw_pool%give_back_pw(grid_reg_g)
+      CALL auxbas_pw_pool%give_back_pw(square_norm_dpot)
       DO i = 1, 3
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, dpot(i))
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, dpot_g(i))
+         CALL auxbas_pw_pool%give_back_pw(dpot(i))
+         CALL auxbas_pw_pool%give_back_pw(dpot_g(i))
       END DO
 
    END SUBROUTINE grid_regularize
@@ -1516,11 +1466,11 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE opt_embed_step(diff_rho_r, diff_rho_spin, opt_embed, embed_pot, spin_embed_pot, rho_r_ref, qs_env)
 
-      TYPE(pw_type), INTENT(INOUT)                       :: diff_rho_r, diff_rho_spin
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: diff_rho_r, diff_rho_spin
       TYPE(opt_embed_pot_type)                           :: opt_embed
-      TYPE(pw_type), INTENT(INOUT)                       :: embed_pot
-      TYPE(pw_type), INTENT(IN), POINTER                 :: spin_embed_pot
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r_ref
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN), POINTER          :: spin_embed_pot
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r_ref
       TYPE(qs_environment_type), POINTER                 :: qs_env
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'opt_embed_step'
@@ -1708,11 +1658,11 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE grid_based_step(diff_rho_r, diff_rho_spin, pw_env, opt_embed, embed_pot, spin_embed_pot)
 
-      TYPE(pw_type), INTENT(INOUT)                       :: diff_rho_r, diff_rho_spin
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: diff_rho_r, diff_rho_spin
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(opt_embed_pot_type)                           :: opt_embed
-      TYPE(pw_type), INTENT(INOUT)                       :: embed_pot
-      TYPE(pw_type), POINTER                             :: spin_embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: embed_pot
+      TYPE(pw_r3d_rs_type), POINTER                      :: spin_embed_pot
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'grid_based_step'
 
@@ -1754,11 +1704,11 @@ CONTAINS
                                qs_env, add_const_pot, open_shell_embed, const_pot)
       TYPE(cp_fm_type), INTENT(IN)                       :: embed_pot_coef
       INTEGER                                            :: dimen_aux
-      TYPE(pw_type), INTENT(INOUT)                       :: embed_pot
-      TYPE(pw_type), INTENT(IN), POINTER                 :: spin_embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN), POINTER          :: spin_embed_pot
       TYPE(qs_environment_type), POINTER                 :: qs_env
       LOGICAL                                            :: add_const_pot, open_shell_embed
-      TYPE(pw_type), INTENT(IN), OPTIONAL                :: const_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN), OPTIONAL         :: const_pot
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'update_embed_pot'
 
@@ -1776,9 +1726,10 @@ CONTAINS
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pw_c1d_gs_type)                               :: rho_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: psi_L, rho_g
+      TYPE(pw_r3d_rs_type)                               :: psi_L
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
 
       CALL timeset(routineN, handle)
@@ -1796,13 +1747,9 @@ CONTAINS
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool)
 
       ! get some of the grids ready
-      CALL pw_pool_create_pw(auxbas_pw_pool, rho_g, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(rho_g)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, psi_L, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(psi_L)
 
       ! Create wf_vector and auxiliary wave functions
       ALLOCATE (wf_vector(dimen_aux))
@@ -1845,10 +1792,10 @@ CONTAINS
          CALL para_env%sum(wf_vector)
 
          ! Calculate the variable part of the embedding potential
-         CALL calculate_wavefunction(mo_coeff, 1, psi_L, rho_g, atomic_kind_set, &
-                                     qs_kind_set, cell, dft_control, particle_set, pw_env, &
-                                     basis_type="RI_AUX", &
-                                     external_vector=wf_vector)
+         CALL collocate_function(wf_vector, psi_L, rho_g, atomic_kind_set, &
+                                 qs_kind_set, cell, particle_set, pw_env, &
+                                 dft_control%qs_control%eps_rho_rspace, &
+                                 basis_type="RI_AUX")
          ! Update the full embedding potential
          IF (add_const_pot) THEN
             CALL pw_copy(const_pot, embed_pot)
@@ -1872,10 +1819,10 @@ CONTAINS
          CALL para_env%sum(wf_vector)
 
          ! Calculate the variable part of the embedding potential
-         CALL calculate_wavefunction(mo_coeff, 1, psi_L, rho_g, atomic_kind_set, &
-                                     qs_kind_set, cell, dft_control, particle_set, pw_env, &
-                                     basis_type="RI_AUX", &
-                                     external_vector=wf_vector)
+         CALL collocate_function(wf_vector, psi_L, rho_g, atomic_kind_set, &
+                                 qs_kind_set, cell, particle_set, pw_env, &
+                                 dft_control%qs_control%eps_rho_rspace, &
+                                 basis_type="RI_AUX")
          ! No constant potential for spin-dependent potential
          CALL pw_zero(spin_embed_pot)
          CALL pw_axpy(psi_L, spin_embed_pot)
@@ -1897,10 +1844,10 @@ CONTAINS
          CALL calculate_wavefunction(mo_coeff, 1, psi_L, rho_g, atomic_kind_set, &
                                      qs_kind_set, cell, dft_control, particle_set, pw_env)
 
-         CALL calculate_wavefunction(mo_coeff, 1, psi_L, rho_g, atomic_kind_set, &
-                                     qs_kind_set, cell, dft_control, particle_set, pw_env, &
-                                     basis_type="RI_AUX", &
-                                     external_vector=wf_vector)
+         CALL collocate_function(wf_vector, psi_L, rho_g, atomic_kind_set, &
+                                 qs_kind_set, cell, particle_set, pw_env, &
+                                 dft_control%qs_control%eps_rho_rspace, &
+                                 basis_type="RI_AUX")
 
          ! Update the full embedding potential
          IF (add_const_pot) THEN
@@ -1914,8 +1861,8 @@ CONTAINS
 
       ! Deallocate memory and release objects
       DEALLOCATE (wf_vector)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, psi_L)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_g)
+      CALL auxbas_pw_pool%give_back_pw(psi_L)
+      CALL auxbas_pw_pool%give_back_pw(rho_g)
 
       IF (open_shell_embed) THEN
          CALL cp_fm_release(embed_pot_coef_spin)
@@ -2521,10 +2468,10 @@ CONTAINS
    SUBROUTINE Leeuwen_Baerends_potential_update(pw_env, embed_pot, spin_embed_pot, diff_rho_r, diff_rho_spin, &
                                                 rho_r_ref, open_shell_embed, step_len)
       TYPE(pw_env_type), POINTER                         :: pw_env
-      TYPE(pw_type), INTENT(INOUT)                       :: embed_pot
-      TYPE(pw_type), INTENT(IN), POINTER                 :: spin_embed_pot
-      TYPE(pw_type), INTENT(IN)                          :: diff_rho_r, diff_rho_spin
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r_ref
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN), POINTER          :: spin_embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: diff_rho_r, diff_rho_spin
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r_ref
       LOGICAL, INTENT(IN)                                :: open_shell_embed
       REAL(KIND=dp), INTENT(IN)                          :: step_len
 
@@ -2534,7 +2481,7 @@ CONTAINS
       INTEGER, DIMENSION(3)                              :: lb, ub
       REAL(KIND=dp)                                      :: my_rho, rho_cutoff
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), DIMENSION(:), POINTER               :: new_embed_pot, rho_n_1, temp_embed_pot
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: new_embed_pot, rho_n_1, temp_embed_pot
 
       CALL timeset(routineN, handle)
 
@@ -2549,9 +2496,7 @@ CONTAINS
       NULLIFY (new_embed_pot)
       ALLOCATE (new_embed_pot(nspins))
       DO i_spin = 1, nspins
-         CALL pw_pool_create_pw(auxbas_pw_pool, new_embed_pot(i_spin), &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(new_embed_pot(i_spin))
          CALL pw_zero(new_embed_pot(i_spin))
       END DO
 
@@ -2565,13 +2510,13 @@ CONTAINS
          DO k = lb(3), ub(3)
             DO j = lb(2), ub(2)
                DO i = lb(1), ub(1)
-                  IF (rho_r_ref(1)%cr3d(i, j, k) .GT. rho_cutoff) THEN
-                     my_rho = rho_r_ref(1)%cr3d(i, j, k)
+                  IF (rho_r_ref(1)%array(i, j, k) .GT. rho_cutoff) THEN
+                     my_rho = rho_r_ref(1)%array(i, j, k)
                   ELSE
                      my_rho = rho_cutoff
                   END IF
-                  new_embed_pot(1)%cr3d(i, j, k) = step_len*embed_pot%cr3d(i, j, k)* &
-                                                   (diff_rho_r%cr3d(i, j, k) + rho_r_ref(1)%cr3d(i, j, k))/my_rho
+                  new_embed_pot(1)%array(i, j, k) = step_len*embed_pot%array(i, j, k)* &
+                                                    (diff_rho_r%array(i, j, k) + rho_r_ref(1)%array(i, j, k))/my_rho
                END DO
             END DO
          END DO
@@ -2585,13 +2530,9 @@ CONTAINS
          NULLIFY (temp_embed_pot)
          ALLOCATE (temp_embed_pot(nspins))
          DO i_spin = 1, nspins
-            CALL pw_pool_create_pw(auxbas_pw_pool, rho_n_1(i_spin), &
-                                   use_data=REALDATA3D, &
-                                   in_space=REALSPACE)
+            CALL auxbas_pw_pool%create_pw(rho_n_1(i_spin))
             CALL pw_zero(rho_n_1(i_spin))
-            CALL pw_pool_create_pw(auxbas_pw_pool, temp_embed_pot(i_spin), &
-                                   use_data=REALDATA3D, &
-                                   in_space=REALSPACE)
+            CALL auxbas_pw_pool%create_pw(temp_embed_pot(i_spin))
             CALL pw_zero(temp_embed_pot(i_spin))
          END DO
          CALL pw_copy(diff_rho_r, rho_n_1(1))
@@ -2616,20 +2557,20 @@ CONTAINS
             DO k = lb(3), ub(3)
                DO j = lb(2), ub(2)
                   DO i = lb(1), ub(1)
-                     IF (rho_r_ref(1)%cr3d(i, j, k) .GT. rho_cutoff) THEN
-                        my_rho = rho_r_ref(1)%cr3d(i, j, k)
+                     IF (rho_r_ref(1)%array(i, j, k) .GT. rho_cutoff) THEN
+                        my_rho = rho_r_ref(1)%array(i, j, k)
                      ELSE
                         my_rho = rho_cutoff
                      END IF
-                     new_embed_pot(1)%cr3d(i, j, k) = step_len*temp_embed_pot(1)%cr3d(i, j, k)* &
-                                                      (rho_n_1(1)%cr3d(i, j, k))/my_rho
-                     IF (rho_r_ref(2)%cr3d(i, j, k) .GT. rho_cutoff) THEN
-                        my_rho = rho_r_ref(2)%cr3d(i, j, k)
+                     new_embed_pot(1)%array(i, j, k) = step_len*temp_embed_pot(1)%array(i, j, k)* &
+                                                       (rho_n_1(1)%array(i, j, k))/my_rho
+                     IF (rho_r_ref(2)%array(i, j, k) .GT. rho_cutoff) THEN
+                        my_rho = rho_r_ref(2)%array(i, j, k)
                      ELSE
                         my_rho = rho_cutoff
                      END IF
-                     new_embed_pot(2)%cr3d(i, j, k) = step_len*temp_embed_pot(2)%cr3d(i, j, k)* &
-                                                      (rho_n_1(2)%cr3d(i, j, k))/my_rho
+                     new_embed_pot(2)%array(i, j, k) = step_len*temp_embed_pot(2)%array(i, j, k)* &
+                                                       (rho_n_1(2)%array(i, j, k))/my_rho
                   END DO
                END DO
             END DO
@@ -2645,15 +2586,15 @@ CONTAINS
             DO k = lb(3), ub(3)
                DO j = lb(2), ub(2)
                   DO i = lb(1), ub(1)
-                     IF (rho_r_ref(1)%cr3d(i, j, k) .GT. rho_cutoff) THEN
-                        my_rho = 0.5_dp*rho_r_ref(1)%cr3d(i, j, k)
+                     IF (rho_r_ref(1)%array(i, j, k) .GT. rho_cutoff) THEN
+                        my_rho = 0.5_dp*rho_r_ref(1)%array(i, j, k)
                      ELSE
                         my_rho = rho_cutoff
                      END IF
-                     new_embed_pot(1)%cr3d(i, j, k) = step_len*temp_embed_pot(1)%cr3d(i, j, k)* &
-                                                      (rho_n_1(1)%cr3d(i, j, k))/my_rho
-                     new_embed_pot(2)%cr3d(i, j, k) = step_len*temp_embed_pot(2)%cr3d(i, j, k)* &
-                                                      (rho_n_1(2)%cr3d(i, j, k))/my_rho
+                     new_embed_pot(1)%array(i, j, k) = step_len*temp_embed_pot(1)%array(i, j, k)* &
+                                                       (rho_n_1(1)%array(i, j, k))/my_rho
+                     new_embed_pot(2)%array(i, j, k) = step_len*temp_embed_pot(2)%array(i, j, k)* &
+                                                       (rho_n_1(2)%array(i, j, k))/my_rho
                   END DO
                END DO
             END DO
@@ -2668,15 +2609,15 @@ CONTAINS
          CALL pw_scale(spin_embed_pot, a=0.5_dp)
 
          DO i_spin = 1, nspins
-            CALL pw_release(rho_n_1(i_spin))
-            CALL pw_release(temp_embed_pot(i_spin))
+            CALL rho_n_1(i_spin)%release()
+            CALL temp_embed_pot(i_spin)%release()
          END DO
          DEALLOCATE (rho_n_1)
          DEALLOCATE (temp_embed_pot)
       END IF
 
       DO i_spin = 1, nspins
-         CALL pw_release(new_embed_pot(i_spin))
+         CALL new_embed_pot(i_spin)%release()
       END DO
 
       DEALLOCATE (new_embed_pot)
@@ -2706,13 +2647,13 @@ CONTAINS
                          diff_rho_r, diff_rho_spin, v_w_ref, i_iter, step_len, open_shell_embed, &
                          vw_cutoff, vw_smooth_cutoff_range)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r_ref
-      TYPE(pw_type), INTENT(INOUT)                       :: prev_embed_pot
-      TYPE(pw_type), INTENT(IN), POINTER                 :: prev_spin_embed_pot
-      TYPE(pw_type), INTENT(INOUT)                       :: embed_pot
-      TYPE(pw_type), INTENT(IN), POINTER                 :: spin_embed_pot
-      TYPE(pw_type), INTENT(IN)                          :: diff_rho_r, diff_rho_spin
-      TYPE(pw_type), DIMENSION(:), POINTER               :: v_w_ref
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r_ref
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: prev_embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN), POINTER          :: prev_spin_embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN), POINTER          :: spin_embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: diff_rho_r, diff_rho_spin
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: v_w_ref
       INTEGER, INTENT(IN)                                :: i_iter
       REAL(KIND=dp)                                      :: step_len
       LOGICAL                                            :: open_shell_embed
@@ -2723,8 +2664,8 @@ CONTAINS
       INTEGER                                            :: handle, i_spin, nspins
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), ALLOCATABLE, DIMENSION(:)           :: new_embed_pot, temp_embed_pot, v_w
-      TYPE(pw_type), DIMENSION(:), POINTER               :: curr_rho
+      TYPE(pw_r3d_rs_type), ALLOCATABLE, DIMENSION(:)    :: new_embed_pot, temp_embed_pot, v_w
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: curr_rho
 
       CALL timeset(routineN, handle)
 
@@ -2742,9 +2683,7 @@ CONTAINS
          NULLIFY (v_w_ref)
          ALLOCATE (v_w_ref(nspins))
          DO i_spin = 1, nspins
-            CALL pw_pool_create_pw(auxbas_pw_pool, v_w_ref(i_spin), &
-                                   use_data=REALDATA3D, &
-                                   in_space=REALSPACE)
+            CALL auxbas_pw_pool%create_pw(v_w_ref(i_spin))
          END DO
          CALL Von_Weizsacker(rho_r_ref, v_w_ref, qs_env, vw_cutoff, vw_smooth_cutoff_range)
          ! For the first step previous are set to current
@@ -2766,19 +2705,13 @@ CONTAINS
          NULLIFY (curr_rho)
          ALLOCATE (curr_rho(nspins))
          DO i_spin = 1, nspins
-            CALL pw_pool_create_pw(auxbas_pw_pool, new_embed_pot(i_spin), &
-                                   use_data=REALDATA3D, &
-                                   in_space=REALSPACE)
+            CALL auxbas_pw_pool%create_pw(new_embed_pot(i_spin))
             CALL pw_zero(new_embed_pot(i_spin))
 
-            CALL pw_pool_create_pw(auxbas_pw_pool, v_w(i_spin), &
-                                   use_data=REALDATA3D, &
-                                   in_space=REALSPACE)
+            CALL auxbas_pw_pool%create_pw(v_w(i_spin))
             CALL pw_zero(v_w(i_spin))
 
-            CALL pw_pool_create_pw(auxbas_pw_pool, curr_rho(i_spin), &
-                                   use_data=REALDATA3D, &
-                                   in_space=REALSPACE)
+            CALL auxbas_pw_pool%create_pw(curr_rho(i_spin))
             CALL pw_zero(curr_rho(i_spin))
          END DO
 
@@ -2822,9 +2755,7 @@ CONTAINS
             ! Reconstruct corrent spin components of the potential
             ALLOCATE (temp_embed_pot(nspins))
             DO i_spin = 1, nspins
-               CALL pw_pool_create_pw(auxbas_pw_pool, temp_embed_pot(i_spin), &
-                                      use_data=REALDATA3D, &
-                                      in_space=REALSPACE)
+               CALL auxbas_pw_pool%create_pw(temp_embed_pot(i_spin))
                CALL pw_zero(temp_embed_pot(i_spin))
             END DO
             CALL pw_copy(embed_pot, temp_embed_pot(1))
@@ -2863,16 +2794,16 @@ CONTAINS
             CALL pw_scale(spin_embed_pot, a=0.5_dp)
 
             DO i_spin = 1, nspins
-               CALL pw_release(temp_embed_pot(i_spin))
+               CALL temp_embed_pot(i_spin)%release()
             END DO
             DEALLOCATE (temp_embed_pot)
 
          END IF
 
          DO i_spin = 1, nspins
-            CALL pw_release(curr_rho(i_spin))
-            CALL pw_release(new_embed_pot(i_spin))
-            CALL pw_release(v_w(i_spin))
+            CALL curr_rho(i_spin)%release()
+            CALL new_embed_pot(i_spin)%release()
+            CALL v_w(i_spin)%release()
          END DO
 
          DEALLOCATE (new_embed_pot)
@@ -2894,8 +2825,8 @@ CONTAINS
 !> \param vw_smooth_cutoff_range ...
 ! **************************************************************************************************
    SUBROUTINE Von_Weizsacker(rho_r, v_w, qs_env, vw_cutoff, vw_smooth_cutoff_range)
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r
-      TYPE(pw_type), DIMENSION(:), INTENT(IN)            :: v_w
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
+      TYPE(pw_r3d_rs_type), DIMENSION(:), INTENT(IN)     :: v_w
       TYPE(qs_environment_type), POINTER                 :: qs_env
       REAL(KIND=dp), INTENT(IN)                          :: vw_cutoff, vw_smooth_cutoff_range
 
@@ -2906,9 +2837,10 @@ CONTAINS
       REAL(KIND=dp)                                      :: density_smooth_cut_range, my_rho, &
                                                             rho_cutoff
       REAL(kind=dp), DIMENSION(:, :, :), POINTER         :: rhoa, rhob
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_g, tau
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: tau
       TYPE(section_vals_type), POINTER                   :: input, xc_section
       TYPE(xc_rho_cflags_type)                           :: needs
       TYPE(xc_rho_set_type)                              :: rho_set
@@ -2930,9 +2862,7 @@ CONTAINS
       NULLIFY (rho_g)
       ALLOCATE (rho_g(nspins))
       DO i_spin = 1, nspins
-         CALL pw_pool_create_pw(auxbas_pw_pool, rho_g(i_spin), &
-                                use_data=COMPLEXDATA1D, &
-                                in_space=RECIPROCALSPACE)
+         CALL auxbas_pw_pool%create_pw(rho_g(i_spin))
          CALL pw_transfer(rho_r(i_spin), rho_g(i_spin))
       END DO
 
@@ -2976,21 +2906,21 @@ CONTAINS
          DO k = lb(3), ub(3)
             DO j = lb(2), ub(2)
                DO i = lb(1), ub(1)
-                  IF (rho_r(1)%cr3d(i, j, k) .GT. rho_cutoff) THEN
-                     my_rho = rho_r(1)%cr3d(i, j, k)
+                  IF (rho_r(1)%array(i, j, k) .GT. rho_cutoff) THEN
+                     my_rho = rho_r(1)%array(i, j, k)
                   ELSE
                      my_rho = rho_cutoff
                   END IF
-                  v_w(1)%cr3d(i, j, k) = one_8*rho_set%norm_drhoa(i, j, k)**2/my_rho**2 - &
-                                         one_4*rho_set%laplace_rhoa(i, j, k)/my_rho
+                  v_w(1)%array(i, j, k) = one_8*rho_set%norm_drhoa(i, j, k)**2/my_rho**2 - &
+                                          one_4*rho_set%laplace_rhoa(i, j, k)/my_rho
 
-                  IF (rho_r(2)%cr3d(i, j, k) .GT. rho_cutoff) THEN
-                     my_rho = rho_r(2)%cr3d(i, j, k)
+                  IF (rho_r(2)%array(i, j, k) .GT. rho_cutoff) THEN
+                     my_rho = rho_r(2)%array(i, j, k)
                   ELSE
                      my_rho = rho_cutoff
                   END IF
-                  v_w(2)%cr3d(i, j, k) = one_8*rho_set%norm_drhob(i, j, k)**2/my_rho**2 - &
-                                         one_4*rho_set%laplace_rhob(i, j, k)/my_rho
+                  v_w(2)%array(i, j, k) = one_8*rho_set%norm_drhob(i, j, k)**2/my_rho**2 - &
+                                          one_4*rho_set%laplace_rhob(i, j, k)/my_rho
                END DO
             END DO
          END DO
@@ -3002,12 +2932,12 @@ CONTAINS
          DO k = lb(3), ub(3)
             DO j = lb(2), ub(2)
                DO i = lb(1), ub(1)
-                  IF (rho_r(1)%cr3d(i, j, k) .GT. rho_cutoff) THEN
-                     my_rho = rho_r(1)%cr3d(i, j, k)
-                     v_w(1)%cr3d(i, j, k) = one_8*rho_set%norm_drho(i, j, k)**2/my_rho**2 - &
-                                            one_4*rho_set%laplace_rho(i, j, k)/my_rho
+                  IF (rho_r(1)%array(i, j, k) .GT. rho_cutoff) THEN
+                     my_rho = rho_r(1)%array(i, j, k)
+                     v_w(1)%array(i, j, k) = one_8*rho_set%norm_drho(i, j, k)**2/my_rho**2 - &
+                                             one_4*rho_set%laplace_rho(i, j, k)/my_rho
                   ELSE
-                     v_w(1)%cr3d(i, j, k) = 0.0_dp
+                     v_w(1)%array(i, j, k) = 0.0_dp
                   END IF
                END DO
             END DO
@@ -3022,7 +2952,7 @@ CONTAINS
          rho_cutoff = 0.5_dp*rho_cutoff
       END IF
       DO i_spin = 1, nspins
-         CALL smooth_cutoff(pot=v_w(i_spin)%cr3d, rho=rho_r(i_spin)%cr3d, rhoa=rhoa, rhob=rhob, &
+         CALL smooth_cutoff(pot=v_w(i_spin)%array, rho=rho_r(i_spin)%array, rhoa=rhoa, rhob=rhob, &
                             rho_cutoff=vw_cutoff, &
                             rho_smooth_cutoff_range=vw_smooth_cutoff_range)
       END DO
@@ -3030,7 +2960,7 @@ CONTAINS
       CALL xc_rho_set_release(rho_set, pw_pool=auxbas_pw_pool)
 
       DO i_spin = 1, nspins
-         CALL pw_release(rho_g(i_spin))
+         CALL rho_g(i_spin)%release()
       END DO
       DEALLOCATE (rho_g)
 
@@ -3042,7 +2972,7 @@ CONTAINS
 !> \return ...
 ! **************************************************************************************************
    FUNCTION max_dens_diff(diff_rho_r) RESULT(total_max_diff)
-      TYPE(pw_type), INTENT(IN)                          :: diff_rho_r
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: diff_rho_r
       REAL(KIND=dp)                                      :: total_max_diff
 
       INTEGER                                            :: size_x, size_y, size_z
@@ -3052,15 +2982,15 @@ CONTAINS
       !, i_x, i_y, i_z
 
       ! Get the sizes
-      size_x = SIZE(diff_rho_r%cr3d, 1)
-      size_y = SIZE(diff_rho_r%cr3d, 2)
-      size_z = SIZE(diff_rho_r%cr3d, 3)
+      size_x = SIZE(diff_rho_r%array, 1)
+      size_y = SIZE(diff_rho_r%array, 2)
+      size_z = SIZE(diff_rho_r%array, 3)
 
       ! Allocate the density
       ALLOCATE (grid_3d(size_x, size_y, size_z))
 
       ! Copy density
-      grid_3d(:, :, :) = diff_rho_r%cr3d(:, :, :)
+      grid_3d(:, :, :) = diff_rho_r%array(:, :, :)
 
       ! Find the maximum absolute value
       max_diff = MAXVAL(ABS(grid_3d))
@@ -3081,7 +3011,7 @@ CONTAINS
 !> \author Vladimir Rybkin
 ! **************************************************************************************************
    SUBROUTINE print_rho_diff(diff_rho_r, i_iter, qs_env, final_one)
-      TYPE(pw_type), INTENT(IN)                          :: diff_rho_r
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: diff_rho_r
       INTEGER, INTENT(IN)                                :: i_iter
       TYPE(qs_environment_type), INTENT(IN), POINTER     :: qs_env
       LOGICAL, INTENT(IN)                                :: final_one
@@ -3132,7 +3062,7 @@ CONTAINS
 !> \author Vladimir Rybkin
 ! **************************************************************************************************
    SUBROUTINE print_rho_spin_diff(spin_diff_rho_r, i_iter, qs_env, final_one)
-      TYPE(pw_type), INTENT(IN)                          :: spin_diff_rho_r
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: spin_diff_rho_r
       INTEGER, INTENT(IN)                                :: i_iter
       TYPE(qs_environment_type), INTENT(IN), POINTER     :: qs_env
       LOGICAL, INTENT(IN)                                :: final_one
@@ -3190,9 +3120,9 @@ CONTAINS
       TYPE(qs_environment_type), POINTER                 :: qs_env
       INTEGER                                            :: dimen_aux
       TYPE(cp_fm_type), INTENT(IN), POINTER              :: embed_pot_coef
-      TYPE(pw_type), INTENT(IN)                          :: embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: embed_pot
       INTEGER                                            :: i_iter
-      TYPE(pw_type), INTENT(IN), POINTER                 :: embed_pot_spin
+      TYPE(pw_r3d_rs_type), INTENT(IN), POINTER          :: embed_pot_spin
       LOGICAL                                            :: open_shell_embed, grid_opt, final_one
 
       CHARACTER(LEN=default_path_length)                 :: filename, my_pos_cube, title
@@ -3286,8 +3216,8 @@ CONTAINS
    SUBROUTINE print_pot_simple_grid(qs_env, embed_pot, embed_pot_spin, i_iter, open_shell_embed, &
                                     final_one, qs_env_cluster)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type), INTENT(IN)                          :: embed_pot
-      TYPE(pw_type), INTENT(IN), POINTER                 :: embed_pot_spin
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: embed_pot
+      TYPE(pw_r3d_rs_type), INTENT(IN), POINTER          :: embed_pot_spin
       INTEGER                                            :: i_iter
       LOGICAL                                            :: open_shell_embed, final_one
       TYPE(qs_environment_type), POINTER                 :: qs_env_cluster
@@ -3298,7 +3228,7 @@ CONTAINS
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: pot_alpha, pot_beta
+      TYPE(pw_r3d_rs_type)                               :: pot_alpha, pot_beta
       TYPE(section_vals_type), POINTER                   :: dft_section, input
 
       NULLIFY (input)
@@ -3333,17 +3263,13 @@ CONTAINS
          CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool)
 
          ! Create embedding potential and set to zero
-         CALL pw_pool_create_pw(auxbas_pw_pool, pot_alpha, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(pot_alpha)
          CALL pw_zero(pot_alpha)
 
          CALL pw_copy(embed_pot, pot_alpha)
 
          IF (open_shell_embed) THEN
-            CALL pw_pool_create_pw(auxbas_pw_pool, pot_beta, &
-                                   use_data=REALDATA3D, &
-                                   in_space=REALSPACE)
+            CALL auxbas_pw_pool%create_pw(pot_beta)
             CALL pw_copy(embed_pot, pot_beta)
             ! Add spin potential to the alpha, and subtract from the beta part
             CALL pw_axpy(embed_pot_spin, pot_alpha, 1.0_dp)
@@ -3370,9 +3296,9 @@ CONTAINS
          CALL cp_print_key_finished_output(unit_nr, logger, input, &
                                            "DFT%QS%OPT_EMBED%WRITE_SIMPLE_GRID")
          ! Release structures
-         CALL pw_release(pot_alpha)
+         CALL pot_alpha%release()
          IF (open_shell_embed) THEN
-            CALL pw_release(pot_beta)
+            CALL pot_beta%release()
          END IF
 
       END IF
@@ -3493,7 +3419,7 @@ CONTAINS
       INTEGER                                            :: subsys_num
 
       INTEGER                                            :: i_dens_start, i_spin, nspins
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
       TYPE(qs_rho_type), POINTER                         :: rho
 
       NULLIFY (rho_r, rho)
@@ -3505,8 +3431,8 @@ CONTAINS
       i_dens_start = SUM(opt_embed%all_nspins(1:subsys_num)) - nspins + 1
 
       DO i_spin = 1, nspins
-         opt_embed%prev_subsys_dens(i_dens_start + i_spin - 1)%cr3d(:, :, :) = &
-            rho_r(i_spin)%cr3d(:, :, :)
+         opt_embed%prev_subsys_dens(i_dens_start + i_spin - 1)%array(:, :, :) = &
+            rho_r(i_spin)%array(:, :, :)
       END DO
 
    END SUBROUTINE get_prev_density
@@ -3523,7 +3449,7 @@ CONTAINS
       INTEGER                                            :: subsys_num
 
       INTEGER                                            :: i_dens_start, i_spin, nspins
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
       TYPE(qs_rho_type), POINTER                         :: rho
 
       NULLIFY (rho_r, rho)
@@ -3552,7 +3478,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE conv_check_embed(opt_embed, diff_rho_r, diff_rho_spin, output_unit)
       TYPE(opt_embed_pot_type)                           :: opt_embed
-      TYPE(pw_type), INTENT(IN)                          :: diff_rho_r, diff_rho_spin
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: diff_rho_r, diff_rho_spin
       INTEGER                                            :: output_unit
 
       INTEGER                                            :: i_dens, i_dens_start, i_spin

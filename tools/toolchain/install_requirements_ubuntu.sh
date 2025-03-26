@@ -26,10 +26,12 @@ apt-get install -qq --no-install-recommends \
   libtool \
   libtool-bin \
   make \
+  ninja-build \
   nano \
   patch \
   pkg-config \
   python3 \
+  python3-pip \
   unzip \
   wget \
   xxd \

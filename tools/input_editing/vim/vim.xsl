@@ -75,16 +75,27 @@ syn keyword cp2kConstant <xsl:value-of select="NAME"/>
 syn keyword cp2kSection <xsl:value-of select="NAME"/>
 </xsl:for-each-group>
 syn keyword cp2kSection END
+syn keyword cp2kSection ENDIF
 syn match cp2kBegSection '^\s*&amp;\w\+' contains=cp2kSection
 syn match cp2kEndSection '^\s*&amp;END\s*\w\+' contains=cp2kSection
 
 "----------------------------------------------------------------/
-" CP2K keywords
+" CP2K default keyword names
 "----------------------------------------------------------------/
 <xsl:for-each-group select="//KEYWORD" group-by="NAME[@type='default']">
 <xsl:sort select="NAME[@type='default']"/>
 <xsl:if test="NAME[@type='default']!=''">
-syn keyword cp2kKeyword <xsl:value-of select="NAME"/>
+syn keyword cp2kKeyword <xsl:value-of select="NAME[@type='default']"/>
+</xsl:if>
+</xsl:for-each-group>
+
+"----------------------------------------------------------------/
+" CP2K alias keyword names
+"----------------------------------------------------------------/
+<xsl:for-each-group select="//KEYWORD" group-by="NAME[@type='alias'][1]">
+<xsl:sort select="NAME[@type='alias'][1]"/>
+<xsl:if test="NAME[@type='alias']!=''">
+syn keyword cp2kKeyword <xsl:value-of select="NAME[@type='alias']"/>
 </xsl:if>
 </xsl:for-each-group>
 
@@ -92,7 +103,7 @@ syn keyword cp2kKeyword <xsl:value-of select="NAME"/>
 " CP2K preprocessing directives
 "-----------------------------------------------------------------/
 
-syn keyword cp2kPreProc endif if include set
+syn keyword cp2kPreProc ENDIF FFTYPE IF INCLUDE PRINT SET XCTYPE
 
 "-----------------------------------------------------------------/
 " CP2K strings
@@ -108,6 +119,7 @@ syn region cp2kString matchgroup=cp2kStringDelimiter start=+`+ end=+`+
 
 setlocal autoindent
 setlocal expandtab
+setlocal iskeyword+=-
 
 "----------------------------------------------------------------------------/
 " Indentation support for CP2K input syntax
@@ -119,7 +131,7 @@ endif
 let b:did_indent = 1
 
 setlocal indentexpr=GetCp2kIndent()
-setlocal indentkeys+=0=~&amp;END,0=#,0=@
+setlocal indentkeys+=0=~&amp;END,0=~@ENDIF,0=#,0=@
 setlocal nosmartindent
 
 if exists("*GetCp2kIndent")
@@ -133,23 +145,15 @@ function! GetCp2kIndent()
    endif
    let ind = indent(lnum)
    let line = getline(lnum)
-   if line =~ '^\s*&amp;'
+   if line =~ '^\s*\c\%(&amp;\|@IF\)'
       let ind += &amp;shiftwidth
-      if line =~ '^\s*\c\%(&amp;END\)\>'
+      if line =~ '^\s*\c\%(&amp;END\|@ENDIF\)\>'
          let ind -= &amp;shiftwidth
       endif
-   elseif line =~ '^\s*\c\%(@if\|@endif\|@include\|@set\)\>'
-      let plnum = lnum
-      while getline(plnum) =~ '^\s*@'
-         let plnum -= 1
-      endwhile
-      let ind = indent(plnum)
    endif
    let line = getline(v:lnum)
-   if line =~ '^\s*\c\%(&amp;END\)\>'
+   if line =~ '^\s*\c\%(&amp;END\|@ENDIF\)\>'
       let ind -= &amp;shiftwidth
-   elseif line =~ '^\s*@'
-      let ind = 0
    endif
    return ind
 endfunction

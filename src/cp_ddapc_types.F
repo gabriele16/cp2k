@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -33,10 +33,10 @@ MODULE cp_ddapc_types
    USE pw_grid_types,                   ONLY: pw_grid_type
    USE pw_grids,                        ONLY: pw_grid_release
    USE pw_poisson_types,                ONLY: pw_poisson_multipole
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_pw,&
-                                              pw_pool_release,&
+   USE pw_pool_types,                   ONLY: pw_pool_release,&
                                               pw_pool_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -71,7 +71,7 @@ MODULE cp_ddapc_types
       TYPE(section_vals_type), POINTER :: ewald_section => NULL()
       TYPE(pw_pool_type), POINTER :: pw_pool_qm => NULL(), pw_pool_mm => NULL()
       TYPE(pw_grid_type), POINTER :: pw_grid_qm => NULL(), pw_grid_mm => NULL()
-      TYPE(pw_type), POINTER :: coeff_qm => NULL(), coeff_mm => NULL()
+      TYPE(pw_r3d_rs_type), POINTER :: coeff_qm => NULL(), coeff_mm => NULL()
    END TYPE cp_ddapc_ewald_type
 
 CONTAINS
@@ -102,7 +102,7 @@ CONTAINS
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       REAL(kind=dp), DIMENSION(:), POINTER               :: radii
       TYPE(cell_type), POINTER                           :: cell, super_cell
-      TYPE(pw_type), INTENT(IN)                          :: rho_tot_g
+      TYPE(pw_c1d_gs_type), INTENT(IN)                   :: rho_tot_g
       REAL(KIND=dp), INTENT(IN)                          :: gcut
       INTEGER, INTENT(IN)                                :: iw2
       REAL(KIND=dp), INTENT(IN)                          :: Vol
@@ -306,7 +306,7 @@ CONTAINS
             CALL Setup_Ewald_Spline(pw_grid=cp_ddapc_ewald%pw_grid_qm, pw_pool=cp_ddapc_ewald%pw_pool_qm, &
                                     coeff=cp_ddapc_ewald%coeff_qm, LG=LG, gx=gx, gy=gy, gz=gz, hmat=hmat, npts=npts, &
                                     param_section=multipole_section, tag="ddapc", &
-                                    para_env=para_env, print_section=grid_print_section)
+                                    print_section=grid_print_section)
             DEALLOCATE (LG)
             DEALLOCATE (gx)
             DEALLOCATE (gy)
@@ -320,7 +320,7 @@ CONTAINS
                grid_print_section => section_vals_get_subs_vals(force_env_section, "PRINT%GRID_INFORMATION")
                CALL Setup_Ewald_Spline(pw_grid=cp_ddapc_ewald%pw_grid_mm, pw_pool=cp_ddapc_ewald%pw_pool_mm, &
                                        coeff=cp_ddapc_ewald%coeff_mm, LG=LG, gx=gx, gy=gy, gz=gz, hmat=hmat, npts=npts, &
-                                       param_section=multipole_section, tag="ddapc", para_env=para_env, &
+                                       param_section=multipole_section, tag="ddapc", &
                                        print_section=grid_print_section)
                DEALLOCATE (LG)
                DEALLOCATE (gx)
@@ -407,11 +407,11 @@ CONTAINS
 
       IF (ASSOCIATED(cp_ddapc_ewald)) THEN
          IF (ASSOCIATED(cp_ddapc_ewald%coeff_qm)) THEN
-            CALL pw_pool_give_back_pw(cp_ddapc_ewald%pw_pool_qm, cp_ddapc_ewald%coeff_qm)
+            CALL cp_ddapc_ewald%pw_pool_qm%give_back_pw(cp_ddapc_ewald%coeff_qm)
             DEALLOCATE (cp_ddapc_ewald%coeff_qm)
          END IF
          IF (ASSOCIATED(cp_ddapc_ewald%coeff_mm)) THEN
-            CALL pw_pool_give_back_pw(cp_ddapc_ewald%pw_pool_mm, cp_ddapc_ewald%coeff_mm)
+            CALL cp_ddapc_ewald%pw_pool_mm%give_back_pw(cp_ddapc_ewald%coeff_mm)
             DEALLOCATE (cp_ddapc_ewald%coeff_mm)
          END IF
          IF (ASSOCIATED(cp_ddapc_ewald%pw_pool_qm)) THEN

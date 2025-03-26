@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -9,20 +9,19 @@
 ! **************************************************************************************************
 MODULE qs_scf_loop_utils
    USE cp_control_types,                ONLY: dft_control_type
-   USE cp_external_control,             ONLY: external_control
-   USE cp_log_handling,                 ONLY: cp_to_string
-   USE dbcsr_api,                       ONLY: dbcsr_copy,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_copy,&
                                               dbcsr_get_info,&
                                               dbcsr_p_type,&
                                               dbcsr_type
+   USE cp_external_control,             ONLY: external_control
+   USE cp_log_handling,                 ONLY: cp_to_string
    USE input_section_types,             ONLY: section_vals_type
    USE kinds,                           ONLY: default_string_length,&
                                               dp
    USE kpoint_types,                    ONLY: kpoint_type
    USE message_passing,                 ONLY: mp_para_env_type
    USE qs_density_matrices,             ONLY: calculate_density_matrix
-   USE qs_density_mixing_types,         ONLY: broyden_mixing_new_nr,&
-                                              broyden_mixing_nr,&
+   USE qs_density_mixing_types,         ONLY: broyden_mixing_nr,&
                                               direct_mixing_nr,&
                                               gspace_mixing_nr,&
                                               multisecant_mixing_nr,&
@@ -55,16 +54,13 @@ MODULE qs_scf_loop_utils
                                               do_special_diag
    USE qs_scf_methods,                  ONLY: scf_env_density_mixing
    USE qs_scf_output,                   ONLY: qs_scf_print_summary
-   USE qs_scf_types,                    ONLY: block_davidson_diag_method_nr,&
-                                              block_krylov_diag_method_nr,&
-                                              filter_matrix_diag_method_nr,&
-                                              general_diag_method_nr,&
-                                              ot_diag_method_nr,&
-                                              ot_method_nr,&
-                                              qs_scf_env_type,&
-                                              special_diag_method_nr
+   USE qs_scf_types,                    ONLY: &
+        block_davidson_diag_method_nr, block_krylov_diag_method_nr, filter_matrix_diag_method_nr, &
+        general_diag_method_nr, ot_diag_method_nr, ot_method_nr, qs_scf_env_type, &
+        smeagol_method_nr, special_diag_method_nr
    USE scf_control_types,               ONLY: scf_control_type,&
                                               smear_type
+   USE smeagol_interface,               ONLY: run_smeagol_emtrans
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -190,10 +186,8 @@ CONTAINS
 
          IF (ABS(qs_env%total_zeff_corr) > 0.0_dp) THEN
             CALL cp_abort(__LOCATION__, &
-                          "CORE_CORRECTION /= 0.0 plus"// &
-                          "SURFACE_DIPOLE_CORRECTION  TRUE"// &
-                          "requires SCF%DIAGONALIZATION: "// &
-                          "ALGORITHM STANDARD")
+                          "CORE_CORRECTION /= 0.0 plus SURFACE_DIPOLE_CORRECTION TRUE "// &
+                          "requires SCF%DIAGONALIZATION: ALGORITHM STANDARD")
          END IF
          CALL fb_env_do_diag(scf_env%filter_matrix_env, qs_env, &
                              matrix_ks, matrix_s, scf_section, diis_step)
@@ -234,7 +228,7 @@ CONTAINS
                                  scf_control, scf_section, &
                                  diis_step)
          END IF
-         ! OT diagonlization
+         ! OT diagonalization
       CASE (ot_diag_method_nr)
          CALL do_ot_diag(scf_env, mos, matrix_ks, matrix_s, &
                          scf_control, scf_section, diis_step)
@@ -357,6 +351,19 @@ CONTAINS
          CALL cp_abort(__LOCATION__, &
                        "KP code: Scf method not available: "// &
                        cp_to_string(scf_env%method))
+      CASE (smeagol_method_nr)
+         ! SMEAGOL interface
+         diis_step = .FALSE.
+         IF (scf_env%mixing_method == 0) THEN
+            scf_env%iter_method = "NoMix/SMGL"
+         ELSE IF (scf_env%mixing_method == 1) THEN
+            scf_env%iter_param = scf_env%p_mix_alpha
+            scf_env%iter_method = "P_Mix/SMGL"
+         ELSE IF (scf_env%mixing_method > 1) THEN
+            scf_env%iter_param = scf_env%mixing_store%alpha
+            scf_env%iter_method = TRIM(scf_env%mixing_store%iter_method)//"/SMGL"
+         END IF
+         CALL run_smeagol_emtrans(qs_env, last=.FALSE., iter=scf_env%iter_count, rho_ao_kp=scf_env%p_mix_new)
       END SELECT
 
       CALL get_qs_env(qs_env=qs_env, energy=energy)
@@ -471,7 +478,7 @@ CONTAINS
                                      scf_env%mixing_store, rho_ao_kp, para_env, scf_env%iter_delta, scf_env%iter_count, &
                                      diis=diis_step)
       CASE (gspace_mixing_nr, pulay_mixing_nr, broyden_mixing_nr, &
-            broyden_mixing_new_nr, multisecant_mixing_nr)
+            multisecant_mixing_nr)
          ! Compute the difference p_out-p_in
          CALL self_consistency_check(rho_ao_kp, scf_env%p_delta, para_env, scf_env%p_mix_new, &
                                      delta=scf_env%iter_delta)
@@ -600,7 +607,7 @@ CONTAINS
                END DO
             END DO
          CASE (gspace_mixing_nr, pulay_mixing_nr, broyden_mixing_nr, &
-               broyden_mixing_new_nr, multisecant_mixing_nr)
+               multisecant_mixing_nr)
             DO ic = 1, nc
                DO ispin = 1, dft_control%nspins
                   CALL dbcsr_get_info(rho_ao_kp(ispin, ic)%matrix, name=name) ! keep the name
@@ -713,6 +720,8 @@ CONTAINS
       CASE (block_krylov_diag_method_nr, block_davidson_diag_method_nr)
          !
       CASE (filter_matrix_diag_method_nr)
+         !
+      CASE (smeagol_method_nr)
          !
       CASE DEFAULT
          CALL cp_abort(__LOCATION__, &

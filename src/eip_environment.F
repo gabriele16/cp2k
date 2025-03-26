@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -239,9 +239,7 @@ CONTAINS
                                       keyword_name="EIP-Model", &
                                       i_val=eip_env%eip_model)
          CASE DEFAULT
-            CALL cp_abort(__LOCATION__, &
-                          "EIP models for other elements"// &
-                          "than Si isn't implemented yet.")
+            CPABORT("EIP models for other elements than Si isn't implemented yet.")
          END SELECT
       END DO
 

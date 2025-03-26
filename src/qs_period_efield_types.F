@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -15,8 +15,8 @@
 
 MODULE qs_period_efield_types
 
+   USE cp_dbcsr_api,                    ONLY: dbcsr_p_type
    USE cp_dbcsr_operations,             ONLY: dbcsr_deallocate_matrix_set
-   USE dbcsr_api,                       ONLY: dbcsr_p_type
    USE kinds,                           ONLY: dp
 #include "./base/base_uses.f90"
 
@@ -30,11 +30,11 @@ MODULE qs_period_efield_types
              set_efield_matrices
 
    TYPE efield_berry_type
-      REAL(KIND=dp)                                          :: field_energy
-      REAL(KIND=dp), DIMENSION(3)                            :: polarisation
-      TYPE(dbcsr_p_type), DIMENSION(:), POINTER           :: cosmat
-      TYPE(dbcsr_p_type), DIMENSION(:), POINTER           :: sinmat
-      TYPE(dbcsr_p_type), DIMENSION(:), POINTER           :: dipmat
+      REAL(KIND=dp)                                          :: field_energy = -1.0_dp
+      REAL(KIND=dp), DIMENSION(3)                            :: polarisation = -1.0_dp
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER           :: cosmat => NULL()
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER           :: sinmat => NULL()
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER           :: dipmat => NULL()
    END TYPE efield_berry_type
 
 CONTAINS

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -25,9 +25,9 @@ MODULE fist_efield_types
    TYPE fist_efield_type
       LOGICAL                                :: apply_field = .FALSE.
       LOGICAL                                :: displacement = .FALSE.
-      REAL(KIND=dp)                          :: strength
-      REAL(KIND=dp), DIMENSION(3)            :: polarisation
-      REAL(KIND=dp), DIMENSION(3)            :: dfilter
+      REAL(KIND=dp)                          :: strength = 0.0_dp
+      REAL(KIND=dp), DIMENSION(3)            :: polarisation = 0.0_dp
+      REAL(KIND=dp), DIMENSION(3)            :: dfilter = 0.0_dp
    END TYPE fist_efield_type
 ! **************************************************************************************************
 

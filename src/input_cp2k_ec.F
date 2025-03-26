@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -20,13 +20,14 @@ MODULE input_cp2k_ec
                                               high_print_level
    USE input_constants,                 ONLY: &
         bqb_opt_exhaustive, bqb_opt_normal, bqb_opt_off, bqb_opt_patient, bqb_opt_quick, &
-        ec_diagonalization, ec_functional_dc, ec_functional_harris, ec_ls_solver, ec_matrix_sign, &
-        ec_matrix_tc2, ec_matrix_trs4, ec_mo_solver, ec_ot_atomic, ec_ot_diag, ec_ot_gs, &
-        kg_cholesky, ls_cluster_atomic, ls_cluster_molecular, ls_s_inversion_hotelling, &
-        ls_s_inversion_sign_sqrt, ls_s_preconditioner_atomic, ls_s_preconditioner_molecular, &
-        ls_s_preconditioner_none, ls_s_sqrt_ns, ls_s_sqrt_proot, ls_scf_sign_ns, &
-        ls_scf_sign_proot, ot_precond_full_all, ot_precond_full_kinetic, ot_precond_full_single, &
-        ot_precond_full_single_inverse, ot_precond_none, ot_precond_s_inverse, precond_mlp
+        ec_diagonalization, ec_functional_dc, ec_functional_ext, ec_functional_harris, &
+        ec_ls_solver, ec_matrix_sign, ec_matrix_tc2, ec_matrix_trs4, ec_mo_solver, ec_ot_atomic, &
+        ec_ot_diag, ec_ot_gs, kg_cholesky, ls_cluster_atomic, ls_cluster_molecular, &
+        ls_s_inversion_hotelling, ls_s_inversion_sign_sqrt, ls_s_preconditioner_atomic, &
+        ls_s_preconditioner_molecular, ls_s_preconditioner_none, ls_s_sqrt_ns, ls_s_sqrt_proot, &
+        ls_scf_sign_ns, ls_scf_sign_proot, ot_precond_full_all, ot_precond_full_kinetic, &
+        ot_precond_full_single, ot_precond_full_single_inverse, ot_precond_none, &
+        ot_precond_s_inverse, precond_mlp
    USE input_cp2k_mm,                   ONLY: create_dipoles_section
    USE input_cp2k_voronoi,              ONLY: create_print_voronoi_section
    USE input_cp2k_xc,                   ONLY: create_xc_section
@@ -101,17 +102,18 @@ CONTAINS
                           description="Functional used in energy correction", &
                           usage="ENERGY_FUNCTIONAL HARRIS", &
                           default_i_val=ec_functional_harris, &
-                          enum_c_vals=s2a("HARRIS", "DCDFT"), &
+                          enum_c_vals=s2a("HARRIS", "DCDFT", "EXTERNAL"), &
                           enum_desc=s2a("Harris functional", &
-                                        "Density-corrected DFT"), &
-                          enum_i_vals=(/ec_functional_harris, ec_functional_dc/))
+                                        "Density-corrected DFT", &
+                                        "External calculated energy"), &
+                          enum_i_vals=(/ec_functional_harris, ec_functional_dc, ec_functional_ext/))
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="HARRIS_BASIS", &
-                          description="Specifies the type of basis to be used for the KG energy correction."// &
-                          "Options are: (1) the default orbital basis (ORBITAL);"// &
-                          "(2) the primitive functions of the default orbital basis (PRIMITIVE);"// &
+                          description="Specifies the type of basis to be used for the KG energy correction. "// &
+                          "Options are: (1) the default orbital basis (ORBITAL); "// &
+                          "(2) the primitive functions of the default orbital basis (PRIMITIVE); "// &
                           "(3) the basis set labeled in Kind section (HARRIS)", &
                           usage="HARRIS_BASIS ORBITAL", &
                           type_of_var=char_t, default_c_val="ORBITAL", n_var=-1)
@@ -126,6 +128,11 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="DEBUG_STRESS", &
                           description="Additional output to debug energy correction forces.", &
                           usage="DEBUG_STRESS T", default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+      CALL keyword_create(keyword, __LOCATION__, name="DEBUG_EXTERNAL_METHOD", &
+                          description="Uses an internal pseudo-energy to test EXTERNAL energy method.", &
+                          usage="DEBUG_EXTERNAL_METHOD T", default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -295,7 +302,7 @@ CONTAINS
       CALL keyword_create( &
          keyword, __LOCATION__, name="MATRIX_CLUSTER_TYPE", &
          description="Specify how atomic blocks should be clustered in the used matrices, in order to improve flop rate, "// &
-         "and possibly speedup the matrix multiply. Note that the atomic s_preconditioner can not be used."// &
+         "and possibly speedup the matrix multiply. Note that the atomic s_preconditioner can not be used. "// &
          "Furthermore, since screening is on matrix blocks, "// &
          "slightly more accurate results can be expected with molecular.", &
          usage="MATRIX_CLUSTER_TYPE MOLECULAR", &
@@ -307,15 +314,9 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="SINGLE_PRECISION_MATRICES", &
-                          description="Matrices used within the LS code can be either double or single precision.", &
-                          usage="SINGLE_PRECISION_MATRICES", default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
-      CALL section_add_keyword(section, keyword)
-      CALL keyword_release(keyword)
-
       CALL keyword_create(keyword, __LOCATION__, name="S_INVERSION", &
                           description="Method used to compute the inverse of S.", &
-                          usage="S_PRECONDITIONER MOLECULAR", &
+                          usage="S_INVERSION MOLECULAR", &
                           default_i_val=ls_s_inversion_sign_sqrt, &
                           enum_c_vals=s2a("SIGN_SQRT", "HOTELLING"), &
                           enum_desc=s2a("Using the inverse sqrt as obtained from sign function iterations.", &
@@ -360,6 +361,31 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
+      CALL keyword_create(keyword, __LOCATION__, name="EXTERNAL_RESPONSE_FILENAME", &
+                          description="Name of the file that contains response information.", &
+                          usage="EXTERNAL_RESPONSE_FILENAME <FILENAME>", &
+                          default_c_val="TREXIO")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="EXTERNAL_RESULT_FILENAME", &
+                          description="Name of the file that contains results from external response calculation.", &
+                          usage="EXTERNAL_RESULT_FILENAME <FILENAME>", &
+                          default_c_val="CP2K_EXRESP.result")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create( &
+         keyword, __LOCATION__, &
+         name="ERROR_ESTIMATION", &
+         description="Perform an error estimation for the response forces/stress. "// &
+         "Requires error estimates for the RHS of the response equation from input. ", &
+         usage="ERROR_ESTIMATION", &
+         default_l_val=.FALSE., &
+         lone_keyword_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
    END SUBROUTINE create_ec_section
 
 ! **************************************************************************************************
@@ -399,7 +425,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="MAX_ITER", &
-                          description="Maximum number of conjugate gradient iteration"// &
+                          description="Maximum number of conjugate gradient iteration "// &
                           "to be performed for one optimization.", &
                           usage="MAX_ITER 200", default_i_val=50)
       CALL section_add_keyword(section, keyword)
@@ -412,8 +438,8 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="METHOD", &
-                          description="Algorithm used to solve response equation."// &
-                          "Both solver are conjugate gradient based, but use either a vector (MO-coefficient)"// &
+                          description="Algorithm used to solve response equation. "// &
+                          "Both solver are conjugate gradient based, but use either a vector (MO-coefficient) "// &
                           "or density matrix formalism in the orthonormal AO-basis to obtain response density", &
                           usage="METHOD SOLVER", &
                           default_i_val=ec_ls_solver, &
@@ -428,8 +454,8 @@ CONTAINS
          keyword, __LOCATION__, name="PRECONDITIONER", &
          description="Type of preconditioner to be used with MO conjugate gradient solver. "// &
          "They differ in effectiveness, cost of construction, cost of application. "// &
-         "Properly preconditioned minimization can be orders of magnitude faster than doing nothing."// &
-         "Only multi-level conjugate gradient preconditioner (MULTI_LEVEL) available for AO response solver (AO_ORTHO).", &
+         "Properly preconditioned minimization can be orders of magnitude faster than doing nothing. "// &
+         "Only multi-level conjugate gradient preconditioner (MULTI_LEVEL) available for AO response solver (AO_ORTHO). ", &
          usage="PRECONDITIONER FULL_ALL", &
          default_i_val=precond_mlp, &
          enum_c_vals=s2a("FULL_ALL", "FULL_SINGLE_INVERSE", "FULL_SINGLE", "FULL_KINETIC", "FULL_S_INVERSE", &
@@ -485,7 +511,7 @@ CONTAINS
       CALL keyword_create( &
          keyword, __LOCATION__, name="MATRIX_CLUSTER_TYPE", &
          description="Specify how atomic blocks should be clustered in the used matrices, in order to improve flop rate, "// &
-         "and possibly speedup the matrix multiply. Note that the atomic s_preconditioner can not be used."// &
+         "and possibly speedup the matrix multiply. Note that the atomic s_preconditioner can not be used. "// &
          "Furthermore, since screening is on matrix blocks, "// &
          "slightly more accurate results can be expected with molecular.", &
          usage="MATRIX_CLUSTER_TYPE MOLECULAR", &
@@ -497,15 +523,9 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="SINGLE_PRECISION_MATRICES", &
-                          description="Matrices used within the LS code can be either double or single precision.", &
-                          usage="SINGLE_PRECISION_MATRICES", default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
-      CALL section_add_keyword(section, keyword)
-      CALL keyword_release(keyword)
-
       CALL keyword_create(keyword, __LOCATION__, name="S_INVERSION", &
                           description="Method used to compute the inverse of S.", &
-                          usage="S_PRECONDITIONER MOLECULAR", &
+                          usage="S_INVERSION MOLECULAR", &
                           default_i_val=ls_s_inversion_sign_sqrt, &
                           enum_c_vals=s2a("SIGN_SQRT", "HOTELLING"), &
                           enum_desc=s2a("Using the inverse sqrt as obtained from sign function iterations.", &
@@ -550,10 +570,9 @@ CONTAINS
       ! Output of BQB volumetric files
       CALL cp_print_key_section_create(print_key, __LOCATION__, name="E_DENSITY_BQB", &
                                        description="Controls the output of the electron density to the losslessly"// &
-                                       " compressed BQB file format, see [Brehm2018] (via LibBQB"// &
-                                       " see <a href=""https://brehm-research.de/bqb"" target=""_blank"">"// &
-                                       " https://brehm-research.de/bqb</a> ). Currently does not work"// &
-                                       "  with changing cell vector (NpT ensemble).", &
+                                       " compressed BQB file format, see [Brehm2018]"// &
+                                       " (via LibBQB see <https://brehm-research.de/bqb>)."// &
+                                       " Currently does not work with changing cell vector (NpT ensemble).", &
                                        print_level=debug_print_level + 1, filename="", &
                                        citations=(/Brehm2018/))
 

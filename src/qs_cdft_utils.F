@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -55,10 +55,7 @@ MODULE qs_cdft_utils
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_type
    USE pw_methods,                      ONLY: pw_zero
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: REALDATA3D,&
-                                              REALSPACE
+   USE pw_pool_types,                   ONLY: pw_pool_type
    USE qs_cdft_types,                   ONLY: becke_constraint_type,&
                                               cdft_control_type,&
                                               cdft_group_type,&
@@ -391,8 +388,7 @@ CONTAINS
             DEALLOCATE (cores)
          END DO
          DEALLOCATE (pab)
-         CALL pw_pool_create_pw(auxbas_pw_pool, becke_control%cavity, &
-                                use_data=REALDATA3D, in_space=REALSPACE)
+         CALL auxbas_pw_pool%create_pw(becke_control%cavity)
          CALL transfer_rs2pw(rs_cavity, becke_control%cavity)
          ! Grid points where the Gaussian density falls below eps_cavity are ignored
          ! We can calculate the smallest/largest values along z-direction outside
@@ -400,7 +396,7 @@ CONTAINS
          ! If gradients are needed storage needs to be allocated only for grid points within
          ! these bounds
          IF (in_memory .OR. cdft_control%save_pot) THEN
-            CALL hfun_zero(becke_control%cavity%cr3d, eps_cavity, just_bounds=.TRUE., bounds=bounds)
+            CALL hfun_zero(becke_control%cavity%array, eps_cavity, just_bounds=.TRUE., bounds=bounds)
             ! Save bounds (first nonzero grid point indices)
             bo = group(1)%weight%pw_grid%bounds_local
             IF (bounds(2) .LT. bo(2, 3)) THEN
@@ -420,7 +416,7 @@ CONTAINS
          END IF
          ! Optional printing of cavity (meant for testing, so options currently hardcoded...)
          IF (becke_control%print_cavity) THEN
-            CALL hfun_zero(becke_control%cavity%cr3d, eps_cavity, just_bounds=.FALSE.)
+            CALL hfun_zero(becke_control%cavity%array, eps_cavity, just_bounds=.FALSE.)
             ALLOCATE (stride(3))
             stride = (/2, 2, 2/)
             mpi_io = .TRUE.
@@ -1345,7 +1341,7 @@ CONTAINS
          unit_nr = cp_print_key_unit_nr(logger, cdft_constraint_section, "PROGRAM_RUN_INFO", mpi_io=mpi_io, &
                                         file_position="REWIND", middle_name=middle_name, extension=".cube")
 
-         CALL cp_pw_to_cube(cdft_control%group(igroup)%hw_rho_total, unit_nr, "CDFT Weight Function", mpi_io=mpi_io, &
+         CALL cp_pw_to_cube(cdft_control%hw_rho_total, unit_nr, "CDFT Weight Function", mpi_io=mpi_io, &
                   particles=particles, stride=section_get_ivals(cdft_constraint_section, "PROGRAM_RUN_INFO%WEIGHT_FUNCTION%STRIDE"))
 
          CALL cp_print_key_finished_output(unit_nr, logger, cdft_constraint_section, "PROGRAM_RUN_INFO", mpi_io=mpi_io)

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -18,11 +18,13 @@ MODULE mp2_setup
    USE cp_output_handling,              ONLY: cp_p_file,&
                                               cp_print_key_finished_output,&
                                               cp_print_key_should_output,&
-                                              cp_print_key_unit_nr
+                                              cp_print_key_unit_nr,&
+                                              debug_print_level
    USE cp_parser_methods,               ONLY: read_float_object
    USE input_constants,                 ONLY: &
-        do_eri_mme, do_potential_short, mp2_method_direct, mp2_method_gpw, mp2_method_none, &
-        mp2_ri_optimize_basis, ri_mp2_laplace, ri_mp2_method_gpw, ri_rpa_method_gpw
+        do_eri_mme, do_potential_short, evGW, evGW0, mp2_method_direct, mp2_method_gpw, &
+        mp2_method_none, mp2_ri_optimize_basis, ri_mp2_laplace, ri_mp2_method_gpw, &
+        ri_rpa_method_gpw
    USE input_section_types,             ONLY: section_vals_get_subs_vals,&
                                               section_vals_type,&
                                               section_vals_val_get
@@ -65,15 +67,16 @@ CONTAINS
       CHARACTER(LEN=default_string_length), &
          DIMENSION(:), POINTER                           :: string_pointer
       CHARACTER(LEN=max_line_length)                     :: error_message
-      INTEGER                                            :: handle, i, i_special_kp, ival, unit_nr
+      INTEGER                                            :: gw_sc, handle, i, i_special_kp, ival, &
+                                                            print_level_NTO_analysis, unit_nr
       INTEGER, DIMENSION(:), POINTER                     :: tmplist
       LOGICAL                                            :: do_mp2, do_opt_ri_basis, do_ri_mp2, &
                                                             do_ri_sos_mp2, do_rpa
       REAL(KIND=dp), DIMENSION(:), POINTER               :: r_vals
       TYPE(cp_logger_type), POINTER                      :: logger
-      TYPE(section_vals_type), POINTER                   :: cphf_section, eri_mme_section, &
-                                                            gw_section, low_scaling_section, &
-                                                            mp2_section
+      TYPE(section_vals_type), POINTER                   :: bse_section, cphf_section, &
+                                                            eri_mme_section, gw_section, &
+                                                            low_scaling_section, mp2_section
 
       CALL timeset(routineN, handle)
       logger => cp_get_default_logger()
@@ -98,6 +101,10 @@ CONTAINS
       END IF
 
       CALL section_vals_val_get(mp2_section, "RI_RPA%_SECTION_PARAMETERS_", l_val=do_rpa)
+
+      !CALL section_vals_val_get(mp2_section, "RI_RPA%SIGMA_FUNCTIONAL",l_val=mp2_env%ri_rpa%do_sigma)
+      CALL section_vals_val_get(mp2_section, "RI_RPA%SIGMA_FUNCTIONAL", i_val=mp2_env%ri_rpa%sigma_param)
+
       IF (do_rpa) THEN
          CALL check_method(mp2_env%method)
          mp2_env%method = ri_rpa_method_gpw
@@ -110,15 +117,23 @@ CONTAINS
       CALL section_vals_val_get(mp2_section, "RI_RPA%SCALE_RPA", r_val=mp2_env%ri_rpa%scale_rpa)
       mp2_env%ri_rpa%reuse_hfx = .FALSE.
 
-      CALL section_vals_val_get(mp2_section, "RI_RPA%AXK", l_val=mp2_env%ri_rpa%do_ri_axk)
+      CALL section_vals_val_get(mp2_section, "RI_RPA%EXCHANGE_CORRECTION%_SECTION_PARAMETERS_", &
+                                i_val=mp2_env%ri_rpa%exchange_correction)
+      CALL section_vals_val_get(mp2_section, "RI_RPA%EXCHANGE_CORRECTION%BLOCK_SIZE", &
+                                i_val=mp2_env%ri_rpa%exchange_block_size)
+      CALL section_vals_val_get(mp2_section, "RI_RPA%EXCHANGE_CORRECTION%USE_HFX_IMPLEMENTATION", &
+                                l_val=mp2_env%ri_rpa%use_hfx_implementation)
 
       CALL section_vals_val_get(mp2_section, "RI_RPA%RSE", l_val=mp2_env%ri_rpa%do_rse)
+
       CALL section_vals_val_get(mp2_section, "RI_RPA%PRINT_DGEMM_INFO", l_val=mp2_env%ri_rpa%print_dgemm_info)
 
       NULLIFY (gw_section)
       gw_section => section_vals_get_subs_vals(mp2_section, "RI_RPA%GW")
       CALL section_vals_val_get(gw_section, "_SECTION_PARAMETERS_", &
                                 l_val=mp2_env%ri_rpa%do_ri_g0w0)
+      CALL section_vals_val_get(mp2_section, "RI_RPA%GW%SELF_CONSISTENCY", &
+                                i_val=gw_sc)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%CORR_MOS_OCC", &
                                 i_val=mp2_env%ri_g0w0%corr_mos_occ)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%CORR_MOS_VIRT", &
@@ -135,10 +150,14 @@ CONTAINS
                                 i_val=mp2_env%ri_g0w0%crossing_search)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%FERMI_LEVEL_OFFSET", &
                                 r_val=mp2_env%ri_g0w0%fermi_level_offset)
+      CALL section_vals_val_get(mp2_section, "RI_RPA%GW%HEDIN_SHIFT", &
+                                l_val=mp2_env%ri_g0w0%do_hedin_shift)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%EV_GW_ITER", &
                                 i_val=mp2_env%ri_g0w0%iter_evGW)
+      IF (gw_sc == evGW) mp2_env%ri_g0w0%iter_evGW = 10
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%SC_GW0_ITER", &
                                 i_val=mp2_env%ri_g0w0%iter_sc_GW0)
+      IF (gw_sc == evGW0) mp2_env%ri_g0w0%iter_sc_GW0 = 10
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%EPS_ITER", &
                                 r_val=mp2_env%ri_g0w0%eps_iter)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%PRINT_EXX", &
@@ -147,6 +166,7 @@ CONTAINS
                                 l_val=mp2_env%ri_g0w0%print_self_energy)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%RI_SIGMA_X", &
                                 l_val=mp2_env%ri_g0w0%do_ri_Sigma_x)
+
       NULLIFY (r_vals)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%IC_CORR_LIST", &
                                 r_vals=r_vals)
@@ -168,14 +188,85 @@ CONTAINS
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%SOC_ENERGY_WINDOW", &
                                 r_val=mp2_env%ri_g0w0%soc_energy_window)
 
-      CALL section_vals_val_get(mp2_section, "RI_RPA%GW%BSE", &
-                                l_val=mp2_env%ri_g0w0%do_bse)
-      CALL section_vals_val_get(mp2_section, "RI_RPA%GW%BSE%NUM_Z_VECTORS", &
-                                i_val=mp2_env%ri_g0w0%num_z_vectors)
-      CALL section_vals_val_get(mp2_section, "RI_RPA%GW%BSE%THRESHOLD_MIN_TRANS", &
-                                r_val=mp2_env%ri_g0w0%eps_min_trans)
-      CALL section_vals_val_get(mp2_section, "RI_RPA%GW%BSE%MAX_ITER", &
-                                i_val=mp2_env%ri_g0w0%max_iter_bse)
+      NULLIFY (bse_section)
+      bse_section => section_vals_get_subs_vals(mp2_section, "RI_RPA%GW%BSE")
+      CALL section_vals_val_get(bse_section, "_SECTION_PARAMETERS_", &
+                                l_val=mp2_env%bse%do_bse)
+      CALL section_vals_val_get(bse_section, "SPIN_CONFIG", &
+                                i_val=mp2_env%bse%bse_spin_config)
+      CALL section_vals_val_get(bse_section, "ENERGY_CUTOFF_OCC", &
+                                r_val=mp2_env%bse%bse_cutoff_occ)
+      CALL section_vals_val_get(bse_section, "ENERGY_CUTOFF_EMPTY", &
+                                r_val=mp2_env%bse%bse_cutoff_empty)
+      CALL section_vals_val_get(bse_section, "NUM_PRINT_EXC", &
+                                i_val=mp2_env%bse%num_print_exc)
+      CALL section_vals_val_get(bse_section, "NUM_PRINT_EXC_DESCR", &
+                                i_val=mp2_env%bse%num_print_exc_descr)
+      CALL section_vals_val_get(bse_section, "PRINT_DIRECTIONAL_EXC_DESCR", &
+                                l_val=mp2_env%bse%print_directional_exc_descr)
+      CALL section_vals_val_get(bse_section, "EPS_X", &
+                                r_val=mp2_env%bse%eps_x)
+      CALL section_vals_val_get(bse_section, "BSE_ITERAT%DAVIDSON_ABORT_COND", &
+                                i_val=mp2_env%bse%davidson_abort_cond)
+      CALL section_vals_val_get(bse_section, "BSE_ITERAT%NUM_EXC_EN", &
+                                i_val=mp2_env%bse%num_exc_en)
+      CALL section_vals_val_get(bse_section, "BSE_ITERAT%NUM_ADD_START_Z_SPACE", &
+                                i_val=mp2_env%bse%num_add_start_z_space)
+      CALL section_vals_val_get(bse_section, "BSE_ITERAT%FAC_MAX_Z_SPACE", &
+                                i_val=mp2_env%bse%fac_max_z_space)
+      CALL section_vals_val_get(bse_section, "BSE_ITERAT%NUM_NEW_T", &
+                                i_val=mp2_env%bse%num_new_t)
+      CALL section_vals_val_get(bse_section, "BSE_ITERAT%EPS_RES", &
+                                r_val=mp2_env%bse%eps_res)
+      CALL section_vals_val_get(bse_section, "BSE_ITERAT%EPS_EXC_EN", &
+                                r_val=mp2_env%bse%eps_exc_en)
+      CALL section_vals_val_get(bse_section, "BSE_ITERAT%NUM_DAVIDSON_ITER", &
+                                i_val=mp2_env%bse%num_davidson_iter)
+      CALL section_vals_val_get(bse_section, "BSE_ITERAT%Z_SPACE_ENERGY_CUTOFF", &
+                                r_val=mp2_env%bse%z_space_energy_cutoff)
+      CALL section_vals_val_get(bse_section, "BSE_DIAG_METHOD", &
+                                i_val=mp2_env%bse%bse_diag_method)
+      CALL section_vals_val_get(bse_section, "TDA", &
+                                i_val=mp2_env%bse%flag_tda)
+      CALL section_vals_val_get(bse_section, "USE_KS_ENERGIES", &
+                                l_val=mp2_env%bse%use_ks_energies)
+      CALL section_vals_val_get(bse_section, "SCREENING_IN_W%_SECTION_PARAMETERS_", &
+                                i_val=mp2_env%bse%screening_method)
+      CALL section_vals_val_get(bse_section, "SCREENING_IN_W%ALPHA", &
+                                r_val=mp2_env%bse%screening_factor)
+      CALL section_vals_val_get(bse_section, "BSE_DEBUG_PRINT", &
+                                l_val=mp2_env%bse%bse_debug_print)
+      CALL section_vals_val_get(bse_section, "BSE_SPECTRUM%_SECTION_PARAMETERS_", &
+                                l_val=mp2_env%bse%bse_print_spectrum)
+      CALL section_vals_val_get(bse_section, "BSE_SPECTRUM%FREQUENCY_STEP_SIZE", &
+                                r_val=mp2_env%bse%bse_spectrum_freq_step_size)
+      CALL section_vals_val_get(bse_section, "BSE_SPECTRUM%FREQUENCY_STARTING_POINT", &
+                                r_val=mp2_env%bse%bse_spectrum_freq_start)
+      CALL section_vals_val_get(bse_section, "BSE_SPECTRUM%FREQUENCY_END_POINT", &
+                                r_val=mp2_env%bse%bse_spectrum_freq_end)
+      CALL section_vals_val_get(bse_section, "BSE_SPECTRUM%ETA_LIST", &
+                                r_vals=mp2_env%bse%bse_eta_spectrum_list)
+      CALL section_vals_val_get(bse_section, "NTO_ANALYSIS%_SECTION_PARAMETERS_", &
+                                i_val=print_level_NTO_analysis)
+      ! All other print levels besides "off" should trigger the analysis
+      ! cf. input/cp_output_handling.F:cp_print_key_section_create
+      IF (print_level_NTO_analysis /= debug_print_level + 1) THEN
+         mp2_env%bse%do_nto_analysis = .TRUE.
+      ELSE
+         mp2_env%bse%do_nto_analysis = .FALSE.
+      END IF
+      CALL section_vals_val_get(bse_section, "NTO_ANALYSIS%EPS_NTO_EIGVAL", &
+                                r_val=mp2_env%bse%eps_nto_eigval)
+      CALL section_vals_val_get(bse_section, "NTO_ANALYSIS%EPS_OSC_STR", &
+                                r_val=mp2_env%bse%eps_nto_osc_str)
+      CALL section_vals_val_get(bse_section, "NTO_ANALYSIS%NUM_PRINT_EXC_NTOS", &
+                                i_val=mp2_env%bse%num_print_exc_ntos)
+      CALL section_vals_val_get(bse_section, "NTO_ANALYSIS%STATE_LIST", &
+                                EXPLICIT=mp2_env%bse%explicit_nto_list)
+      IF (mp2_env%bse%explicit_nto_list) THEN
+         CALL section_vals_val_get(bse_section, "NTO_ANALYSIS%STATE_LIST", &
+                                   i_vals=mp2_env%bse%bse_nto_state_list)
+      END IF
 
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%IMAGE_CHARGE_MODEL", &
                                 l_val=mp2_env%ri_g0w0%do_ic_model)
@@ -233,6 +324,10 @@ CONTAINS
                                 r_val=mp2_env%ri_g0w0%dos_upper)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%PRINT%GW_DOS%STEP", &
                                 r_val=mp2_env%ri_g0w0%dos_prec)
+      CALL section_vals_val_get(mp2_section, "RI_RPA%GW%PRINT%GW_DOS%MIN_LEVEL_SPECTRAL", &
+                                i_val=mp2_env%ri_g0w0%dos_min)
+      CALL section_vals_val_get(mp2_section, "RI_RPA%GW%PRINT%GW_DOS%MAX_LEVEL_SPECTRAL", &
+                                i_val=mp2_env%ri_g0w0%dos_max)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%PRINT%GW_DOS%MIN_LEVEL_SELF_ENERGY", &
                                 i_val=mp2_env%ri_g0w0%min_level_self_energy)
       CALL section_vals_val_get(mp2_section, "RI_RPA%GW%PRINT%GW_DOS%MAX_LEVEL_SELF_ENERGY", &
@@ -337,6 +432,7 @@ CONTAINS
       CALL section_vals_val_get(mp2_section, "RI%COL_BLOCK", i_val=mp2_env%block_size_col)
       CALL section_vals_val_get(mp2_section, "RI%CALC_COND_NUM", l_val=mp2_env%calc_PQ_cond_num)
       CALL section_vals_val_get(mp2_section, "RI%DO_SVD", l_val=mp2_env%do_svd)
+      CALL section_vals_val_get(mp2_section, "RI%EPS_SVD", r_val=mp2_env%eps_svd)
       CALL section_vals_val_get(mp2_section, "RI%ERI_BLKSIZE", i_vals=mp2_env%eri_blksize)
       CALL section_vals_val_get(mp2_section, "RI%RI_METRIC%POTENTIAL_TYPE", i_val=mp2_env%ri_metric%potential_type)
       CALL section_vals_val_get(mp2_section, "RI%RI_METRIC%OMEGA", r_val=mp2_env%ri_metric%omega)
@@ -409,7 +505,6 @@ CONTAINS
       ! Set the CPHF section
       CALL section_vals_val_get(mp2_section, "CANONICAL_GRADIENTS%FREE_HFX_BUFFER", l_val=mp2_env%ri_grad%free_hfx_buffer)
       CALL section_vals_val_get(mp2_section, "CANONICAL_GRADIENTS%EPS_CANONICAL", r_val=mp2_env%ri_grad%eps_canonical)
-      CALL section_vals_val_get(mp2_section, "CANONICAL_GRADIENTS%USE_OLD_GRADIENT_CODE", l_val=mp2_env%ri_grad%use_old_grad)
       CALL section_vals_val_get(mp2_section, "CANONICAL_GRADIENTS%DOT_PRODUCT_BLKSIZE", i_val=mp2_env%ri_grad%dot_blksize)
       CALL section_vals_val_get(mp2_section, "CANONICAL_GRADIENTS%MAX_PARALLEL_COMM", i_val=mp2_env%ri_grad%max_parallel_comm)
       cphf_section => section_vals_get_subs_vals(mp2_section, "CANONICAL_GRADIENTS%CPHF")

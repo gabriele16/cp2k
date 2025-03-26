@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -10,8 +10,8 @@ MODULE tip_scan_types
                                               section_vals_val_get
    USE kinds,                           ONLY: default_string_length,&
                                               dp
-   USE pw_types,                        ONLY: pw_release,&
-                                              pw_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -24,13 +24,13 @@ MODULE tip_scan_types
 
 ! **************************************************************************************************
    TYPE scanning_type
-      INTEGER                              :: num_scan_points
-      REAL(KIND=dp), DIMENSION(3)          :: ref_point
+      INTEGER                              :: num_scan_points = -1
+      REAL(KIND=dp), DIMENSION(3)          :: ref_point = -1.0_dp
       REAL(KIND=dp), DIMENSION(:, :), &
          ALLOCATABLE                       :: tip_pos
-      CHARACTER(LEN=default_string_length) :: tip_cube_file
-      TYPE(pw_type), POINTER               :: tip_pw_r
-      TYPE(pw_type), POINTER               :: tip_pw_g
+      CHARACTER(LEN=default_string_length) :: tip_cube_file = ""
+      TYPE(pw_r3d_rs_type), POINTER               :: tip_pw_r => NULL()
+      TYPE(pw_c1d_gs_type), POINTER               :: tip_pw_g => NULL()
    END TYPE scanning_type
 ! **************************************************************************************************
 
@@ -157,11 +157,11 @@ CONTAINS
          DEALLOCATE (scan_info%tip_pos)
       END IF
       IF (ASSOCIATED(scan_info%tip_pw_r)) THEN
-         CALL pw_release(scan_info%tip_pw_r)
+         CALL scan_info%tip_pw_r%release()
          DEALLOCATE (scan_info%tip_pw_r)
       END IF
       IF (ASSOCIATED(scan_info%tip_pw_g)) THEN
-         CALL pw_release(scan_info%tip_pw_g)
+         CALL scan_info%tip_pw_g%release()
          DEALLOCATE (scan_info%tip_pw_g)
       END IF
 

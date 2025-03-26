@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -78,15 +78,19 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'init_interaction_radii'
 
-      INTEGER :: handle, i, iexp_ppl, ikind, ip, iprj_ppnl, j, l, lppl, lppnl, lprj, lprj_ppnl, &
-         maxl, n_local, nexp_lpot, nexp_lsd, nexp_ppl, nkind, nloc
+      INTEGER :: handle, i, iexp_ppl, ikind, ip, iprj_ppnl, j, l, lppl, lppnl, lppsl, lprj, &
+         lprj_ppnl, maxl, n_local, nexp_lpot, nexp_lsd, nexp_ppl, nkind, nloc
+      INTEGER, DIMENSION(0:10)                           :: npot
       INTEGER, DIMENSION(1:10)                           :: nrloc
+      INTEGER, DIMENSION(1:15, 0:10)                     :: nrpot
       INTEGER, DIMENSION(:), POINTER                     :: nct_lpot, nct_lsd, nprj, nprj_ppnl
-      LOGICAL                                            :: ecp_local, llsd, lpot, paw_atom
+      LOGICAL                                            :: ecp_local, ecp_semi_local, llsd, lpot, &
+                                                            paw_atom
       LOGICAL, DIMENSION(0:5)                            :: is_nonlocal
-      REAL(dp), DIMENSION(1:10)                          :: aloc, bloc
       REAL(KIND=dp) :: alpha_core_charge, alpha_ppl, ccore_charge, cerf_ppl, core_charge_radius, &
          cval, ppl_radius, ppnl_radius, rcprj, zeta
+      REAL(KIND=dp), DIMENSION(1:10)                     :: aloc, bloc
+      REAL(KIND=dp), DIMENSION(1:15, 0:10)               :: apot, bpot
       REAL(KIND=dp), DIMENSION(:), POINTER               :: a_local, a_nonlocal, alpha_lpot, &
                                                             alpha_lsd, alpha_ppnl, c_local, &
                                                             cexp_ppl
@@ -97,14 +101,15 @@ CONTAINS
       TYPE(gth_potential_type), POINTER                  :: gth_potential
       TYPE(gto_basis_set_type), POINTER :: aux_basis_set, aux_fit_basis_set, aux_gw_basis, &
          aux_opt_basis_set, gapw_1c_basis, harris_basis, lri_basis, mao_basis, min_basis_set, &
-         orb_basis_set, p_lri_basis, ri_aux_basis_set, ri_basis, ri_xas_basis, soft_basis
+         orb_basis_set, p_lri_basis, rhoin_basis, ri_aux_basis_set, ri_basis, ri_xas_basis, &
+         soft_basis, tda_k_basis
       TYPE(paw_proj_set_type), POINTER                   :: paw_proj_set
       TYPE(sgp_potential_type), POINTER                  :: sgp_potential
 
       CALL timeset(routineN, handle)
 
       NULLIFY (all_potential, gth_potential, sgp_potential)
-      NULLIFY (aux_basis_set, aux_fit_basis_set, aux_gw_basis, &
+      NULLIFY (aux_basis_set, aux_fit_basis_set, aux_gw_basis, tda_k_basis, &
                harris_basis, lri_basis, mao_basis, orb_basis_set, p_lri_basis, ri_aux_basis_set, &
                ri_basis, ri_xas_basis, soft_basis, gapw_1c_basis, aux_opt_basis_set, min_basis_set)
       NULLIFY (nprj_ppnl, nprj)
@@ -130,6 +135,8 @@ CONTAINS
          CALL get_qs_kind(qs_kind_set(ikind), basis_set=ri_xas_basis, basis_type="RI_XAS")
          CALL get_qs_kind(qs_kind_set(ikind), basis_set=soft_basis, basis_type="ORB_SOFT")
          CALL get_qs_kind(qs_kind_set(ikind), basis_set=gapw_1c_basis, basis_type="GAPW_1C")
+         CALL get_qs_kind(qs_kind_set(ikind), basis_set=tda_k_basis, basis_type="TDA_HFX")
+         CALL get_qs_kind(qs_kind_set(ikind), basis_set=rhoin_basis, basis_type="RHOIN")
          CALL get_qs_kind(qs_kind_set(ikind), &
                           paw_proj_set=paw_proj_set, &
                           paw_atom=paw_atom, &
@@ -271,6 +278,20 @@ CONTAINS
                                    exp_radius(0, a_local(i), qs_control%eps_ppl, c_local(i), rlow=ppl_radius))
                END DO
             END IF
+            ! Calculate the radii of the semi-local part
+            CALL get_potential(potential=sgp_potential, ecp_semi_local=ecp_semi_local)
+            IF (ecp_semi_local) THEN
+               CALL get_potential(potential=sgp_potential, sl_lmax=lppsl, npot=npot, nrpot=nrpot, &
+                                  apot=apot, bpot=bpot)
+               DO l = 0, lppsl
+                  DO i = 1, npot(l)
+                     lppl = MAX(0, nrpot(i, l) - 2)
+                     ppl_radius = MAX(ppl_radius, &
+                                      exp_radius(lppl, bpot(i, l), qs_control%eps_ppl, apot(i, l), &
+                                                 rlow=ppl_radius))
+                  END DO
+               END DO
+            END IF
             ! Calculate the radii of the non-local part
             ppnl_radius = 0.0_dp
             CALL get_potential(potential=sgp_potential, lmax=lppnl, n_nonlocal=nloc)
@@ -342,6 +363,11 @@ CONTAINS
             CALL init_interaction_radii_orb_basis(gapw_1c_basis, qs_control%eps_pgf_orb)
          END IF
 
+         ! Calculate the HFX SR basis for TDA
+         IF (ASSOCIATED(tda_k_basis)) THEN
+            CALL init_interaction_radii_orb_basis(tda_k_basis, qs_control%eps_pgf_orb)
+         END IF
+
          ! Calculate the lri basis function radii
          IF (ASSOCIATED(lri_basis)) THEN
             CALL init_interaction_radii_orb_basis(lri_basis, qs_control%eps_pgf_orb)
@@ -354,6 +380,11 @@ CONTAINS
          END IF
          IF (ASSOCIATED(p_lri_basis)) THEN
             CALL init_interaction_radii_orb_basis(p_lri_basis, qs_control%eps_pgf_orb)
+         END IF
+
+         ! Calculate the density input basis function radii
+         IF (ASSOCIATED(rhoin_basis)) THEN
+            CALL init_interaction_radii_orb_basis(rhoin_basis, qs_control%eps_pgf_orb)
          END IF
 
          ! Calculate the paw projector basis function radii

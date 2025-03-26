@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -15,10 +15,8 @@
 MODULE dirichlet_bc_types
 
    USE kinds,                           ONLY: dp
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_r3d_rs_type
 #include "../base/base_uses.f90"
 
    IMPLICIT NONE
@@ -110,7 +108,7 @@ MODULE dirichlet_bc_types
    TYPE :: tile_type
       INTEGER                           :: tile_id = 0
       REAL(dp), DIMENSION(3, 8)          :: vertices = 0
-      TYPE(pw_type), POINTER            :: tile_pw => NULL()
+      TYPE(pw_r3d_rs_type), POINTER            :: tile_pw => NULL()
       REAL(dp)                          :: volume = 0.0_dp
    END TYPE tile_type
 
@@ -207,14 +205,14 @@ CONTAINS
       n_tiles = dbc%n_tiles
       IF (PRESENT(pw_pool)) THEN
          DO k = 1, n_tiles
-            CALL pw_pool_give_back_pw(pw_pool, dbc%tiles(k)%tile%tile_pw)
+            CALL pw_pool%give_back_pw(dbc%tiles(k)%tile%tile_pw)
             DEALLOCATE (dbc%tiles(k)%tile%tile_pw)
             DEALLOCATE (dbc%tiles(k)%tile)
          END DO
          DEALLOCATE (dbc%tiles)
       ELSE
          DO k = 1, n_tiles
-            CALL pw_release(dbc%tiles(k)%tile%tile_pw)
+            CALL dbc%tiles(k)%tile%tile_pw%release()
             DEALLOCATE (dbc%tiles(k)%tile%tile_pw)
             DEALLOCATE (dbc%tiles(k)%tile)
          END DO

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -46,12 +46,9 @@ MODULE xray_diffraction
                                               pw_scale,&
                                               pw_transfer,&
                                               pw_zero
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              RECIPROCALSPACE,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_kind_types,                   ONLY: get_qs_kind,&
@@ -108,9 +105,9 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pw_c1d_gs_type)                               :: rhotot_elec_gspace
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rhotot_elec_gspace
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(rho_atom_type), DIMENSION(:), POINTER         :: rho_atom_set
 
@@ -163,10 +160,7 @@ CONTAINS
 
       ! Plane waves grid to assemble the total electronic density
 
-      CALL pw_pool_create_pw(pool=auxbas_pw_pool, &
-                             pw=rhotot_elec_gspace, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(pw=rhotot_elec_gspace)
       CALL pw_zero(rhotot_elec_gspace)
 
       CALL get_pw_grid_info(pw_grid=rhotot_elec_gspace%pw_grid, &
@@ -243,7 +237,7 @@ CONTAINS
          f2sum(ishell) = 0.0_dp
          f4sum(ishell) = 0.0_dp
          DO ig_shell = 1, ng_shell(ishell)
-            f = ABS(rhotot_elec_gspace%cc(ig + ig_shell))
+            f = ABS(rhotot_elec_gspace%array(ig + ig_shell))
             fmin(ishell) = MIN(fmin(ishell), f)
             fmax(ishell) = MAX(fmax(ishell), f)
             fsum(ishell) = fsum(ishell) + f
@@ -392,8 +386,8 @@ CONTAINS
             "# dr [Angstrom]                    :", dr(1:3)*angstrom
          WRITE (UNIT=unit_number, FMT="(A)") &
             "#", &
-            "# shell  points         q [1/A]      <|F(q)|^2>     Min(|F(q)|) "// &
-            "    Max(|F(q)|)      <|F(q)|>^2      <|F(q)|^4>"
+            "# shell  points         q [1/A]      <|F(q)|^2>     Min(|F(q)|)"// &
+            "     Max(|F(q)|)      <|F(q)|>^2      <|F(q)|^4>"
 
          DO ishell = 1, nshell
             WRITE (UNIT=unit_number, FMT="(T2,I6,2X,I6,5(1X,F15.6),1X,ES15.6)") &
@@ -467,8 +461,7 @@ CONTAINS
          DEALLOCATE (q_shell_gather)
       END IF
 
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, &
-                                rhotot_elec_gspace)
+      CALL auxbas_pw_pool%give_back_pw(rhotot_elec_gspace)
 
       CALL timestop(handle)
 
@@ -494,7 +487,7 @@ CONTAINS
 
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), INTENT(INOUT)                       :: rhotot_elec_gspace
+      TYPE(pw_c1d_gs_type), INTENT(INOUT)                :: rhotot_elec_gspace
       REAL(KIND=dp), INTENT(IN)                          :: q_max
       REAL(KIND=dp), INTENT(OUT)                         :: rho_hard, rho_soft
       REAL(KIND=dp), INTENT(IN), OPTIONAL                :: fsign
@@ -516,8 +509,8 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(gto_basis_set_type), POINTER                  :: basis_1c_set
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
-      TYPE(pw_type)                                      :: rho_elec_gspace
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r
+      TYPE(pw_c1d_gs_type)                               :: rho_elec_gspace
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(rho_atom_coeff), DIMENSION(:), POINTER        :: cpc_h, cpc_s
@@ -565,16 +558,13 @@ CONTAINS
 
       ! Load the soft contribution of the electronic density
 
-      CALL pw_pool_create_pw(pool=auxbas_pw_pool, &
-                             pw=rho_elec_gspace, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(pw=rho_elec_gspace)
 
       CALL pw_zero(rhotot_elec_gspace)
 
       DO ispin = 1, nspin
          CALL pw_zero(rho_elec_gspace)
-         CALL pw_transfer(rho_r(ispin), rho_elec_gspace, debug=.FALSE.)
+         CALL pw_transfer(rho_r(ispin), rho_elec_gspace)
          IF (PRESENT(fsign) .AND. (ispin == 2)) THEN
             alpha = fsign
          ELSE
@@ -586,8 +576,7 @@ CONTAINS
       ! Release the auxiliary PW grid for the calculation of the soft
       ! contribution
 
-      CALL pw_pool_give_back_pw(pool=auxbas_pw_pool, &
-                                pw=rho_elec_gspace)
+      CALL auxbas_pw_pool%give_back_pw(rho_elec_gspace)
 
       rho_soft = pw_integrate_function(rhotot_elec_gspace, isign=-1)
 
@@ -790,7 +779,7 @@ CONTAINS
       REAL(dp), DIMENSION(:, :), POINTER                 :: pab
       INTEGER, INTENT(IN)                                :: na, nb
       REAL(dp), INTENT(IN)                               :: eps_rho_gspace, gsq_max
-      TYPE(pw_type), INTENT(IN)                          :: pw
+      TYPE(pw_c1d_gs_type), INTENT(IN)                   :: pw
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'collocate_pgf_product_gspace'
 
@@ -838,8 +827,8 @@ CONTAINS
       CALL reallocate(rag, lb_cube_min, ub_cube_max)
       CALL reallocate(rbg, lb_cube_min, ub_cube_max)
 
-      lb_grid = LBOUND(pw%cc, 1)
-      ub_grid = UBOUND(pw%cc, 1)
+      lb_grid = LBOUND(pw%array, 1)
+      ub_grid = UBOUND(pw%array, 1)
 
       DO i = 1, 3
 
@@ -949,9 +938,9 @@ CONTAINS
                ig = pw%pw_grid%g_hat(1, i)
                jg = pw%pw_grid%g_hat(2, i)
                kg = pw%pw_grid%g_hat(3, i)
-               pw%cc(i) = pw%cc(i) + pij*cubeaxis(ig, 1, ax, bx)* &
-                          cubeaxis(jg, 2, ay, by)* &
-                          cubeaxis(kg, 3, az, bz)
+               pw%array(i) = pw%array(i) + pij*cubeaxis(ig, 1, ax, bx)* &
+                             cubeaxis(jg, 2, ay, by)* &
+                             cubeaxis(kg, 3, az, bz)
             END DO
 
          END DO

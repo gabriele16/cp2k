@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -47,20 +47,22 @@ MODULE almo_scf
                                               cite_reference
    USE cp_blacs_env,                    ONLY: cp_blacs_env_release
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_add, dbcsr_binary_read, dbcsr_copy, dbcsr_create, dbcsr_distribution_type, &
+        dbcsr_filter, dbcsr_finalize, dbcsr_get_info, dbcsr_iterator_blocks_left, &
+        dbcsr_iterator_next_block, dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, &
+        dbcsr_multiply, dbcsr_p_type, dbcsr_release, dbcsr_scale, dbcsr_set, dbcsr_type, &
+        dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_add_on_diag,&
+                                              dbcsr_checksum,&
+                                              dbcsr_init_random,&
+                                              dbcsr_reserve_all_blocks
    USE cp_dbcsr_diag,                   ONLY: cp_dbcsr_syevd
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm
    USE cp_fm_types,                     ONLY: cp_fm_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add, dbcsr_add_on_diag, dbcsr_binary_read, dbcsr_checksum, dbcsr_copy, dbcsr_create, &
-        dbcsr_distribution_get, dbcsr_distribution_type, dbcsr_filter, dbcsr_finalize, &
-        dbcsr_get_info, dbcsr_get_stored_coordinates, dbcsr_init_random, &
-        dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, dbcsr_iterator_start, &
-        dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, dbcsr_nblkcols_total, &
-        dbcsr_nblkrows_total, dbcsr_p_type, dbcsr_release, dbcsr_reserve_block2d, dbcsr_scale, &
-        dbcsr_set, dbcsr_type, dbcsr_type_no_symmetry, dbcsr_type_symmetric, dbcsr_work_create
    USE domain_submatrix_methods,        ONLY: init_submatrices,&
                                               release_submatrices
    USE input_constants,                 ONLY: &
@@ -226,10 +228,9 @@ CONTAINS
 
       ! copy basic quantities
       almo_scf_env%nspins = dft_control%nspins
-      almo_scf_env%natoms = dbcsr_nblkrows_total(matrix_s(1)%matrix)
       almo_scf_env%nmolecules = SIZE(molecule_set)
-      CALL dbcsr_get_info(matrix_s(1)%matrix, nfullrows_total=naos)
-      almo_scf_env%naos = naos
+      CALL dbcsr_get_info(matrix_s(1)%matrix, &
+                          nfullrows_total=almo_scf_env%naos, nblkrows_total=almo_scf_env%natoms)
 
       !! retrieve smearing parameters, and check compatibility of methods requested
       almo_scf_env%smear = dft_control%smear
@@ -254,6 +255,7 @@ CONTAINS
       nspins = almo_scf_env%nspins
       nmols = almo_scf_env%nmolecules
       natoms = almo_scf_env%natoms
+      naos = almo_scf_env%naos
 
       ! Define groups: either atomic or molecular
       IF (almo_scf_env%domain_layout_mos == almo_domain_layout_molecular) THEN
@@ -301,9 +303,7 @@ CONTAINS
             nelec_b = nelec - nelec_a
             !! Initializing an occupation-rescaling trick if smearing is on
             IF (almo_scf_env%smear) THEN
-               IF (multip .GT. 1) THEN
-                  CPWARN("BEWARE: Non singlet state detected, treating it as closed-shell")
-               END IF
+               CPWARN_IF(multip .GT. 1, "BEWARE: Non singlet state detected, treating it as closed-shell")
                !! Save real number of electrons of each spin, as it is required for Fermi-dirac smearing
                !! BEWARE : Non singlet states are allowed but treated as closed-shell
                almo_scf_env%real_ne_of_domain(idomain, :) = REAL(nelec, KIND=dp)/2.0_dp
@@ -614,8 +614,7 @@ CONTAINS
             DO ispin = 1, nspins
                ! copy the atomic-block dm into matrix_p_blk
                CALL matrix_qs_to_almo(rho_ao(ispin)%matrix, &
-                                      almo_scf_env%matrix_p_blk(ispin), almo_scf_env%mat_distr_aos, &
-                                      .FALSE.)
+                                      almo_scf_env%matrix_p_blk(ispin), almo_scf_env%mat_distr_aos)
                CALL dbcsr_filter(almo_scf_env%matrix_p_blk(ispin), &
                                  almo_scf_env%eps_filter)
             END DO ! ispin
@@ -1228,8 +1227,7 @@ CONTAINS
          CALL dbcsr_set(almo_scf_env%matrix_s_blk(1), 0.0_dp)
          CALL dbcsr_add_on_diag(almo_scf_env%matrix_s_blk(1), 1.0_dp)
       ELSE
-         CALL matrix_qs_to_almo(matrix_s, almo_scf_env%matrix_s(1), &
-                                almo_scf_env%mat_distr_aos, .FALSE.)
+         CALL matrix_qs_to_almo(matrix_s, almo_scf_env%matrix_s(1), almo_scf_env%mat_distr_aos)
          CALL dbcsr_copy(almo_scf_env%matrix_s_blk(1), &
                          almo_scf_env%matrix_s(1), keep_sparsity=.TRUE.)
       END IF
@@ -1363,14 +1361,9 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'almo_scf_delocalization'
 
-      INTEGER                                            :: col, handle, hold, iblock_col, &
-                                                            iblock_row, ispin, mynode, &
-                                                            nblkcols_tot, nblkrows_tot, row, &
-                                                            unit_nr
-      LOGICAL                                            :: almo_experimental, tr
-      REAL(KIND=dp), DIMENSION(:, :), POINTER            :: p_new_block
+      INTEGER                                            :: handle, ispin, unit_nr
+      LOGICAL                                            :: almo_experimental
       TYPE(cp_logger_type), POINTER                      :: logger
-      TYPE(dbcsr_distribution_type)                      :: dist
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:)        :: no_quench
       TYPE(optimizer_options_type)                       :: arbitrary_optimizer
 
@@ -1404,33 +1397,8 @@ CONTAINS
          CALL dbcsr_create(no_quench(1), &
                            template=almo_scf_env%matrix_t(1), &
                            matrix_type=dbcsr_type_no_symmetry)
-         CALL dbcsr_get_info(no_quench(1), distribution=dist)
-         CALL dbcsr_distribution_get(dist, mynode=mynode)
-         CALL dbcsr_work_create(no_quench(1), &
-                                work_mutable=.TRUE.)
-         nblkrows_tot = dbcsr_nblkrows_total(no_quench(1))
-         nblkcols_tot = dbcsr_nblkcols_total(no_quench(1))
-         ! RZK-warning: is it a quadratic-scaling routine?
-         ! As a matter of fact it is! But this block treats
-         ! fully delocalized MOs. So it is unavoidable.
-         ! C'est la vie
-         DO row = 1, nblkrows_tot
-            DO col = 1, nblkcols_tot
-               tr = .FALSE.
-               iblock_row = row
-               iblock_col = col
-               CALL dbcsr_get_stored_coordinates(no_quench(1), &
-                                                 iblock_row, iblock_col, hold)
-               IF (hold .EQ. mynode) THEN
-                  NULLIFY (p_new_block)
-                  CALL dbcsr_reserve_block2d(no_quench(1), &
-                                             iblock_row, iblock_col, p_new_block)
-                  CPASSERT(ASSOCIATED(p_new_block))
-                  p_new_block(:, :) = 1.0_dp
-               END IF
-            END DO
-         END DO
-         CALL dbcsr_finalize(no_quench(1))
+         CALL dbcsr_reserve_all_blocks(no_quench(1))
+         CALL dbcsr_set(no_quench(1), 1.0_dp)
          IF (almo_scf_env%nspins .GT. 1) THEN
             DO ispin = 2, almo_scf_env%nspins
                CALL dbcsr_create(no_quench(ispin), &
@@ -1920,8 +1888,9 @@ CONTAINS
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:), &
          INTENT(IN)                                      :: matrix
 
-      INTEGER :: iblock_col, iblock_col_size, iblock_row, iblock_row_size, icol, irow, ispin, &
-         Ncols, Nrows, nspins, para_group_handle, unit_nr
+      INTEGER                                            :: iblock_col, iblock_col_size, iblock_row, &
+                                                            iblock_row_size, icol, irow, ispin, &
+                                                            Ncols, Nrows, nspins, unit_nr
       LOGICAL                                            :: element_by_element
       REAL(KIND=dp)                                      :: energy, eps_local, eps_start, &
                                                             max_element, spin_factor
@@ -1930,7 +1899,7 @@ CONTAINS
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_iterator_type)                          :: iter
       TYPE(dbcsr_type), ALLOCATABLE, DIMENSION(:)        :: matrix_p_tmp, matrix_t_tmp
-      TYPE(mp_comm_type)                                 :: para_group
+      TYPE(mp_comm_type)                                 :: group
 
       ! define the output_unit
       logger => cp_get_default_logger()
@@ -2028,11 +1997,10 @@ CONTAINS
             CALL dbcsr_finalize(matrix_t_tmp(ispin))
             CALL dbcsr_filter(matrix_t_tmp(ispin), eps_local)
 
-            CALL dbcsr_get_info(matrix_t_tmp(ispin), group=para_group_handle, &
+            CALL dbcsr_get_info(matrix_t_tmp(ispin), group=group, &
                                 nfullrows_total=Nrows, &
                                 nfullcols_total=Ncols)
-            CALL para_group%set_handle(para_group_handle)
-            CALL para_group%sum(retained(ispin))
+            CALL group%sum(retained(ispin))
 
             !devide by the total no. elements
             occ(ispin) = retained(ispin)/Nrows/Ncols

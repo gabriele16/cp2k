@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -201,7 +201,7 @@ PROGRAM graph
 
    END DO
    IF (COUNT((/l_orac, l_cp2k, l_cpmd/)) /= 1) &
-      CPABORT("Error! You've to specify either ORAC, CP2K or CPMD!!")
+      CPABORT("Error! You've to specify either ORAC, CP2K or CPMD!")
 
    ! For CPMD move filename to colvar_mtd
    IF (l_cpmd) THEN

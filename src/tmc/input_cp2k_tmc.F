@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -88,7 +88,7 @@ CONTAINS
 
       ! size of a group calculating the exact energy
       CALL keyword_create(keyword, __LOCATION__, &
-                          name="GROUP_ANLYSIS_NR", &
+                          name="GROUP_ANALYSIS_NR", &
                           description="amount of groups (cores) for analysing the configurations", &
                           usage="GROUP_ANALYSIS_NR {INTEGER}", &
                           default_i_val=1, lone_keyword_i_val=1)
@@ -107,15 +107,15 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, &
                           name="RND_DETERMINISTIC", &
                           description="the initialisation number for the random number generator", &
-                          usage="RND_INIT {INTEGER}", &
+                          usage="RND_DETERMINISTIC {INTEGER}", &
                           default_i_val=-1)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, &
                           name="TASK_TYPE", &
-                          description="Select specialized types. Selectable:"// &
-                          "IDEAL_GAS (constant configuration energy E=0.0), ", &
+                          description="Select specialized types. Selectable: "// &
+                          "IDEAL_GAS (constant configuration energy E=0.0)", &
                           usage="TASK_TYPE {OPTION}", &
                           default_c_val="", lone_keyword_c_val=tmc_default_unspecified_name)
       CALL section_add_keyword(section, keyword)
@@ -124,7 +124,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, &
                           name="NR_TEMPERATURE", &
                           description="the number of different temperature for parallel tempering", &
-                          usage="NR_TEMP {INTEGER}", &
+                          usage="NR_TEMPERATURE {INTEGER}", &
                           default_i_val=1)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -144,7 +144,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, &
                           name="NUM_MV_ELEM_IN_CELL", &
                           description="the number of elements (atoms or molecules) "// &
-                          "moves in cell or sub box."// &
+                          "moves in cell or sub box. "// &
                           "if 0 all elements are moved once in a MC move", &
                           usage="NUM_MV_ELEM_IN_CELL {INTEGER}", &
                           default_i_val=0)
@@ -225,7 +225,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, &
                           name="USE_SCF_ENERGY_INFO", &
                           description="enables or disables the usage of SCF energy information for "// &
-                          " estimating the acceptance probability. ", &
+                          "estimating the acceptance probability.", &
                           usage="USE_SCF_ENERGY_INFO {LOGICAL}", &
                           default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -250,7 +250,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, &
                           name="RESTART_IN", &
                           description="if existing use the last restart file", &
-                          usage="RESTART or RSTART {FILENAME}", &
+                          usage="RESTART_IN {FILENAME}", &
                           default_c_val="", lone_keyword_c_val=tmc_default_unspecified_name)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -263,7 +263,7 @@ CONTAINS
                           "If the value is 0, no restart file is written at all. "// &
                           "The frequency specifies is related "// &
                           "to the calculated Markov chain elements", &
-                          usage="RESTART or RESTART {INTEGER}", &
+                          usage="RESTART_OUT {INTEGER}", &
                           default_i_val=-1, lone_keyword_i_val=-9)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -404,7 +404,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="PROB", &
                           description="Defines the probability of the NMC move "// &
-                          "(considering the ration between the selected other moves)"// &
+                          "(considering the ration between the selected other moves) "// &
                           "the probabilities of the move types in the NMC section "// &
                           "defines only the weight within the NMC steps", &
                           usage="PROB {real}", type_of_var=real_t, &
@@ -458,7 +458,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="SIZE", &
-                          description="Defines the size of the move:"// &
+                          description="Defines the size of the move: "// &
                           "ATOM_TRANS [A], "// &
                           "MOL_TRANS [A], "// &
                           "MOL_ROT [degree], "// &
@@ -535,7 +535,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, &
                           name="NR_TEMPERATURE", &
                           description="the number of different temperature for parallel tempering", &
-                          usage="NR_TEMP {INTEGER}", &
+                          usage="NR_TEMPERATURE {INTEGER}", &
                           default_i_val=1)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -624,8 +624,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, &
                           name="RESTART", &
-                          description="Enables/disables the reading and writing of "// &
-                          " analysis restart files ", &
+                          description="Enables/disables the reading and writing of analysis restart files", &
                           usage="RESTART {LOGICAL}", &
                           default_l_val=.TRUE., lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -633,7 +632,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="PREFIX_ANA_FILES", &
                           description="specifies a prefix for all analysis files.", &
-                          usage="ANA_FILES_PREFIX {prefix}", &
+                          usage="PREFIX_ANA_FILES {prefix}", &
                           default_c_val="")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -649,8 +648,8 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, &
                           name="G_R", &
-                          description="Radial Distribution Function for each pair of atoms"// &
-                          "using the amount of specified bins within MAX(cell_lenght)/2", &
+                          description="Radial Distribution Function for each pair of atoms "// &
+                          "using the amount of specified bins within MAX(cell_length)/2", &
                           usage="G_R or G_R {INTEGER}", &
                           default_i_val=-1, lone_keyword_i_val=-1)
       CALL section_add_keyword(section, keyword)
@@ -674,10 +673,10 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, &
                           name="DIPOLE_ANALYSIS", &
                           description="Enables analysis of dipole moments, espacially dielectric constant. "// &
-                          "An additional type can be specified, e.g. analyzing ice structures."// &
+                          "An additional type can be specified, e.g. analyzing ice structures. "// &
                           "using SYM_XYZ also dipoles (-x,y,z) .. .. (-x,-y,z).... (-x,-y-z) "// &
                           "are regarded, only use it if this configurations have "// &
-                          "all the same energy. ", &
+                          "all the same energy.", &
                           usage="DIPOLE_ANALYSIS or DIPOLE_ANALYSIS {type}", &
                           default_c_val="", lone_keyword_c_val=tmc_default_unspecified_name)
       CALL section_add_keyword(section, keyword)

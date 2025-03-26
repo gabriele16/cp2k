@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -9,18 +9,25 @@
 !> \brief Routines to calculate EXX within GW
 !> \par History
 !>      07.2020 separated from mp2.F [F. Stein, code by Jan Wilhelm]
+!>      07.2024 determine number of corrected MOs from BSE cutoffs [Maximilian Graml]
 !> \author Jan Wilhelm, Frederick Stein
 ! **************************************************************************************************
 MODULE rpa_gw_sigma_x
    USE admm_methods,                    ONLY: admm_mo_merge_ks_matrix
    USE admm_types,                      ONLY: admm_type,&
                                               get_admm_env
+   USE bse_util,                        ONLY: determine_cutoff_indices
    USE cp_cfm_basic_linalg,             ONLY: cp_cfm_scale_and_add_fm
    USE cp_cfm_types,                    ONLY: cp_cfm_create,&
                                               cp_cfm_get_info,&
                                               cp_cfm_release,&
                                               cp_cfm_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_add, dbcsr_copy, dbcsr_create, dbcsr_desymmetrize, dbcsr_multiply, dbcsr_p_type, &
+        dbcsr_release, dbcsr_release_p, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, &
+        dbcsr_type_symmetric
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_get_diag
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr,&
@@ -33,10 +40,6 @@ MODULE rpa_gw_sigma_x
                                               cp_fm_get_info,&
                                               cp_fm_release,&
                                               cp_fm_type
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add, dbcsr_copy, dbcsr_create, dbcsr_desymmetrize, dbcsr_get_diag, dbcsr_multiply, &
-        dbcsr_p_type, dbcsr_release, dbcsr_release_p, dbcsr_set, dbcsr_type, &
-        dbcsr_type_antisymmetric, dbcsr_type_symmetric
    USE hfx_energy_potential,            ONLY: integrate_four_center
    USE hfx_exx,                         ONLY: calc_exx_admm_xc_contributions,&
                                               exx_post_hfx,&
@@ -63,7 +66,7 @@ MODULE rpa_gw_sigma_x
                                               z_zero
    USE message_passing,                 ONLY: mp_para_env_type
    USE mp2_integrals,                   ONLY: compute_kpoints
-   USE mp2_ri_2c,                       ONLY: setup_trunc_coulomb_pot_for_exchange_self_energy
+   USE mp2_ri_2c,                       ONLY: trunc_coulomb_for_exchange
    USE mp2_types,                       ONLY: mp2_type
    USE parallel_gemm_api,               ONLY: parallel_gemm
    USE physcon,                         ONLY: evolt
@@ -119,17 +122,20 @@ CONTAINS
 
       CHARACTER(4)                                       :: occ_virt
       CHARACTER(LEN=40)                                  :: line
-      INTEGER :: dimen, gw_corr_lev_occ, gw_corr_lev_tot, gw_corr_lev_virt, handle, homo, i_img, &
-         ikp, irep, ispin, iunit, myfun, myfun_aux, myfun_prim, n_level_gw, n_level_gw_ref, &
-         n_rep_hf, nkp, nkp_Sigma, nmo, nspins, print_exx
+      INTEGER :: dimen, gw_corr_lev_occ, gw_corr_lev_tot, gw_corr_lev_virt, handle, homo, &
+         homo_reduced_bse, homo_startindex_bse, i_img, ikp, irep, ispin, iunit, max_corr_lev_occ, &
+         max_corr_lev_virt, myfun, myfun_aux, myfun_prim, n_level_gw, n_level_gw_ref, n_rep_hf, &
+         nkp, nkp_Sigma, nmo, nspins, print_exx, virtual_reduced_bse, virtual_startindex_bse
       LOGICAL :: calc_ints, charge_constrain_tmp, do_admm_rpa, do_hfx, do_kpoints_cubic_RPA, &
          do_kpoints_from_Gamma, do_ri_Sigma_x, really_read_line
       REAL(KIND=dp) :: E_GAP_GW, E_HOMO_GW, E_LUMO_GW, eh1, ehfx, eigval_dft, eigval_hf_at_dft, &
          energy_exc, energy_exc1, energy_exc1_aux_fit, energy_exc_aux_fit, energy_total, &
          exx_minus_vxc, hfx_fraction, min_direct_HF_at_DFT_gap, t1, t2, tmp
+      REAL(KIND=dp), ALLOCATABLE, DIMENSION(:)           :: matrix_tmp_2_diag
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :)        :: Eigenval_kp_HF_at_DFT, vec_Sigma_x
       REAL(KIND=dp), ALLOCATABLE, DIMENSION(:, :, :)     :: Eigenval_kp, vec_Sigma_x_minus_vxc_gw, &
                                                             vec_Sigma_x_minus_vxc_gw_im
+      REAL(KIND=dp), DIMENSION(:), POINTER               :: mo_eigenvalues
       TYPE(admm_type), POINTER                           :: admm_env
       TYPE(cp_fm_type), POINTER                          :: mo_coeff
       TYPE(dbcsr_p_type), ALLOCATABLE, DIMENSION(:)      :: mat_exchange_for_kp_from_gamma
@@ -471,7 +477,6 @@ CONTAINS
             END IF
 
             IF (do_kpoints_from_Gamma .AND. print_exx == gw_print_exx) THEN
-               ! JW not yet there: open shell
                ALLOCATE (mat_exchange_for_kp_from_gamma(1))
 
                DO ispin = 1, 1
@@ -523,6 +528,7 @@ CONTAINS
 
             CALL get_mo_set(mo_set=mos_mp2(ispin), &
                             mo_coeff=mo_coeff, &
+                            eigenvalues=mo_eigenvalues, &
                             nmo=nmo, &
                             homo=homo, &
                             nao=dimen)
@@ -531,6 +537,8 @@ CONTAINS
 
                ALLOCATE (vec_Sigma_x_minus_vxc_gw(nmo, nspins, nkp))
                vec_Sigma_x_minus_vxc_gw = 0.0_dp
+
+               ALLOCATE (matrix_tmp_2_diag(dimen))
             END IF
 
             CALL dbcsr_set(mo_coeff_b, 0.0_dp)
@@ -549,10 +557,56 @@ CONTAINS
 
             gw_corr_lev_occ = mp2_env%ri_g0w0%corr_mos_occ
             gw_corr_lev_virt = mp2_env%ri_g0w0%corr_mos_virt
-            ! if corrected occ/virt levels exceed the number of occ/virt levels,
-            ! correct all occ/virt level energies
-            IF (gw_corr_lev_occ > homo) gw_corr_lev_occ = homo
-            IF (gw_corr_lev_virt > dimen - homo) gw_corr_lev_virt = dimen - homo
+
+            ! If SVD is used to invert overlap matrix (for CHOLESKY OFF), some MOs are removed
+            ! Therefore, setting the number of gw_corr_lev_virt simply to dimen - homo leads to index problems
+            ! Instead, we take into account the removed MOs
+            max_corr_lev_occ = homo
+            max_corr_lev_virt = nmo - homo
+
+            ! If BSE is invoked, manipulate corrected MO number
+            IF (mp2_env%bse%do_bse) THEN
+               ! Logic: If cutoff is negative, all MOs are included in BSE, i.e. we need to correct them all
+               !        If cutoff is positive, we can reduce the number of MOs to be corrected and force gw_corr_lev_...
+               !        to a sufficiently large number by setting it to -2 and read indices afterwards
+               ! Handling for occupied levels
+               IF (mp2_env%bse%bse_cutoff_occ < 0) THEN
+                  gw_corr_lev_occ = -1
+               ELSE
+                  IF (gw_corr_lev_occ > 0) THEN
+                     gw_corr_lev_occ = -2
+                  END IF
+               END IF
+               ! Handling for virtual levels
+               IF (mp2_env%bse%bse_cutoff_empty < 0) THEN
+                  gw_corr_lev_virt = -1
+               ELSE
+                  IF (gw_corr_lev_virt > 0) THEN
+                     gw_corr_lev_virt = -2
+                  END IF
+               END IF
+
+               ! Obtain indices from DFT if gw_corr... are set to -2
+               CALL determine_cutoff_indices(mo_eigenvalues, &
+                                             homo, max_corr_lev_virt, &
+                                             homo_reduced_bse, virtual_reduced_bse, &
+                                             homo_startindex_bse, virtual_startindex_bse, &
+                                             mp2_env)
+               IF (gw_corr_lev_occ == -2) THEN
+                  CPWARN("BSE cutoff overwrites user input for CORR_MOS_OCC")
+                  gw_corr_lev_occ = homo_reduced_bse
+               END IF
+               IF (gw_corr_lev_virt == -2) THEN
+                  CPWARN("BSE cutoff overwrites user input for CORR_MOS_VIRT")
+                  gw_corr_lev_virt = virtual_reduced_bse
+               END IF
+            END IF
+
+            ! if requested number of occ/virt levels for correction either exceed the number of
+            ! occ/virt levels or the requested number is negative, default to correct all
+            ! occ/virt level energies
+            IF (gw_corr_lev_occ > homo .OR. gw_corr_lev_occ < 0) gw_corr_lev_occ = max_corr_lev_occ
+            IF (gw_corr_lev_virt > max_corr_lev_virt .OR. gw_corr_lev_virt < 0) gw_corr_lev_virt = max_corr_lev_virt
             IF (ispin == 1) THEN
                mp2_env%ri_g0w0%corr_mos_occ = gw_corr_lev_occ
                mp2_env%ri_g0w0%corr_mos_virt = gw_corr_lev_virt
@@ -576,7 +630,8 @@ CONTAINS
                                 matrix_tmp, 0.0_dp, matrix_tmp_2, first_row=homo + 1 - gw_corr_lev_occ, &
                                 last_row=homo + gw_corr_lev_virt)
 
-            CALL dbcsr_get_diag(matrix_tmp_2, vec_Sigma_x_minus_vxc_gw(:, ispin, 1))
+            CALL dbcsr_get_diag(matrix_tmp_2, matrix_tmp_2_diag)
+            vec_Sigma_x_minus_vxc_gw(1:nmo, ispin, 1) = matrix_tmp_2_diag(1:nmo)
 
             CALL dbcsr_set(matrix_tmp, 0.0_dp)
             CALL dbcsr_set(matrix_tmp_2, 0.0_dp)
@@ -615,7 +670,7 @@ CONTAINS
             CALL get_qs_env(qs_env=qs_env, &
                             kpoints=kpoints)
 
-            CALL setup_trunc_coulomb_pot_for_exchange_self_energy(qs_env)
+            CALL trunc_coulomb_for_exchange(qs_env)
 
             CALL compute_kpoints(qs_env, kpoints, unit_nr)
 
@@ -793,7 +848,8 @@ CONTAINS
       CHARACTER(LEN=*), PARAMETER :: routineN = 'transform_sigma_x_minus_vxc_to_MO_basis'
 
       INTEGER :: dimen, gw_corr_lev_occ, gw_corr_lev_virt, handle, homo, i_global, iiB, ikp, &
-         ispin, j_global, jjB, ncol_local, nkp, nrow_local, nspins
+         ispin, j_global, jjB, max_corr_lev_occ, max_corr_lev_virt, ncol_local, nkp, nrow_local, &
+         nspins
       INTEGER, DIMENSION(2)                              :: kp_range
       INTEGER, DIMENSION(:), POINTER                     :: col_indices, row_indices
       REAL(KIND=dp)                                      :: imval, reval
@@ -893,17 +949,22 @@ CONTAINS
 
       CALL para_env%sum(vec_Sigma_x_minus_vxc_gw)
       CALL para_env%sum(vec_Sigma_x_minus_vxc_gw_im)
-
       ! also adjust in the case of kpoints too big gw_corr_lev_occ and gw_corr_lev_virt
       DO ispin = 1, nspins
          CALL get_mo_set(mo_set=kpoints%kp_env(1)%kpoint_env%mos(ispin, 1), &
                          homo=homo, nao=dimen)
+         ! If SVD is used to invert overlap matrix (for CHOLESKY OFF), some MOs are removed
+         ! Therefore, setting the number of gw_corr_lev_virt simply to dimen - homo leads to index problems
+         ! Instead, we take into account the removed MOs
+         max_corr_lev_occ = homo
+         max_corr_lev_virt = nmo - homo
+
          gw_corr_lev_occ = mp2_env%ri_g0w0%corr_mos_occ
          gw_corr_lev_virt = mp2_env%ri_g0w0%corr_mos_virt
-         ! if corrected occ/virt levels exceed the number of occ/virt levels,
+         ! if corrected occ/virt levels exceed the number of occ/virt levels or are negative,
          ! correct all occ/virt level energies
-         IF (gw_corr_lev_occ > homo) gw_corr_lev_occ = homo
-         IF (gw_corr_lev_virt > dimen - homo) gw_corr_lev_virt = dimen - homo
+         IF (gw_corr_lev_occ > homo .OR. gw_corr_lev_occ < 0) gw_corr_lev_occ = max_corr_lev_occ
+         IF (gw_corr_lev_virt > max_corr_lev_virt .OR. gw_corr_lev_virt < 0) gw_corr_lev_virt = max_corr_lev_virt
          IF (ispin == 1) THEN
             mp2_env%ri_g0w0%corr_mos_occ = gw_corr_lev_occ
             mp2_env%ri_g0w0%corr_mos_virt = gw_corr_lev_virt

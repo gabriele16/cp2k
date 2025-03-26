@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -1810,10 +1810,12 @@ CONTAINS
 !> \return ...
 ! **************************************************************************************************
       REAL(KIND=dp) FUNCTION poly2(x, a0, a1, a2)
-         INTEGER                                            :: x
-         REAL(KIND=dp)                                      :: a0, a1, a2
+         INTEGER, INTENT(IN)                                :: x
+         REAL(KIND=dp), INTENT(IN)                          :: a0, a1, a2
+         REAL(KIND=dp)                                      :: r
 
-         poly2 = a0 + a1*x + a2*x*x
+         r = REAL(x, KIND=dp)
+         poly2 = a0 + (a1 + a2*r)*r
       END FUNCTION poly2
 
    END FUNCTION cost_model

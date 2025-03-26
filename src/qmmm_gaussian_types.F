@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -25,10 +25,10 @@ MODULE qmmm_gaussian_types
 !> \author Laino Teodoro
 ! **************************************************************************************************
    TYPE qmmm_gaussian_type
-      INTEGER                               :: number_of_gaussians
-      REAL(KIND=dp)                         :: Elp_Radius, Elp_Radius_Corr
-      INTEGER, DIMENSION(:), POINTER        :: grid_level
-      REAL(KIND=dp), DIMENSION(:), POINTER  :: Ak, Gk
+      INTEGER                               :: number_of_gaussians = -1
+      REAL(KIND=dp)                         :: Elp_Radius = -1.0_dp, Elp_Radius_Corr = -1.0_dp
+      INTEGER, DIMENSION(:), POINTER        :: grid_level => NULL()
+      REAL(KIND=dp), DIMENSION(:), POINTER  :: Ak => NULL(), Gk => NULL()
    END TYPE qmmm_gaussian_type
 
 ! **************************************************************************************************
@@ -40,7 +40,7 @@ MODULE qmmm_gaussian_types
 !> \author Teodoro Laino
 ! **************************************************************************************************
    TYPE qmmm_gaussian_p_type
-      TYPE(qmmm_gaussian_type), POINTER :: pgf
+      TYPE(qmmm_gaussian_type), POINTER :: pgf => NULL()
    END TYPE qmmm_gaussian_p_type
 
    PUBLIC  :: qmmm_gaussian_type, &

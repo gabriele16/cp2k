@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -23,6 +23,7 @@
 !>      IAB (13-Feb-2009): Extended plan caching to serial 3D FFT (fft3d_s)
 !>      IAB (09-Oct-2009): Added OpenMP directives to parallel 3D FFT
 !>                         (c) The Numerical Algorithms Group (NAG) Ltd, 2008-2009 on behalf of the HECToR project
+!>      HFP (17-Oct-2024): Thread-safety insurance (CPASSERT), and OMP ATOMIC (tick_fft_pool)
 !> \author JGH
 ! **************************************************************************************************
 MODULE fft_tools
@@ -31,7 +32,6 @@ MODULE fft_tools
                                               C_PTR,&
                                               C_SIZE_T
    USE cp_log_handling,                 ONLY: cp_logger_get_default_io_unit
-   USE fast,                            ONLY: zero_c
    USE fft_lib,                         ONLY: &
         fft_1dm, fft_3d, fft_alloc, fft_create_plan_1dm, fft_create_plan_3d, fft_dealloc, &
         fft_destroy_plan, fft_do_cleanup, fft_do_init, fft_get_lengths, fft_library
@@ -39,16 +39,16 @@ MODULE fft_tools
    USE kinds,                           ONLY: dp,&
                                               dp_size,&
                                               sp
+   USE mathconstants,                   ONLY: z_zero
    USE message_passing,                 ONLY: mp_cart_type,&
                                               mp_comm_null,&
                                               mp_comm_type,&
-                                              mp_para_env_type,&
                                               mp_request_type,&
                                               mp_waitall
    USE offload_api,                     ONLY: offload_free_pinned_mem,&
                                               offload_malloc_pinned_mem
 
-!$ USE OMP_LIB, ONLY: omp_get_max_threads, omp_get_thread_num, omp_get_num_threads
+!$ USE OMP_LIB, ONLY: omp_get_max_threads, omp_get_thread_num, omp_in_parallel
 
 #include "../base/base_uses.f90"
 
@@ -69,7 +69,6 @@ MODULE fft_tools
       INTEGER                              :: lg = 0, mg = 0
       INTEGER                              :: nbx = 0, nbz = 0
       INTEGER                              :: nmray = 0, nyzray = 0
-      TYPE(mp_comm_type)                   :: gs_group = mp_comm_type()
       TYPE(mp_cart_type)                   :: rs_group = mp_cart_type()
       INTEGER, DIMENSION(2)                :: g_pos = 0, r_pos = 0, r_dim = 0
       INTEGER                              :: numtask = 0
@@ -101,11 +100,11 @@ MODULE fft_tools
          :: a1buf => NULL(), a2buf => NULL(), a3buf => NULL(), &
             a4buf => NULL(), a5buf => NULL(), a6buf => NULL()
       ! to be used in communication routines
-      INTEGER, DIMENSION(:), CONTIGUOUS, POINTER       :: scount => NULL(), rcount => NULL(), sdispl => NULL(), rdispl => NULL()
-      INTEGER, DIMENSION(:, :), CONTIGUOUS, POINTER     :: pgcube => NULL()
-      INTEGER, DIMENSION(:), CONTIGUOUS, POINTER       :: xzcount => NULL(), yzcount => NULL(), xzdispl => NULL(), yzdispl => NULL()
-      INTEGER                              :: in = 0, mip = -1
-      REAL(KIND=dp)                        :: rsratio = 1.0_dp
+      INTEGER, DIMENSION(:), CONTIGUOUS, POINTER    :: scount => NULL(), rcount => NULL(), sdispl => NULL(), rdispl => NULL()
+      INTEGER, DIMENSION(:, :), CONTIGUOUS, POINTER :: pgcube => NULL()
+      INTEGER, DIMENSION(:), CONTIGUOUS, POINTER    :: xzcount => NULL(), yzcount => NULL(), xzdispl => NULL(), yzdispl => NULL()
+      INTEGER                                       :: in = 0, mip = -1
+      REAL(KIND=dp)                                 :: rsratio = 1.0_dp
       COMPLEX(KIND=dp), DIMENSION(:), POINTER, CONTIGUOUS &
          :: xzbuf => NULL(), yzbuf => NULL()
       COMPLEX(KIND=sp), DIMENSION(:), POINTER, CONTIGUOUS &
@@ -115,11 +114,11 @@ MODULE fft_tools
             rbuf5 => NULL(), rbuf6 => NULL(), rr => NULL()
       COMPLEX(KIND=sp), DIMENSION(:, :), POINTER, CONTIGUOUS &
          :: ss => NULL(), tt => NULL()
-      INTEGER, DIMENSION(:, :), POINTER, CONTIGUOUS     :: pgrid => NULL()
-      INTEGER, DIMENSION(:), POINTER, CONTIGUOUS       :: xcor => NULL(), zcor => NULL(), pzcoord => NULL()
-      TYPE(fft_scratch_sizes)              :: sizes = fft_scratch_sizes()
-      TYPE(fft_plan_type), DIMENSION(6)   :: fft_plan = fft_plan_type()
-      INTEGER                              :: last_tick = -1
+      INTEGER, DIMENSION(:, :), POINTER, CONTIGUOUS :: pgrid => NULL()
+      INTEGER, DIMENSION(:), POINTER, CONTIGUOUS    :: xcor => NULL(), zcor => NULL(), pzcoord => NULL()
+      TYPE(fft_scratch_sizes)                       :: sizes = fft_scratch_sizes()
+      TYPE(fft_plan_type), DIMENSION(6)             :: fft_plan = fft_plan_type()
+      INTEGER                                       :: last_tick = -1
    END TYPE fft_scratch_type
 
    TYPE fft_scratch_pool_type
@@ -127,17 +126,18 @@ MODULE fft_tools
       TYPE(fft_scratch_pool_type), POINTER  :: fft_scratch_next => NULL()
    END TYPE fft_scratch_pool_type
 
-   INTEGER, SAVE                           :: init_fft_pool = 0
+   INTEGER, SAVE                              :: init_fft_pool = 0
    ! the clock for fft pool. Allows to identify the least recently used scratch
-   INTEGER, SAVE                           :: tick_fft_pool = 0
+   INTEGER, SAVE                              :: tick_fft_pool = 0
    ! limit the number of scratch pools to fft_pool_scratch_limit.
-   INTEGER, SAVE                           :: fft_pool_scratch_limit = 15
-   TYPE(fft_scratch_pool_type), POINTER, SAVE:: fft_scratch_first
+   INTEGER, SAVE                              :: fft_pool_scratch_limit = 15
+   TYPE(fft_scratch_pool_type), POINTER, SAVE :: fft_scratch_first
    ! END of types for the pool of scratch data needed in FFT routines
 
    PRIVATE
    PUBLIC :: init_fft, fft3d, finalize_fft
    PUBLIC :: fft_alloc, fft_dealloc
+   PUBLIC :: init_fft_scratch_pool
    PUBLIC :: fft_radix_operations, fft_fw1d
    PUBLIC :: FWFFT, BWFFT
    PUBLIC :: FFT_RADIX_CLOSEST, FFT_RADIX_NEXT
@@ -201,8 +201,7 @@ CONTAINS
       CALL fft_do_init(fft_type, wisdom_file)
 
       ! setup the FFT scratch pool, if one is associated, clear first
-      CALL release_fft_scratch_pool()
-      CALL init_fft_scratch_pool()
+      CALL init_fft_scratch_pool() ! CALLs release_fft_scratch_pool()
 
    END SUBROUTINE init_fft
 
@@ -214,8 +213,8 @@ CONTAINS
 !>      10.2007 created [Joost VandeVondele]
 ! **************************************************************************************************
    SUBROUTINE finalize_fft(para_env, wisdom_file)
-      TYPE(mp_para_env_type), POINTER                    :: para_env
-      CHARACTER(LEN=*), INTENT(IN)                       :: wisdom_file
+      CLASS(mp_comm_type)                    :: para_env
+      CHARACTER(LEN=*), INTENT(IN)           :: wisdom_file
 
 ! release the FFT scratch pool
 
@@ -361,14 +360,13 @@ CONTAINS
 !> \param n ...
 !> \param zin ...
 !> \param zout ...
-!> \param scale ...
 !> \param status ...
 !> \param debug ...
 !> \par History
 !>      none
 !> \author JGH
 ! **************************************************************************************************
-   SUBROUTINE fft3d_s(fsign, n, zin, zout, scale, status, debug)
+   SUBROUTINE fft3d_s(fsign, n, zin, zout, status, debug)
 
       INTEGER, INTENT(IN)                                :: fsign
       INTEGER, DIMENSION(:), INTENT(INOUT)               :: n
@@ -376,7 +374,6 @@ CONTAINS
          INTENT(INOUT)                                   :: zin
       COMPLEX(KIND=dp), CONTIGUOUS, DIMENSION(:, :, :), &
          INTENT(INOUT), OPTIONAL, TARGET                 :: zout
-      REAL(KIND=dp), INTENT(IN), OPTIONAL                :: scale
       INTEGER, INTENT(OUT), OPTIONAL                     :: status
       LOGICAL, INTENT(IN), OPTIONAL                      :: debug
 
@@ -394,10 +391,12 @@ CONTAINS
       CALL timeset(routineN, handle)
       output_unit = cp_logger_get_default_io_unit()
 
-      IF (PRESENT(scale)) THEN
-         norm = scale
-      ELSE
+      IF (fsign == FWFFT) THEN
+         norm = 1.0_dp/REAL(PRODUCT(n), KIND=dp)
+      ELSE IF (fsign == BWFFT) THEN
          norm = 1.0_dp
+      ELSE
+         CPABORT("Unknown FFT direction!")
       END IF
 
       IF (PRESENT(debug)) THEN
@@ -486,17 +485,15 @@ CONTAINS
 !> \param n ...
 !> \param cin ...
 !> \param gin ...
-!> \param gs_group ...
 !> \param rs_group ...
 !> \param yzp ...
 !> \param nyzray ...
 !> \param bo ...
-!> \param scale ...
 !> \param status ...
 !> \param debug ...
 ! **************************************************************************************************
-   SUBROUTINE fft3d_ps(fsign, n, cin, gin, gs_group, rs_group, yzp, nyzray, &
-                       bo, scale, status, debug)
+   SUBROUTINE fft3d_ps(fsign, n, cin, gin, rs_group, yzp, nyzray, &
+                       bo, status, debug)
 
       INTEGER, INTENT(IN)                                :: fsign
       INTEGER, DIMENSION(:), INTENT(IN)                  :: n
@@ -504,14 +501,12 @@ CONTAINS
          INTENT(INOUT)                                   :: cin
       COMPLEX(KIND=dp), CONTIGUOUS, DIMENSION(:, :), &
          INTENT(INOUT)                                   :: gin
-      TYPE(mp_comm_type), INTENT(IN)                     :: gs_group
       TYPE(mp_cart_type), INTENT(IN)                     :: rs_group
       INTEGER, CONTIGUOUS, DIMENSION(:, :, 0:), &
          INTENT(IN)                                      :: yzp
       INTEGER, CONTIGUOUS, DIMENSION(0:), INTENT(IN)     :: nyzray
       INTEGER, CONTIGUOUS, DIMENSION(:, :, 0:, :), &
          INTENT(IN)                                      :: bo
-      REAL(KIND=dp), INTENT(IN), OPTIONAL                :: scale
       INTEGER, INTENT(OUT), OPTIONAL                     :: status
       LOGICAL, INTENT(IN), OPTIONAL                      :: debug
 
@@ -522,8 +517,7 @@ CONTAINS
       COMPLEX(KIND=dp), CONTIGUOUS, DIMENSION(:, :, :), &
          POINTER                                         :: tbuf
       INTEGER :: g_pos, handle, lg, lmax, mcx2, mcz1, mcz2, mg, mmax, mx1, mx2, my1, mz2, n1, n2, &
-         nmax, numtask, numtask_g, numtask_r, nx, ny, nz, output_unit, r_dim(2), r_pos(2), rp, &
-         sign, stat
+         nmax, numtask, nx, ny, nz, output_unit, r_dim(2), r_pos(2), rp, sign, stat
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: p2p
       LOGICAL                                            :: test
       REAL(KIND=dp)                                      :: norm, sum_data
@@ -539,20 +533,17 @@ CONTAINS
          test = .FALSE.
       END IF
 
-      numtask_g = gs_group%num_pe
-      g_pos = gs_group%mepos
-      numtask_r = rs_group%num_pe
+      g_pos = rs_group%mepos
+      numtask = rs_group%num_pe
       r_dim = rs_group%num_pe_cart
       r_pos = rs_group%mepos_cart
-      IF (numtask_g /= numtask_r) THEN
-         CPABORT("Real space and G space groups are different.")
-      END IF
-      numtask = numtask_r
 
-      IF (PRESENT(scale)) THEN
-         norm = scale
-      ELSE
+      IF (fsign == FWFFT) THEN
+         norm = 1.0_dp/REAL(PRODUCT(n), KIND=dp)
+      ELSE IF (fsign == BWFFT) THEN
          norm = 1.0_dp
+      ELSE
+         CPABORT("Unknown FFT direction!")
       END IF
 
       sign = fsign
@@ -573,7 +564,7 @@ CONTAINS
 
       ALLOCATE (p2p(0:numtask - 1))
 
-      CALL gs_group%rank_compare(rs_group, p2p)
+      CALL rs_group%rank_compare(rs_group, p2p)
 
       rp = p2p(g_pos)
       mx1 = bo(2, 1, rp, 1) - bo(1, 1, rp, 1) + 1
@@ -610,7 +601,6 @@ CONTAINS
       fft_scratch_size%nmax = nmax
       fft_scratch_size%nmray = MAXVAL(nyzray)
       fft_scratch_size%nyzray = nyzray(g_pos)
-      fft_scratch_size%gs_group = gs_group
       fft_scratch_size%rs_group = rs_group
       fft_scratch_size%g_pos = g_pos
       fft_scratch_size%r_pos = r_pos
@@ -643,7 +633,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(cin))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A)') "  Two step communication algorithm "
                   WRITE (output_unit, '(A,T60,3I7)') "     Transform Z ", n(3), mx1*my1
@@ -663,7 +653,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(qbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(2) T", sum_data
                END IF
@@ -674,7 +664,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(rbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(3) T", sum_data
                END IF
@@ -689,7 +679,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(pbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(4) TS", sum_data
                END IF
@@ -701,7 +691,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(qbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(5) TS", sum_data
                END IF
@@ -712,7 +702,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(gin))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(6) ", sum_data
                END IF
@@ -723,7 +713,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(gin))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A)') "  Two step communication algorithm "
                   WRITE (output_unit, '(A,T67,2I7)') "     Transform X ", n(1), nyzray(g_pos)
@@ -742,7 +732,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(pbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(2) TS", sum_data
                END IF
@@ -754,7 +744,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(qbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(3) TS", sum_data
                END IF
@@ -769,7 +759,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(rbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(4) T", sum_data
                END IF
@@ -780,7 +770,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(pbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(5) T", sum_data
                END IF
@@ -793,7 +783,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(cin))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(6) ", sum_data
                END IF
@@ -820,15 +810,15 @@ CONTAINS
          sbuf => fft_scratch%r1buf
          tbuf => fft_scratch%tbuf
 
-         CALL zero_c(sbuf)
-         CALL zero_c(tbuf)
+         sbuf = z_zero
+         tbuf = z_zero
 
          IF (sign == FWFFT) THEN
             ! cin -> gin
 
             IF (test) THEN
                sum_data = ABS(SUM(cin))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A)') "     One step communication algorithm "
                   WRITE (output_unit, '(A,T60,3I7)') "     Transform YZ ", n(2), n(3), nx
@@ -843,19 +833,19 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(tbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(2) TS", sum_data
                END IF
             END IF
 
             ! Exchange data ( transpose of matrix ) and sort
-            CALL yz_to_x(tbuf, gs_group, g_pos, p2p, yzp, nyzray, &
+            CALL yz_to_x(tbuf, rs_group, g_pos, p2p, yzp, nyzray, &
                          bo(:, :, :, 2), sbuf, fft_scratch)
 
             IF (test) THEN
                sum_data = ABS(SUM(sbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(3) TS", sum_data
                END IF
@@ -865,7 +855,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(gin))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(4) ", sum_data
                END IF
@@ -876,7 +866,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(gin))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A)') "  One step communication algorithm "
                   WRITE (output_unit, '(A,T67,2I7)') "     Transform X ", n(1), nyzray(g_pos)
@@ -890,19 +880,19 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(sbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(2) TS", sum_data
                END IF
             END IF
 
             ! Exchange data ( transpose of matrix ) and sort
-            CALL x_to_yz(sbuf, gs_group, g_pos, p2p, yzp, nyzray, &
+            CALL x_to_yz(sbuf, rs_group, g_pos, p2p, yzp, nyzray, &
                          bo(:, :, :, 2), tbuf, fft_scratch)
 
             IF (test) THEN
                sum_data = ABS(SUM(tbuf))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(3) TS", sum_data
                END IF
@@ -914,7 +904,7 @@ CONTAINS
 
             IF (test) THEN
                sum_data = ABS(SUM(cin))
-               CALL gs_group%sum(sum_data)
+               CALL rs_group%sum(sum_data)
                IF (g_pos == 0 .AND. output_unit > 0) THEN
                   WRITE (output_unit, '(A,T61,E20.14)') "     Sum of data(4) ", sum_data
                END IF
@@ -944,11 +934,10 @@ CONTAINS
 !> \param gin ...
 !> \param group ...
 !> \param bo ...
-!> \param scale ...
 !> \param status ...
 !> \param debug ...
 ! **************************************************************************************************
-   SUBROUTINE fft3d_pb(fsign, n, zin, gin, group, bo, scale, status, debug)
+   SUBROUTINE fft3d_pb(fsign, n, zin, gin, group, bo, status, debug)
 
       INTEGER, INTENT(IN)                                :: fsign
       INTEGER, DIMENSION(3), INTENT(IN)                  :: n
@@ -959,7 +948,6 @@ CONTAINS
       TYPE(mp_cart_type), INTENT(IN)                     :: group
       INTEGER, CONTIGUOUS, DIMENSION(:, :, 0:, :), &
          INTENT(IN)                                      :: bo
-      REAL(KIND=dp), INTENT(IN), OPTIONAL                :: scale
       INTEGER, INTENT(OUT), OPTIONAL                     :: status
       LOGICAL, INTENT(IN), OPTIONAL                      :: debug
 
@@ -1009,10 +997,12 @@ CONTAINS
          test = .FALSE.
       END IF
 
-      IF (PRESENT(scale)) THEN
-         norm = scale
-      ELSE
+      IF (fsign == FWFFT) THEN
+         norm = 1.0_dp/REAL(PRODUCT(n), KIND=dp)
+      ELSE IF (fsign == BWFFT) THEN
          norm = 1.0_dp
+      ELSE
+         CPABORT("Unknown FFT direction!")
       END IF
 
       sign = fsign
@@ -1057,7 +1047,6 @@ CONTAINS
       fft_scratch_size%mcx2 = mcx2
       fft_scratch_size%mcz2 = mcz2
       fft_scratch_size%mcy3 = mcy3
-      fft_scratch_size%gs_group = group
       fft_scratch_size%rs_group = group
       fft_scratch_size%g_pos = my_pos
       fft_scratch_size%numtask = DIM(1)*DIM(2)
@@ -1352,7 +1341,7 @@ CONTAINS
 
       ELSE
 
-         CPABORT("This partition not implemented.")
+         CPABORT("Partition not implemented.")
 
       END IF
 
@@ -1383,7 +1372,8 @@ CONTAINS
 
       COMPLEX(KIND=dp), CONTIGUOUS, DIMENSION(:, :), &
          INTENT(IN)                                      :: sb
-      TYPE(mp_comm_type), INTENT(IN)                     :: group
+
+      CLASS(mp_comm_type), INTENT(IN)                    :: group
       INTEGER, INTENT(IN)                                :: my_pos
       INTEGER, CONTIGUOUS, DIMENSION(0:), INTENT(IN)     :: p2p
       INTEGER, CONTIGUOUS, DIMENSION(:, :, 0:), &
@@ -1498,7 +1488,8 @@ CONTAINS
 
       COMPLEX(KIND=dp), CONTIGUOUS, DIMENSION(:, :, :), &
          INTENT(IN)                                      :: tb
-      TYPE(mp_comm_type), INTENT(IN)                     :: group
+
+      CLASS(mp_comm_type), INTENT(IN)                    :: group
       INTEGER, INTENT(IN)                                :: my_pos
       INTEGER, CONTIGUOUS, DIMENSION(0:), INTENT(IN)     :: p2p
       INTEGER, CONTIGUOUS, DIMENSION(:, :, 0:), &
@@ -1615,7 +1606,7 @@ CONTAINS
       COMPLEX(KIND=dp), CONTIGUOUS, DIMENSION(:, :), &
          INTENT(IN)                                      :: sb
 
-      CLASS(mp_comm_type), INTENT(IN)                     :: group
+      CLASS(mp_comm_type), INTENT(IN)                    :: group
       INTEGER, DIMENSION(2), INTENT(IN)                  :: dims
       INTEGER, INTENT(IN)                                :: my_pos
       INTEGER, CONTIGUOUS, DIMENSION(0:), INTENT(IN)                 :: p2p
@@ -1623,7 +1614,7 @@ CONTAINS
       INTEGER, CONTIGUOUS, DIMENSION(0:), INTENT(IN)                 :: nray
       INTEGER, CONTIGUOUS, DIMENSION(:, :, 0:), INTENT(IN)           :: bo
       COMPLEX(KIND=dp), DIMENSION(:, :), INTENT(INOUT), CONTIGUOUS   :: tb
-      TYPE(fft_scratch_type), INTENT(INOUT)                 :: fft_scratch
+      TYPE(fft_scratch_type), INTENT(INOUT)              :: fft_scratch
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'yz_to_xz'
 
@@ -1825,7 +1816,7 @@ CONTAINS
       COMPLEX(KIND=dp), CONTIGUOUS, DIMENSION(:, :), &
          INTENT(IN)                                      :: sb
 
-      CLASS(mp_comm_type), INTENT(IN)                     :: group
+      CLASS(mp_comm_type), INTENT(IN)                    :: group
       INTEGER, DIMENSION(2), INTENT(IN)                  :: dims
       INTEGER, INTENT(IN)                                :: my_pos
       INTEGER, CONTIGUOUS, DIMENSION(0:), INTENT(IN)                 :: p2p
@@ -2406,10 +2397,10 @@ CONTAINS
       COMPLEX(KIND=dp), CONTIGUOUS, DIMENSION(:, :), &
          INTENT(IN)                                      :: cin
 
-      CLASS(mp_comm_type), INTENT(IN)                     :: group
+      CLASS(mp_comm_type), INTENT(IN)                    :: group
       INTEGER, CONTIGUOUS, DIMENSION(:, :, 0:), INTENT(IN)           :: boin, boout
       COMPLEX(KIND=dp), DIMENSION(:, :), INTENT(OUT), CONTIGUOUS     :: sout
-      TYPE(fft_scratch_type), INTENT(IN)                :: fft_scratch
+      TYPE(fft_scratch_type), INTENT(IN)                 :: fft_scratch
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'cube_transpose_5'
 
@@ -2501,7 +2492,7 @@ CONTAINS
       COMPLEX(KIND=dp), CONTIGUOUS, DIMENSION(:, :), &
          INTENT(IN)                                      :: cin
 
-      CLASS(mp_comm_type), INTENT(IN)                     :: group
+      CLASS(mp_comm_type), INTENT(IN)                    :: group
       INTEGER, CONTIGUOUS, DIMENSION(:, :, 0:), INTENT(IN)           :: boin, boout
       COMPLEX(KIND=dp), DIMENSION(:, :), INTENT(OUT), CONTIGUOUS     :: sout
       TYPE(fft_scratch_type), INTENT(IN)                 :: fft_scratch
@@ -2778,8 +2769,9 @@ CONTAINS
 !> \brief ...
 ! **************************************************************************************************
    SUBROUTINE release_fft_scratch_pool()
-
       TYPE(fft_scratch_pool_type), POINTER               :: fft_scratch, fft_scratch_current
+
+!$    CPASSERT(.NOT. omp_in_parallel() .OR. 0 == omp_get_thread_num())
 
       IF (init_fft_pool == 0) NULLIFY (fft_scratch_first)
 
@@ -2878,7 +2870,7 @@ CONTAINS
       INTEGER, INTENT(IN)                      :: tf_type
       INTEGER, DIMENSION(:), INTENT(IN)        :: n
       TYPE(fft_scratch_sizes), INTENT(IN), &
-         OPTIONAL                               :: fft_sizes
+         OPTIONAL                              :: fft_sizes
 
       CHARACTER(len=*), PARAMETER :: routineN = 'get_fft_scratch'
 
@@ -2904,6 +2896,7 @@ CONTAINS
       CALL resize_fft_scratch_pool()
 
       ! get the required scratch
+!$OMP ATOMIC
       tick_fft_pool = tick_fft_pool + 1
       fft_scratch_current => fft_scratch_first
       DO
@@ -2924,7 +2917,7 @@ CONTAINS
                CYCLE
             END IF
             IF (PRESENT(fft_sizes)) THEN
-               IF (fft_sizes%gs_group /= fft_scratch_current%fft_scratch%group) THEN
+               IF (fft_sizes%rs_group /= fft_scratch_current%fft_scratch%group) THEN
                   fft_scratch_last => fft_scratch_current
                   fft_scratch_current => fft_scratch_current%fft_scratch_next
                   CYCLE
@@ -2956,8 +2949,9 @@ CONTAINS
 
             SELECT CASE (tf_type)
             CASE DEFAULT
-               CPABORT("")
+               CPABORT("Invalid scratch type.")
             CASE (100) ! fft3d_pb: full cube distribution
+               CPASSERT(PRESENT(fft_sizes))
                mx1 = fft_sizes%mx1
                my1 = fft_sizes%my1
                mx2 = fft_sizes%mx2
@@ -2970,7 +2964,7 @@ CONTAINS
                CALL fft_alloc(fft_scratch_new%fft_scratch%a4buf, [n(2), mx2*mz2])
                CALL fft_alloc(fft_scratch_new%fft_scratch%a5buf, [my3*mz3, n(1)])
                CALL fft_alloc(fft_scratch_new%fft_scratch%a6buf, [n(1), my3*mz3])
-               fft_scratch_new%fft_scratch%group = fft_sizes%gs_group
+               fft_scratch_new%fft_scratch%group = fft_sizes%rs_group
 
                dim = fft_sizes%rs_group%num_pe_cart
                pos = fft_sizes%rs_group%mepos_cart
@@ -3016,6 +3010,7 @@ CONTAINS
                                         fft_scratch_new%fft_scratch%a2buf, fft_scratch_new%fft_scratch%a1buf, fft_plan_style)
 
             CASE (101) ! fft3d_pb: full cube distribution (dim 1)
+               CPASSERT(PRESENT(fft_sizes))
                mx1 = fft_sizes%mx1
                my1 = fft_sizes%my1
                mz1 = fft_sizes%mz1
@@ -3023,7 +3018,7 @@ CONTAINS
                mz3 = fft_sizes%mz3
                CALL fft_alloc(fft_scratch_new%fft_scratch%a1buf, [mx1*my1, n(3)])
                CALL fft_alloc(fft_scratch_new%fft_scratch%a2buf, [n(3), mx1*my1])
-               fft_scratch_new%fft_scratch%group = fft_sizes%gs_group
+               fft_scratch_new%fft_scratch%group = fft_sizes%rs_group
                CALL fft_alloc(fft_scratch_new%fft_scratch%a3buf, [mx1*mz1, n(2)])
                CALL fft_alloc(fft_scratch_new%fft_scratch%a4buf, [n(2), mx1*mz1])
                CALL fft_alloc(fft_scratch_new%fft_scratch%a5buf, [my3*mz3, n(1)])
@@ -3053,6 +3048,7 @@ CONTAINS
                                         fft_scratch_new%fft_scratch%a3buf, fft_scratch_new%fft_scratch%a1buf, fft_plan_style)
 
             CASE (200) ! fft3d_ps: plane distribution
+               CPASSERT(PRESENT(fft_sizes))
                nx = fft_sizes%nx
                ny = fft_sizes%ny
                nz = fft_sizes%nz
@@ -3077,7 +3073,7 @@ CONTAINS
                CALL fft_alloc(fft_scratch_new%fft_scratch%r1buf, [mmax, lmax])
                CALL fft_alloc(fft_scratch_new%fft_scratch%tbuf, [ny, nz, nx])
 #endif
-               fft_scratch_new%fft_scratch%group = fft_sizes%gs_group
+               fft_scratch_new%fft_scratch%group = fft_sizes%rs_group
                CALL fft_alloc(fft_scratch_new%fft_scratch%r2buf, [lg, mg])
                nm = nmray*mx2
                IF (alltoall_sgl) THEN
@@ -3102,6 +3098,7 @@ CONTAINS
                                         fft_scratch_new%fft_scratch%r1buf, fft_scratch_new%fft_scratch%tbuf, fft_plan_style)
 
             CASE (300) ! fft3d_ps: block distribution
+               CPASSERT(PRESENT(fft_sizes))
                mx1 = fft_sizes%mx1
                mx2 = fft_sizes%mx2
                my1 = fft_sizes%my1
@@ -3161,7 +3158,7 @@ CONTAINS
                          fft_scratch_new%fft_scratch%yzcount(0:np - 1))
                ALLOCATE (fft_scratch_new%fft_scratch%xzdispl(0:np - 1), &
                          fft_scratch_new%fft_scratch%yzdispl(0:np - 1))
-               fft_scratch_new%fft_scratch%group = fft_sizes%gs_group
+               fft_scratch_new%fft_scratch%group = fft_sizes%rs_group
 
                dim = fft_sizes%rs_group%num_pe_cart
                pos = fft_sizes%rs_group%mepos_cart
@@ -3241,6 +3238,7 @@ CONTAINS
          END IF
       END DO
 
+!$OMP ATOMIC READ
       fft_scratch%last_tick = tick_fft_pool
 
       CALL timestop(handle)
@@ -3271,7 +3269,7 @@ CONTAINS
             fft_scratch_current => fft_scratch_current%fft_scratch_next
          ELSE
             ! We cannot find the scratch type in this pool
-            CPABORT("")
+            CPABORT("Invalid scratch type.")
             EXIT
          END IF
       END DO
@@ -3294,7 +3292,7 @@ CONTAINS
       COMPLEX(KIND=dp), DIMENSION(:), POINTER            :: rq
       INTEGER, DIMENSION(:), POINTER                     :: rcount, rdispl
 
-      CLASS(mp_comm_type), INTENT(IN)                     :: group
+      CLASS(mp_comm_type), INTENT(IN)                    :: group
 
       COMPLEX(KIND=dp), DIMENSION(:), POINTER            :: msgin, msgout
       INTEGER                                            :: ip, n, nr, ns, pos
@@ -3322,7 +3320,7 @@ CONTAINS
          ns = ns + 1
       END DO
       IF (rcount(pos) /= 0) THEN
-         IF (rcount(pos) /= scount(pos)) CPABORT("")
+         IF (rcount(pos) /= scount(pos)) CPABORT("Invalid count.")
          rq(rdispl(pos) + 1:rdispl(pos) + rcount(pos)) = rs(sdispl(pos) + 1:sdispl(pos) + scount(pos))
       END IF
       CALL mp_waitall(sreq(0:ns - 1))
@@ -3376,7 +3374,6 @@ CONTAINS
       equal = equal .AND. fft_size_1%nmray == fft_size_2%nmray
       equal = equal .AND. fft_size_1%nyzray == fft_size_2%nyzray
 
-      equal = equal .AND. fft_size_1%gs_group == fft_size_2%gs_group
       equal = equal .AND. fft_size_1%rs_group == fft_size_2%rs_group
 
       equal = equal .AND. ALL(fft_size_1%g_pos == fft_size_2%g_pos)

@@ -99,23 +99,23 @@ OPTIONS:
                           or --with-openblas options will switch --math-mode to the
                           respective modes.
 --gpu-ver                 Selects the GPU architecture for which to compile. Available
-                          options are: K20X, K40, K80, P100, V100, Mi50, Mi100, Mi250, 
+                          options are: K20X, K40, K80, P100, V100, Mi50, Mi100, Mi250,
                           and no.
                           This setting determines the value of nvcc's '-arch' flag.
-                          Default = no.
+                          Default = no
 --libint-lmax             Maximum supported angular momentum by libint.
                           Higher values will increase build time and library size.
                           Default = 5
 --log-lines               Number of log file lines dumped in case of a non-zero exit code.
                           Default = 200
 --target-cpu              Compile for the specified target CPU (e.g. haswell or generic), i.e.
-                          do not optimize for the actual host system which is the default (native)
---no-arch-files           Do not generate arch files
+                          do not optimize for the actual host system which is the default (native).
+--no-arch-files           Do not generate arch files.
 --dry-run                 Write only config files, but don't actually build packages.
 
 The --enable-FEATURE options follow the rules:
-  --enable-FEATURE=yes    Enable this particular feature
-  --enable-FEATURE=no     Disable this particular feature
+  --enable-FEATURE=yes    Enable this particular feature.
+  --enable-FEATURE=no     Disable this particular feature.
   --enable-FEATURE        The option keyword alone is equivalent to
                           --enable-FEATURE=yes
 
@@ -146,33 +146,42 @@ The --with-PKG options follow the rules:
   --with-PKG              The option keyword alone will be equivalent to
                           --with-PKG=install
 
-  --with-gcc              The GCC compiler to use to compile CP2K.
+  --with-gcc              Use the GNU compiler to build CP2K.
                           Default = system
-  --with-intel            Use the Intel compiler to compile CP2K.
+  --with-intel            Use the Intel compiler to build CP2K.
                           Default = system
-  --with-intel-classic    Use the classic Intel compiler to compile CP2K.
+  --with-ifx              Use the new Intel Fortran compiler ifx instead of ifort to compile CP2K.
                           Default = no
-  --with-cmake            Cmake utilities
+  --with-amd              Use the AMD compiler to build CP2K.
+                          Default = system
+  --with-cmake            CMake utilities.
+                          Default = install
+  --with-ninja            Ninja utilities.
                           Default = install
   --with-openmpi          OpenMPI, important if you want a parallel version of CP2K.
                           Default = system
   --with-mpich            MPICH, MPI library like OpenMPI. one should
                           use only one of OpenMPI, MPICH or Intel MPI.
                           Default = system
-  --with-mpich-device     Select the MPICH device, implies the use of MPICH as MPI library
+  --with-mpich-device     Select the MPICH device, implies the use of MPICH as MPI library.
                           Default = ch4
   --with-intelmpi         Intel MPI, MPI library like OpenMPI. one should
                           use only one of OpenMPI, MPICH or Intel MPI.
                           Default = system
-  --with-libxc            libxc, exchange-correlation library. Needed for
-                          QuickStep DFT and hybrid calculations.
+  --with-dbcsr            Install DBCSR library with toolchain.
+                          Default = install
+  --with-libxc            libxc, exchange-correlation library. Needed for QuickStep DFT
+                          and hybrid calculations.
                           Default = install
   --with-libint           libint, library for evaluation of two-body molecular
-                          integrals, needed for hybrid functional calculations
+                          integrals, needed for hybrid functional calculations.
                           Default = install
-  --with-fftw             FFTW3, library for fast fourier transform
+  --with-libgrpp          libgrpp, library for the evaluation of ECP integrals, needed
+                          for any calculations with semi-local ECP pseudopotentials.
                           Default = install
-  --with-acml             AMD core maths library, which provides LAPACK and BLAS
+  --with-fftw             Install FFTW3 library for fast fourier transform.
+                          Default = install
+  --with-acml             AMD core maths library, which provides LAPACK and BLAS.
                           Default = system
   --with-mkl              Intel Math Kernel Library, which provides LAPACK, and BLAS.
                           If MKL's FFTW3 interface is suitable (no FFTW-MPI support),
@@ -182,8 +191,7 @@ The --with-PKG options follow the rules:
   --with-openblas         OpenBLAS is a free high performance LAPACK and BLAS library,
                           the successor to GotoBLAS.
                           Default = install
-  --with-scalapack        Parallel linear algebra library, needed for parallel
-                          calculations.
+  --with-scalapack        Parallel linear algebra library, needed for parallel calculations.
                           Default = install
   --with-libxsmm          Small matrix multiplication library.
                           Default = install
@@ -192,37 +200,42 @@ The --with-PKG options follow the rules:
                           Default = install
   --with-cusolvermp       NVIDIA cusolverMp: CUDA library for distributed dense linear algebra.
                           Default = no
-  --with-ptscotch         PT-SCOTCH, only used if PEXSI is used
+  --with-deepmd           Enable interface to DeePMD-kit library.
                           Default = no
-  --with-superlu          SuperLU DIST, used only if PEXSI is used
-                          Default = no
-  --with-pexsi            Enable interface to PEXSI library
-                          Default = no
-  --with-quip             Enable interface to QUIP library
-                          Default = no
-  --with-plumed           Enable interface to the PLUMED library.
+  --with-plumed           Enable interface to the PLUMED library (requires MPI).
                           Default = no
   --with-sirius           Enable interface to the plane wave SIRIUS library.
-                          This package requires: gsl, libspg, elpa, scalapack, hdf5 and libxc.
+                          This package requires: GSL, libspg, ELPA, ScaLAPACK, HDF5, Libxc and pugixml.
                           Default = install
+  --with-pugixml          Enable support for XML parsing using the pugixml library.
+                          This library is required by SIRIUS.
+                          Default = no (unless a SIRIUS installation is requested)
   --with-gsl              Enable the gnu scientific library (required for PLUMED and SIRIUS)
                           Default = install
-  --with-libvdwxc         Enable support of Van der Waals interactions in SIRIUS. Support provided by libvdwxc
+  --with-libvdwxc         Enable support of Van der Waals interactions in SIRIUS.
+                          Support provided by libvdwxc.
                           Default = install
-  --with-spglib           Enable the spg library (search of symmetry groups)
-                          This package depends on cmake.
+  --with-spglib           Enable the spg library (search of symmetry groups).
+                          This package depends on CMake.
                           Default = install
-  --with-hdf5             Enable the hdf5 library (used by the sirius library)
+  --with-hdf5             Enable the hdf5 library (used by the sirius and trexio libraries)
                           Default = install
   --with-spfft            Enable the spare fft used in SIRIUS (hard dependency)
                           Default = install
-  --with-spla             Enable the Specialized Parallel Linear Algebra library (required by SIRIUS)
+  --with-spla             Enable the Specialized Parallel Linear Algebra library (required by SIRIUS).
                           Default = install
-  --with-cosma            Enable cosma as a replacement for scalapack matrix multiplication
+  --with-cosma            Enable cosma as a replacement for ScaLAPACK matrix multiplication
                           Default = install
-  --with-libvori          Enable libvori for the Voronoi integration (and the BQB compressed trajectory format)
+  --with-libvori          Enable libvori for the Voronoi integration and the BQB compressed trajectory format.
                           Default = install
-  --with-libtorch         Enable libtorch the machine learning framework needed for NequIP and Allegro
+  --with-libtorch         Enable libtorch the machine learning framework needed for NequIP and Allegro.
+                          Default = no
+  --with-libsmeagol       Enable interface to SMEAGOL NEGF library (requires MPI).
+                          Default = no
+  --with-dftd4            Enable the DFTD4 package by Grimme.
+                          This package requires CMake and Ninja.
+                          Default = install
+  --with-trexio           Enable the trexio library (read/write TREXIO files).
                           Default = no
 
 FURTHER INSTRUCTIONS
@@ -256,12 +269,12 @@ EOF
 # PACKAGE LIST: register all new dependent tools and libs here. Order
 # is important, the first in the list gets installed first
 # ------------------------------------------------------------------------
-tool_list="gcc intel cmake"
+tool_list="gcc intel amd cmake ninja"
 mpi_list="mpich openmpi intelmpi"
 math_list="mkl acml openblas"
-lib_list="fftw libint libxc libxsmm cosma scalapack elpa cusolvermp plumed \
-          spfft spla ptscotch superlu pexsi quip gsl spglib hdf5 libvdwxc sirius
-          libvori libtorch"
+lib_list="fftw libint libxc libgrpp libxsmm cosma scalapack elpa dbcsr
+          cusolvermp plumed spfft spla gsl spglib hdf5 libvdwxc sirius
+          libvori libtorch deepmd dftd4 pugixml libsmeagol trexio"
 package_list="${tool_list} ${mpi_list} ${math_list} ${lib_list}"
 # ------------------------------------------------------------------------
 
@@ -278,8 +291,10 @@ done
 with_gcc="__SYSTEM__"
 
 # libs to turn on by default, the math and mpi libraries are chosen by there respective modes:
+with_dbcsr="__INSTALL__"
 with_fftw="__INSTALL__"
 with_libint="__INSTALL__"
+with_libgrpp="__INSTALL__"
 with_libxsmm="__INSTALL__"
 with_libxc="__INSTALL__"
 with_scalapack="__INSTALL__"
@@ -296,11 +311,12 @@ fi
 with_acml="__SYSTEM__"
 with_openblas="__INSTALL__"
 
-# sirius is activated by default
+# SIRIUS is activated by default
 with_sirius="__INSTALL__"
 with_gsl="__DONTUSE__"
 with_spglib="__INSTALL__"
 with_hdf5="__DONTUSE__"
+with_trexio="__DONTUSE__"
 with_elpa="__INSTALL__"
 with_cusolvermp="__DONTUSE__"
 with_libvdwxc="__DONTUSE__"
@@ -309,6 +325,10 @@ with_spla="__DONTUSE__"
 with_cosma="__INSTALL__"
 with_libvori="__INSTALL__"
 with_libtorch="__DONTUSE__"
+with_ninja="__DONTUSE__"
+with_dftd4="__DONTUSE__"
+with_libsmeagol="__DONTUSE__"
+
 # for MPI, we try to detect system MPI variant
 if (command -v mpiexec > /dev/null 2>&1); then
   # check if we are dealing with openmpi, mpich or intelmpi
@@ -317,12 +337,17 @@ if (command -v mpiexec > /dev/null 2>&1); then
     export MPI_MODE="mpich"
     with_mpich="__SYSTEM__"
   elif (mpiexec --version 2>&1 | grep -s -q "OpenRTE"); then
-    echo "MPI is detected and it appears to be OpenMPI"
+    echo "MPI is detected and it appears to be OpenMPI 4 (or older)"
+    export MPI_MODE="openmpi"
+    with_openmpi="__SYSTEM__"
+  elif (mpiexec --version 2>&1 | grep -s -q "Open MPI"); then
+    echo "MPI is detected and it appears to be OpenMPI 5"
     export MPI_MODE="openmpi"
     with_openmpi="__SYSTEM__"
   elif (mpiexec --version 2>&1 | grep -s -q "Intel"); then
     echo "MPI is detected and it appears to be Intel MPI"
     with_gcc="__DONTUSE__"
+    with_amd="__DONTUSE__"
     with_intel="__SYSTEM__"
     with_intelmpi="__SYSTEM__"
     export MPI_MODE="intelmpi"
@@ -343,7 +368,7 @@ enable_tsan="__FALSE__"
 enable_opencl="__FALSE__"
 enable_cuda="__FALSE__"
 enable_hip="__FALSE__"
-export intel_classic="no"
+export with_ifx="no"
 export GPUVER="no"
 export MPICH_DEVICE="ch4"
 export TARGET_CPU="native"
@@ -366,6 +391,7 @@ if [ "${CRAY_LD_LIBRARY_PATH}" ]; then
   export MPI_MODE="mpich"
   # set default value for some installers appropriate for CLE
   with_gcc="__DONTUSE__"
+  with_amd="__DONTUSE__"
   with_intel="__DONTUSE__"
   with_fftw="__SYSTEM__"
   with_scalapack="__DONTUSE__"
@@ -403,7 +429,9 @@ while [ $# -ge 1 ]; do
     --install-all)
       # set all package to the default installation status
       for ii in ${package_list}; do
-        if [ "${ii}" != "intel" ] && [ "${ii}" != "intelmpi" ]; then
+        if [ "${ii}" != "intel" ] &&
+          [ "${ii}" != "intelmpi" ] &&
+          [ "${ii}" != "amd" ]; then
           eval with_${ii}="__INSTALL__"
         fi
       done
@@ -456,12 +484,12 @@ while [ $# -ge 1 ]; do
     --gpu-ver=*)
       user_input="${1#*=}"
       case "${user_input}" in
-        K20X | K40 | K80 | P100 | V100 | A100 | Mi50 | Mi100 | Mi250 | no)
+        K20X | K40 | K80 | P100 | V100 | A100 | H100 | A40 | Mi50 | Mi100 | Mi250 | no)
           export GPUVER="${user_input}"
           ;;
         *)
           report_error ${LINENO} \
-            "--gpu-ver currently only supports K20X, K40, K80, P100, V100, A100, Mi50, Mi100, Mi250, and no as options"
+            "--gpu-ver currently only supports K20X, K40, K80, P100, V100, A100, H100, A40, Mi50, Mi100, Mi250, and no as options"
           exit 1
           ;;
       esac
@@ -525,6 +553,9 @@ while [ $# -ge 1 ]; do
     --with-cmake*)
       with_cmake=$(read_with "${1}")
       ;;
+    --with-ninja*)
+      with_ninja=$(read_with "${1}")
+      ;;
     --with-mpich-device=*)
       user_input="${1#*=}"
       export MPICH_DEVICE="${user_input}"
@@ -548,8 +579,11 @@ while [ $# -ge 1 ]; do
         export MPI_MODE=intelmpi
       fi
       ;;
-    --with-intel-classic*)
-      intel_classic=$(read_with "${1}" "yes")
+    --with-amd*)
+      with_amd=$(read_with "${1}" "__SYSTEM__")
+      ;;
+    --with-ifx*)
+      with_ifx=$(read_with "${1}" "yes")
       ;;
     --with-intel*)
       with_intel=$(read_with "${1}" "__SYSTEM__")
@@ -559,6 +593,9 @@ while [ $# -ge 1 ]; do
       ;;
     --with-libxc*)
       with_libxc=$(read_with "${1}")
+      ;;
+    --with-libgrpp*)
+      with_libgrpp=$(read_with "${1}")
       ;;
     --with-fftw*)
       with_fftw=$(read_with "${1}")
@@ -593,23 +630,17 @@ while [ $# -ge 1 ]; do
     --with-cusolvermp*)
       with_cusolvermp=$(read_with "${1}")
       ;;
-    --with-ptscotch*)
-      with_ptscotch=$(read_with "${1}")
-      ;;
-    --with-superlu*)
-      with_superlu=$(read_with "${1}")
-      ;;
-    --with-pexsi*)
-      with_pexsi=$(read_with "${1}")
-      ;;
-    --with-quip*)
-      with_quip=$(read_with "${1}")
+    --with-deepmd*)
+      with_deepmd=$(read_with $1)
       ;;
     --with-plumed*)
       with_plumed=$(read_with "${1}")
       ;;
     --with-sirius*)
       with_sirius=$(read_with "${1}")
+      ;;
+    --with-pugixml*)
+      with_pugixml=$(read_with "${1}")
       ;;
     --with-gsl*)
       with_gsl=$(read_with "${1}")
@@ -637,6 +668,18 @@ while [ $# -ge 1 ]; do
       ;;
     --with-spla*)
       with_spla=$(read_with "${1}")
+      ;;
+    --with-dftd4*)
+      with_dftd4=$(read_with "${1}")
+      ;;
+    --with-libsmeagol*)
+      with_libsmeagol=$(read_with "${1}")
+      ;;
+    --with-trexio*)
+      with_trexio=$(read_with "${1}")
+      ;;
+    --with-dbcsr*)
+      with_dbcsr=$(read_with $1)
       ;;
     --help*)
       show_help
@@ -666,43 +709,55 @@ export ENABLE_CRAY="${enable_cray}"
 # ------------------------------------------------------------------------
 # Compiler conflicts
 if [ "${with_intel}" != "__DONTUSE__" ] && [ "${with_gcc}" = "__INSTALL__" ]; then
-  echo "You have chosen to use the Intel compiler, therefore the installation of the GCC compiler will be skipped."
+  echo "You have chosen to use the Intel compiler, therefore the installation of the GNU compiler will be skipped."
   with_gcc="__SYSTEM__"
+fi
+if [ "${with_amd}" != "__DONTUSE__" ] && [ "${with_gcc}" = "__INSTALL__" ]; then
+  echo "You have chosen to use the AMD compiler, therefore the installation of the GNU compiler will be skipped."
+  with_gcc="__SYSTEM__"
+fi
+if [ "${with_amd}" != "__DONTUSE__" ] && [ "${with_intel}" != "__DONTUSE__" ]; then
+  report_error "You have chosen to use the AMD and the Intel compiler. Select only one compiler."
+  exit 1
 fi
 # MPI library conflicts
 if [ "${MPI_MODE}" = "no" ]; then
   if [ "${with_scalapack}" != "__DONTUSE__" ]; then
-    echo "Not using MPI, so scalapack is disabled."
+    echo "Not using MPI, so ScaLAPACK is disabled."
     with_scalapack="__DONTUSE__"
   fi
   if [ "${with_elpa}" != "__DONTUSE__" ]; then
     echo "Not using MPI, so ELPA is disabled."
     with_elpa="__DONTUSE__"
   fi
-  if [ "${with_pexsi}" != "__DONTUSE__" ]; then
-    echo "Not using MPI, so PEXSI is disabled."
-    with_pexsi="__DONTUSE__"
+  if [ "${with_plumed}" != "__DONTUSE__" ]; then
+    echo "Not using MPI, so PLUMED is disabled."
+    with_plumed="__DONTUSE__"
+  fi
+  if [ "${with_libsmeagol}" != "__DONTUSE__" ]; then
+    echo "Not using MPI, so libsmeagol is disabled."
+    with_libsmeagol="__DONTUSE__"
   fi
   if [ "${with_sirius}" != "__DONTUSE__" ]; then
-    echo "Not using MPI, so sirius is disabled"
+    echo "Not using MPI, so SIRIUS is disabled"
     with_sirius="__DONTUSE__"
   fi
   if [ "${with_spfft}" != "__DONTUSE__" ]; then
-    echo "Not using MPI, so spfft is disabled"
+    echo "Not using MPI, so SpFFT is disabled"
     with_spfft="__DONTUSE__"
   fi
   if [ "${with_spla}" != "__DONTUSE__" ]; then
-    echo "Not using MPI, so spla is disabled"
+    echo "Not using MPI, so SpLA is disabled"
     with_spla="__DONTUSE__"
   fi
   if [ "${with_cosma}" != "__DONTUSE__" ]; then
-    echo "Not using MPI, so cosma is disabled"
+    echo "Not using MPI, so COSMA is disabled"
     with_cosma="__DONTUSE__"
   fi
 else
   # if gcc is installed, then mpi needs to be installed too
   if [ "${with_gcc}" = "__INSTALL__" ]; then
-    echo "You have chosen to install the GCC compiler, therefore MPI libraries have to be installed too"
+    echo "You have chosen to install the GNU compiler, therefore MPI libraries have to be installed too"
     case ${MPI_MODE} in
       mpich)
         with_mpich="__INSTALL__"
@@ -750,43 +805,26 @@ if [ "${ENABLE_OPENCL}" = "__TRUE__" ]; then
   fi
 fi
 
-# PEXSI and its dependencies
-if [ "${with_pexsi}" = "__DONTUSE__" ]; then
-  if [ "${with_ptscotch}" != "__DONTUSE__" ]; then
-    echo "Not using PEXSI, so PT-Scotch is disabled."
-    with_ptscotch="__DONTUSE__"
-  fi
-  if [ "${with_superlu}" != "__DONTUSE__" ]; then
-    echo "Not using PEXSI, so SuperLU-DIST is disabled."
-    with_superlu="__DONTUSE__"
-  fi
-elif [ "${with_pexsi}" = "__INSTALL__" ]; then
-  [ "${with_ptscotch}" = "__DONTUSE__" ] && with_ptscotch="__INSTALL__"
-  [ "${with_superlu}" = "__DONTUSE__" ] && with_superlu="__INSTALL__"
-else
-  if [ "${with_ptscotch}" = "__DONTUSE__" ]; then
-    report_error "For PEXSI to work you need a working PT-Scotch library use --with-ptscotch option to specify if you wish to install the library or specify its location."
-    exit 1
-  fi
-  if [ "${with_superlu}" = "__DONTUSE__" ]; then
-    report_error "For PEXSI to work you need a working SuperLU-DIST library use --with-superlu option to specify if you wish to install the library or specify its location."
-    exit 1
-  fi
+#dftd4 installation requires ninja
+if [ "${with_dftd4}" = "__INSTALL__" ]; then
+  [ "${with_ninja}" = "__DONTUSE__" ] && with_ninja="__INSTALL__"
 fi
 
 # several packages require cmake.
 if [ "${with_spglib}" = "__INSTALL__" ] ||
   [ "${with_libvori}" = "__INSTALL__" ] ||
   [ "${with_scalapack}" = "__INSTALL__" ] ||
-  [ "${with_superlu}" = "__INSTALL__" ] ||
   [ "${with_sirius}" = "__INSTALL__" ] ||
+  [ "${with_pugixml}" = "__INSTALL__" ] ||
   [ "${with_cosma}" = "__INSTALL__" ] ||
   [ "${with_spfft}" = "__INSTALL__" ] ||
-  [ "${with_spla}" = "__INSTALL__" ]; then
+  [ "${with_spla}" = "__INSTALL__" ] ||
+  [ "${with_ninja}" = "__INSTALL__" ] ||
+  [ "${with_dftd4}" = "__INSTALL__" ]; then
   [ "${with_cmake}" = "__DONTUSE__" ] && with_cmake="__INSTALL__"
 fi
 
-# SIRIUS dependencies. Remove the gsl library from the dependencies if SIRIUS is not activated
+# SIRIUS dependencies. Remove the GSL library from the dependencies if SIRIUS is not activated
 if [ "${with_sirius}" = "__INSTALL__" ]; then
   [ "${with_spfft}" = "__DONTUSE__" ] && with_spfft="__INSTALL__"
   [ "${with_spla}" = "__DONTUSE__" ] && with_spla="__INSTALL__"
@@ -797,11 +835,22 @@ if [ "${with_sirius}" = "__INSTALL__" ]; then
   [ "${with_hdf5}" = "__DONTUSE__" ] && with_hdf5="__INSTALL__"
   [ "${with_libvdwxc}" = "__DONTUSE__" ] && with_libvdwxc="__INSTALL__"
   [ "${with_cosma}" = "__DONTUSE__" ] && with_cosma="__INSTALL__"
+  [ "${with_pugixml}" = "__DONTUSE__" ] && with_pugixml="__INSTALL__"
+elif [ "${with_sirius}" = "__DONTUSE__" ]; then
+  with_pugixml="__DONTUSE__"
+fi
+
+if [ "${with_trexio}" = "__INSTALL__" ]; then
+  [ "${with_hdf5}" = "__DONTUSE__" ] && with_hdf5="__INSTALL__"
 fi
 
 if [ "${with_plumed}" = "__INSTALL__" ]; then
   [ "${with_gsl}" = "__DONTUSE__" ] && with_gsl="__INSTALL__"
   [ "${with_fftw}" = "__DONTUSE__" ] && with_fftw="__INSTALL__"
+fi
+
+if [ "${with_deepmd}" = "__INSTALL__" ]; then
+  [ "${with_libtorch}" = "__DONTUSE__" ] && with_libtorch="__INSTALL__"
 fi
 
 # ------------------------------------------------------------------------
@@ -850,13 +899,6 @@ if [ "${ENABLE_CRAY}" = "__TRUE__" ]; then
   export MPIFC="${FC}"
   export MPIFORT="${MPIFC}"
   export MPIF77="${MPIFC}"
-  # CRAY libsci should contains core math libraries, scalapack
-  # doesn't need LDFLAGS or CFLAGS, nor do the one need to
-  # explicitly link the math and scalapack libraries, as all is
-  # taken care of by the cray compiler wrappers.
-  if [ "$with_scalapack" = "__DONTUSE__" ]; then
-    export CP_DFLAGS="${CP_DFLAGS} IF_MPI(-D__SCALAPACK|)"
-  fi
   case $MPI_MODE in
     mpich)
       if [ "$MPICH_DIR" ]; then
@@ -932,6 +974,12 @@ case ${GPUVER} in
   A100)
     export ARCH_NUM="80"
     ;;
+  A40)
+    export ARCH_NUM="86"
+    ;;
+  H100)
+    export ARCH_NUM="90"
+    ;;
   Mi50)
     # TODO: export ARCH_NUM=
     ;;
@@ -946,7 +994,7 @@ case ${GPUVER} in
     ;;
   *)
     report_error ${LINENO} \
-      "--gpu-ver currently only supports K20X, K40, K80, P100, V100, A100, Mi50, Mi100, Mi250, and no as options"
+      "--gpu-ver currently only supports K20X, K40, K80, P100, V100, A100, H100, A40, Mi50, Mi100, Mi250, and no as options"
     exit 1
     ;;
 esac
@@ -976,7 +1024,7 @@ else
   ./scripts/stage6/install_stage6.sh
   ./scripts/stage7/install_stage7.sh
   ./scripts/stage8/install_stage8.sh
-  # Stage 9 is reserved for DBCSR.
+  ./scripts/stage9/install_stage9.sh
   if [ "${no_arch_files}" = "__FALSE__" ]; then
     ./scripts/generate_arch_files.sh
   fi

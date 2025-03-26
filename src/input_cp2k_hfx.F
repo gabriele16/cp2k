@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -84,7 +84,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="PW_HFX", &
-                          description="Compute the Hartree-Fock energy also in the plane wave basis."// &
+                          description="Compute the Hartree-Fock energy also in the plane wave basis. "// &
                           "The value is ignored, and intended for debugging only.", &
                           usage="PW_HFX FALSE", default_l_val=.FALSE., lone_keyword_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -274,7 +274,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="CUTOFF_RADIUS", &
-                          description="Determines cutoff radius for the truncated 1/r potential. "// &
+                          description="Determines cutoff radius (in Angstroms) for the truncated 1/r potential. "// &
                           "Only valid when doing truncated calculation", &
                           usage="CUTOFF_RADIUS 10.0", type_of_var=real_t, & ! default_r_val=10.0_dp,&
                           unit_str="angstrom")
@@ -330,7 +330,7 @@ CONTAINS
          description="Screens the near field part of the electronic repulsion "// &
          "integrals using the Schwarz inequality for the given "// &
          "threshold. This will be approximately the accuracy of the forces, "// &
-         " and should normally be similar to EPS_SCF", &
+         "and should normally be similar to EPS_SCF. Default value is 100*EPS_SCHWARZ.", &
          usage="EPS_SCHWARZ_FORCES 1.0E-5", &
          default_r_val=1.0E-6_dp)
       CALL section_add_keyword(section, keyword)
@@ -341,7 +341,8 @@ CONTAINS
          keyword, __LOCATION__, &
          name="SCREEN_P_FORCES", &
          description="Screens the electronic repulsion integrals for the forces "// &
-         "using the density matrix. "// &
+         "using the density matrix. Will be disabled for the "// &
+         "response part of forces in MP2/RPA/TDDFT. "// &
          "This results in a significant speedup for large systems, "// &
          "but might require a somewhat tigher EPS_SCHWARZ_FORCES.", &
          usage="SCREEN_P_FORCES TRUE", &
@@ -483,7 +484,9 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="RI", &
-                          description="Parameters for RI method in HFX (experimental, forces not yet implemented).")
+                          description="Parameters for RI methods in HFX, including RI-HFXk with "// &
+                          "k-point sampling. All keywords relevant to RI-HFXk have an "// &
+                          "alias starting with KP_")
 
       CALL keyword_create(keyword, __LOCATION__, name="_SECTION_PARAMETERS_", &
                           description="controls the activation of RI", &
@@ -494,7 +497,8 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="EPS_FILTER", &
-                          description="Filter threshold for DBCSR tensor contraction.", &
+                          description="Filter threshold for DBT tensor contraction.", &
+                          variants=(/"KP_EPS_FILTER"/), &
                           default_r_val=1.0E-09_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -523,17 +527,72 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="OMEGA", &
                           description="The range parameter for the short range operator (in 1/a0). "// &
                           "Default is OMEGA from INTERACTION_POTENTIAL. ", &
+                          variants=(/"KP_OMEGA"/), &
                           default_r_val=0.0_dp, &
                           repeats=.FALSE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="CUTOFF_RADIUS", &
-                          description="The cutoff radius (in Angstrom) for the truncated Coulomb operator. "// &
+                          description="The cutoff radius (in Angstroms) for the truncated Coulomb operator. "// &
                           "Default is CUTOFF_RADIUS from INTERACTION_POTENTIAL. ", &
+                          variants=(/"KP_CUTOFF_RADIUS"/), &
                           default_r_val=0.0_dp, &
                           repeats=.FALSE., &
                           unit_str="angstrom")
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="KP_NGROUPS", &
+                          description="The number of MPI subgroup that work in parallel during the SCF. "// &
+                          "The default value is 1. Using N subgroups should speed up the "// &
+                          "calculation by a factor ~N, at the cost of N times more memory usage.", &
+                          variants=(/"NGROUPS"/), &
+                          usage="KP_NGROUPS {int}", &
+                          repeats=.FALSE., &
+                          default_i_val=1)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="KP_USE_DELTA_P", &
+                          description="This kweyword controls whether the KS matrix at each SCF cycle "// &
+                          "is built by adding the contribution of the denisty difference (wrt to previous step) "// &
+                          "to the KS matrix of the previous step. As the SCF converges, the density fluctuations "// &
+                          "get smaller and sparsity increases, leading to faster SCF steps. Not always "// &
+                          "numerically stable => turn off if SCF struggles to converge.", &
+                          variants=s2a("USE_DELTA_P", "KP_USE_P_DIFF", "USE_P_DIFF"), &
+                          usage="KP_USE_DELTA_P {logical}", &
+                          repeats=.FALSE., &
+                          default_l_val=.TRUE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="KP_STACK_SIZE", &
+                          description="When doing contraction over periodic cells of the type: "// &
+                          "T_mu^a,nu^b,P^c = (mu^a nu^b | Q^d) * (Q^d | P^c), with "// &
+                          "a,b,c,d labeling cells, there are in principle Ncells "// &
+                          "contractions taking place. Because a smaller number of "// &
+                          "contractions involving larger tensors is more efficient, "// &
+                          "the tensors can be stacked along the d direction. STCK_SIZE "// &
+                          "controls the size of this stack. Larger stacks are more efficient, "// &
+                          "but required more memory.", &
+                          variants=(/"STACK_SIZE"/), &
+                          usage="KP_STACK_SIZE {int}", &
+                          repeats=.FALSE., &
+                          default_i_val=32)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+      CALL keyword_create(keyword, __LOCATION__, name="KP_RI_BUMP_FACTOR", &
+                          variants=s2a("RI_BUMP", "BUMP", "BUMP_FACTOR"), &
+                          description="In KP-RI-HFX, the extended RI basis set has a bump radius. "// &
+                          "All basis elements within that radius contribute with full weight. "// &
+                          "All basis elements beyond that radius have decaying weight, from "// &
+                          "1 at the bump radius, to zero at the RI extension radius. The "// &
+                          "bump radius is calculated as a fraction of the RI extension radius: "// &
+                          "bump radius = KP_RI_NUMP_FACTOR * RI extension radius", &
+                          default_r_val=0.85_dp, &
+                          repeats=.FALSE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -542,8 +601,9 @@ CONTAINS
                           "Default is POTENTIAL_TYPE from INTERACTION_POTENTIAL. "// &
                           "The standard "// &
                           "Coulomb operator cannot be used in periodic systems.", &
-                          usage="OPERATOR {string}", &
+                          usage="RI_METRIC {string}", &
                           repeats=.FALSE., &
+                          variants=(/"KP_RI_METRIC"/), &
                           default_i_val=0, &
                           enum_c_vals=s2a("HFX", "COULOMB", "IDENTITY", "TRUNCATED", "SHORTRANGE"), &
                           enum_desc=s2a("Same as HFX operator", &
@@ -607,6 +667,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="EPS_PGF_ORB", &
                           description="Sets precision of the integral tensors.", &
+                          variants=(/"KP_EPS_PGF_ORB"/), &
                           default_r_val=1.0E-5_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)

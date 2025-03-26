@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -17,8 +17,8 @@ MODULE qs_environment_methods
    USE cell_types,                      ONLY: cell_type
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_distribution_type
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_dist2d_to_dist
-   USE dbcsr_api,                       ONLY: dbcsr_distribution_type
    USE distribution_2d_types,           ONLY: distribution_2d_release,&
                                               distribution_2d_type
    USE distribution_methods,            ONLY: distribute_molecules_2d
@@ -36,14 +36,9 @@ MODULE qs_environment_methods
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_release,&
                                               pw_env_type
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_charges_types,                ONLY: qs_charges_create,&
                                               qs_charges_type
    USE qs_environment_types,            ONLY: get_qs_env,&
@@ -205,11 +200,12 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(ewald_environment_type), POINTER              :: ewald_env
       TYPE(ewald_pw_type), POINTER                       :: ewald_pw
+      TYPE(pw_c1d_gs_type), POINTER                      :: rho_core, rho_nlcc_g
       TYPE(pw_env_type), POINTER                         :: new_pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), POINTER                             :: embed_pot, external_vxc, rho_core, &
-                                                            rho_nlcc, rho_nlcc_g, spin_embed_pot, &
-                                                            v_hartree_rspace, vee, vppl
+      TYPE(pw_r3d_rs_type), POINTER                      :: embed_pot, external_vxc, rho_nlcc, &
+                                                            spin_embed_pot, v_hartree_rspace, vee, &
+                                                            vppl
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(rho0_mpole_type), POINTER                     :: rho0_mpole
@@ -241,14 +237,13 @@ CONTAINS
          CPASSERT(ASSOCIATED(new_pw_env))
          IF (dft_control%qs_control%gapw) THEN
             IF (ASSOCIATED(rho_core)) THEN
-               CALL pw_release(rho_core)
+               CALL rho_core%release()
                DEALLOCATE (rho_core)
             END IF
             IF (dft_control%qs_control%gapw_control%nopaw_as_gpw) THEN
                ALLOCATE (rho_core)
                CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
-               CALL pw_pool_create_pw(auxbas_pw_pool, rho_core, &
-                                      use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+               CALL auxbas_pw_pool%create_pw(rho_core)
                CALL set_ks_env(ks_env, rho_core=rho_core)
             END IF
             CALL get_qs_env(qs_env=qs_env, rho0_mpole=rho0_mpole)
@@ -274,13 +269,12 @@ CONTAINS
             END IF
          ELSE
             IF (ASSOCIATED(rho_core)) THEN
-               CALL pw_release(rho_core)
+               CALL rho_core%release()
                DEALLOCATE (rho_core)
             END IF
             ALLOCATE (rho_core)
             CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
-            CALL pw_pool_create_pw(auxbas_pw_pool, rho_core, &
-                                   use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+            CALL auxbas_pw_pool%create_pw(rho_core)
             CALL set_ks_env(ks_env, rho_core=rho_core)
          END IF
 
@@ -289,12 +283,12 @@ CONTAINS
             NULLIFY (vppl)
             CALL get_qs_env(qs_env, pw_env=new_pw_env, vppl=vppl)
             IF (ASSOCIATED(vppl)) THEN
-               CALL pw_release(vppl)
+               CALL vppl%release()
             ELSE
                ALLOCATE (vppl)
             END IF
             CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
-            CALL pw_pool_create_pw(auxbas_pw_pool, vppl, use_data=REALDATA3D, in_space=REALSPACE)
+            CALL auxbas_pw_pool%create_pw(vppl)
             CALL set_ks_env(ks_env, vppl=vppl)
          END IF
 
@@ -306,23 +300,23 @@ CONTAINS
             NULLIFY (rho_nlcc)
             CALL get_qs_env(qs_env, pw_env=new_pw_env, rho_nlcc=rho_nlcc)
             IF (ASSOCIATED(rho_nlcc)) THEN
-               CALL pw_release(rho_nlcc)
+               CALL rho_nlcc%release()
             ELSE
                ALLOCATE (rho_nlcc)
             END IF
             CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
-            CALL pw_pool_create_pw(auxbas_pw_pool, rho_nlcc, REALDATA3D, REALSPACE)
+            CALL auxbas_pw_pool%create_pw(rho_nlcc)
             CALL set_ks_env(ks_env, rho_nlcc=rho_nlcc)
             ! the g-space version
             NULLIFY (rho_nlcc_g)
             CALL get_qs_env(qs_env, pw_env=new_pw_env, rho_nlcc_g=rho_nlcc_g)
             IF (ASSOCIATED(rho_nlcc_g)) THEN
-               CALL pw_release(rho_nlcc_g)
+               CALL rho_nlcc_g%release()
             ELSE
                ALLOCATE (rho_nlcc_g)
             END IF
             CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
-            CALL pw_pool_create_pw(auxbas_pw_pool, rho_nlcc_g, COMPLEXDATA1D, RECIPROCALSPACE)
+            CALL auxbas_pw_pool%create_pw(rho_nlcc_g)
             CALL set_ks_env(ks_env, rho_nlcc_g=rho_nlcc_g)
          END IF
 
@@ -331,12 +325,12 @@ CONTAINS
             NULLIFY (vee)
             CALL get_qs_env(qs_env, pw_env=new_pw_env, vee=vee)
             IF (ASSOCIATED(vee)) THEN
-               CALL pw_release(vee)
+               CALL vee%release()
                DEALLOCATE (vee)
             END IF
             ALLOCATE (vee)
             CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
-            CALL pw_pool_create_pw(auxbas_pw_pool, vee, REALDATA3D, REALSPACE)
+            CALL auxbas_pw_pool%create_pw(vee)
             CALL set_ks_env(ks_env, vee=vee)
             dft_control%eval_external_potential = .TRUE.
          END IF
@@ -346,12 +340,12 @@ CONTAINS
             NULLIFY (external_vxc)
             CALL get_qs_env(qs_env, pw_env=new_pw_env, external_vxc=external_vxc)
             IF (ASSOCIATED(external_vxc)) THEN
-               CALL pw_release(external_vxc)
+               CALL external_vxc%release()
             ELSE
                ALLOCATE (external_vxc)
             END IF
             CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
-            CALL pw_pool_create_pw(auxbas_pw_pool, external_vxc, REALDATA3D, REALSPACE)
+            CALL auxbas_pw_pool%create_pw(external_vxc)
             CALL set_qs_env(qs_env, external_vxc=external_vxc)
             dft_control%read_external_vxc = .TRUE.
          END IF
@@ -361,37 +355,36 @@ CONTAINS
             NULLIFY (embed_pot)
             CALL get_qs_env(qs_env, pw_env=new_pw_env, embed_pot=embed_pot)
             IF (ASSOCIATED(embed_pot)) THEN
-               CALL pw_release(embed_pot)
+               CALL embed_pot%release()
             ELSE
                ALLOCATE (embed_pot)
             END IF
             CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
-            CALL pw_pool_create_pw(auxbas_pw_pool, embed_pot, REALDATA3D, REALSPACE)
+            CALL auxbas_pw_pool%create_pw(embed_pot)
             CALL set_qs_env(qs_env, embed_pot=embed_pot)
 
             NULLIFY (spin_embed_pot)
             CALL get_qs_env(qs_env, pw_env=new_pw_env, spin_embed_pot=spin_embed_pot)
             IF (ASSOCIATED(spin_embed_pot)) THEN
-               CALL pw_release(spin_embed_pot)
+               CALL spin_embed_pot%release()
                DEALLOCATE (spin_embed_pot)
             ELSE
                ALLOCATE (spin_embed_pot)
             END IF
             CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
-            CALL pw_pool_create_pw(auxbas_pw_pool, spin_embed_pot, REALDATA3D, REALSPACE)
+            CALL auxbas_pw_pool%create_pw(spin_embed_pot)
             CALL set_qs_env(qs_env, spin_embed_pot=spin_embed_pot)
          END IF
 
          CALL get_ks_env(ks_env, v_hartree_rspace=v_hartree_rspace)
          IF (ASSOCIATED(v_hartree_rspace)) THEN
-            CALL pw_release(v_hartree_rspace)
+            CALL v_hartree_rspace%release()
             DEALLOCATE (v_hartree_rspace)
          END IF
          CALL get_qs_env(qs_env, pw_env=new_pw_env)
          CALL pw_env_get(new_pw_env, auxbas_pw_pool=auxbas_pw_pool)
          ALLOCATE (v_hartree_rspace)
-         CALL pw_pool_create_pw(auxbas_pw_pool, v_hartree_rspace, &
-                                REALDATA3D, REALSPACE)
+         CALL auxbas_pw_pool%create_pw(v_hartree_rspace)
          CALL set_ks_env(ks_env, v_hartree_rspace=v_hartree_rspace)
       END IF
 

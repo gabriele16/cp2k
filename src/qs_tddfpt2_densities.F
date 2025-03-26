@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -9,18 +9,19 @@ MODULE qs_tddfpt2_densities
    USE admm_types,                      ONLY: admm_type,&
                                               get_admm_env
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_p_type,&
+                                              dbcsr_scale
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr
    USE cp_fm_types,                     ONLY: cp_fm_get_info,&
                                               cp_fm_type
-   USE dbcsr_api,                       ONLY: dbcsr_p_type,&
-                                              dbcsr_scale
    USE kinds,                           ONLY: default_string_length,&
                                               dp
    USE parallel_gemm_api,               ONLY: parallel_gemm
    USE pw_env_types,                    ONLY: pw_env_get
    USE pw_pool_types,                   ONLY: pw_pool_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_rho_elec
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -110,7 +111,7 @@ CONTAINS
                                 pw_env_external=sub_env%pw_env, &
                                 task_list_external=sub_env%task_list_orb_soft, &
                                 para_env_external=sub_env%para_env)
-         CALL prepare_gapw_den(qs_env, local_rho_set=sub_env%local_rho_set)
+         CALL prepare_gapw_den(qs_env, local_rho_set=sub_env%local_rho_set, pw_env_sub=sub_env%pw_env)
       ELSEIF (dft_control%qs_control%gapw_xc) THEN
          CALL qs_rho_update_rho(rho_orb_struct, qs_env, &
                                 rho_xc_external=rho_xc_struct, &
@@ -121,7 +122,8 @@ CONTAINS
                                 para_env_external=sub_env%para_env)
          CALL pw_env_get(sub_env%pw_env, auxbas_pw_pool=auxbas_pw_pool)
          CALL qs_rho_copy(rho_xc_struct, rho_orb_struct, auxbas_pw_pool, nspins)
-         CALL prepare_gapw_den(qs_env, local_rho_set=sub_env%local_rho_set, do_rho0=.FALSE.)
+         CALL prepare_gapw_den(qs_env, local_rho_set=sub_env%local_rho_set, do_rho0=.FALSE., &
+                               pw_env_sub=sub_env%pw_env)
       ELSE
          CALL qs_rho_update_rho(rho_orb_struct, qs_env, &
                                 pw_env_external=sub_env%pw_env, &
@@ -160,7 +162,8 @@ CONTAINS
       TYPE(local_rho_type), POINTER                      :: local_rho_set
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(tddfpt_subgroup_env_type), INTENT(in)         :: sub_env
-      TYPE(cp_fm_type), INTENT(IN)                       :: wfm_rho_orb, wfm_rho_aux_fit, wfm_aux_orb
+      TYPE(cp_fm_type), INTENT(INOUT)                    :: wfm_rho_orb
+      TYPE(cp_fm_type), INTENT(IN)                       :: wfm_rho_aux_fit, wfm_aux_orb
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'tddfpt_construct_aux_fit_density'
 
@@ -171,7 +174,8 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: rho_ao_aux_fit, rho_ao_orb
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
          POINTER                                         :: sab_aux_fit
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_aux_fit_g, rho_aux_fit_r
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho_aux_fit_g
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_aux_fit_r
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(task_list_type), POINTER                      :: task_list
 
@@ -217,7 +221,8 @@ CONTAINS
                                        qs_kind_set=admm_env%admm_gapw_env%admm_kind_set, &
                                        oce=admm_env%admm_gapw_env%oce, sab=sab_aux_fit, para_env=sub_env%para_env)
          CALL prepare_gapw_den(qs_env, local_rho_set=local_rho_set, &
-                               do_rho0=.FALSE., kind_set_external=admm_env%admm_gapw_env%admm_kind_set)
+                               do_rho0=.FALSE., kind_set_external=admm_env%admm_gapw_env%admm_kind_set, &
+                               pw_env_sub=sub_env%pw_env)
       END IF
 
       CALL timestop(handle)

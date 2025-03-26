@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -20,9 +20,7 @@ MODULE input_cp2k
                                               silent_print_level
    USE dbcsr_api,                       ONLY: dbcsr_test_binary_io,&
                                               dbcsr_test_mm,&
-                                              dbcsr_type_complex_4,&
                                               dbcsr_type_complex_8,&
-                                              dbcsr_type_real_4,&
                                               dbcsr_type_real_8
    USE input_constants,                 ONLY: &
         do_diag_syevd, do_diag_syevx, do_mat_random, do_mat_read, do_pwgrid_ns_fullspace, &
@@ -171,9 +169,9 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="COPY", &
-                          description="Tests the performance to copy two vectors."// &
+                          description="Tests the performance to copy two vectors. "// &
                           "The results of these tests allow to determine the size of the cache "// &
-                          "of the CPU. This can be used to optimize the performance of the"// &
+                          "of the CPU. This can be used to optimize the performance of the "// &
                           "FFTSG library. Tests are repeated the given number of times.", &
                           usage="copy 10", default_i_val=0)
       CALL section_add_keyword(section, keyword)
@@ -215,7 +213,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="MPI", &
-                          description="Tests mpi, quickly adapted benchmark code,"// &
+                          description="Tests mpi, quickly adapted benchmark code, "// &
                           "will ONLY work on an even number of CPUs. comm is the relevant, "// &
                           "initialized communicator. This test will produce messages "// &
                           "of the size 8*10**requested_size, where requested_size is the value "// &
@@ -239,7 +237,7 @@ CONTAINS
                           "Klimes, Kresse, JCTC 10, 2498 (2014), Eq. 30. Printed is the L1-error (=minimax "// &
                           "error for a given range and a given number of grid points. The input parameter is "// &
                           "the given number of different Rc values.", &
-                          usage="MINIMAX 1000", default_i_val=0)
+                          usage="LEAST_SQ_FT 1000", default_i_val=0)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -252,7 +250,7 @@ CONTAINS
       CALL section_release(print_key)
 
       CALL cp_print_key_section_create(print_key, __LOCATION__, "PROGRAM_RUN_INFO", &
-                                       description="controls the printing of tests output", &
+                                       description="Controls the printing of the test output", &
                                        print_level=silent_print_level, add_last=add_last_numeric, filename="__STD_OUT__")
       CALL section_add_subsection(section, print_key)
       CALL section_release(print_key)
@@ -465,9 +463,9 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="RESTART_DEFAULT", &
-                          description="This keyword controls the default value for all possible "// &
+                          description="This keyword controls the default value for all possible"// &
                           " restartable keywords, unless explicitly defined. For example setting"// &
-                          " this keyword to .FALSE. does not restart any quantity. If, at the "// &
+                          " this keyword to .FALSE. does not restart any quantity. If, at the"// &
                           " same time, one keyword is set to .TRUE. only that quantity will be"// &
                           " restarted.", default_l_val=.TRUE.)
       CALL section_add_keyword(section, keyword)
@@ -705,7 +703,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="STRIDE", &
-                          description="Stride to be used when building working groups from the parent MPI comm."// &
+                          description="Stride to be used when building working groups from the parent MPI comm. "// &
                          "Can be used to layout minion groups over nodes in advanced ways (1 rank per node / 2 groups per node).", &
                           usage="STRIDE 2", default_i_val=1)
       CALL section_add_keyword(section, keyword)
@@ -720,7 +718,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="MAX_JOBS_PER_GROUP", &
                           variants=(/"MAX_JOBS"/), &
                           description="maximum number of jobs executed per group", &
-                          usage="max_step 4", default_i_val=65535)
+                          usage="MAX_JOBS_PER_GROUP 4", default_i_val=65535)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -768,7 +766,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="JOB_ID", &
                           description="An ID used to indentify a job in DEPENDENCIES. "// &
                           "JOB_IDs do not need to be unique, dependencies will be on all jobs with a given ID. "// &
-                          "If no JOB_ID is given, the index of the &JOB section in the input file will be used. ", &
+                          "If no JOB_ID is given, the index of the &JOB section in the input file will be used.", &
                           usage="JOB_ID 13", type_of_var=integer_t)
       CALL section_add_keyword(sub_section, keyword)
       CALL keyword_release(keyword)
@@ -784,7 +782,7 @@ CONTAINS
          "3) MAX_JOBS_PER_GROUP is ignored (though only a total of MAX_JOBS_PER_GROUP*NGROUPS jobs will be executed) "// &
          "4) dependencies on jobs that will not be executed (due to RESTART or MAX_JOBS_PER_GROUP) are ignored. "// &
          "Additionally, note that, on some file systems, "// &
-         " output (restart) files might not be immediately available on all compute nodes,"// &
+         "output (restart) files might not be immediately available on all compute nodes, "// &
          "potentially resulting in unexpected failures.", &
          usage="DEPENDENCIES 13 1 7", type_of_var=integer_t, n_var=-1)
       CALL section_add_keyword(sub_section, keyword)
@@ -793,7 +791,7 @@ CONTAINS
       CALL section_release(sub_section)
 
       CALL cp_print_key_section_create(print_key, __LOCATION__, "PROGRAM_RUN_INFO", &
-                                       description="controls the printing of FARMING specific output", &
+                                       description="Controls the printing of FARMING specific output", &
                                        print_level=low_print_level, add_last=add_last_numeric, filename="__STD_OUT__")
       CALL section_add_subsection(section, print_key)
       CALL section_release(print_key)
@@ -922,7 +920,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="PW_GRID_LAYOUT", &
-                          description="Expert use only, leave the default..."// &
+                          description="Expert use only, leave the default... "// &
                           "Can be used to set the distribution for ray-distributed FFT.", &
                           usage="PW_GRID_LAYOUT", &
                           repeats=.FALSE., n_var=2, &
@@ -931,7 +929,7 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="PW_GRID_BLOCKED", &
-                          description="Expert use only, leave the default..."// &
+                          description="Expert use only, leave the default... "// &
                           "Can be used to set the distribution in g-space for the pw grids and their FFT.", &
                           usage="PW_GRID_BLOCKED FREE", &
                           enum_c_vals=s2a("FREE", "TRUE", "FALSE"), &
@@ -968,17 +966,17 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="K", &
                           description="Dimension 1 of C", &
-                          usage="A 1024", default_i_val=256)
+                          usage="K 1024", default_i_val=256)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
       CALL keyword_create(keyword, __LOCATION__, name="M", &
                           description="Inner dimension M   ", &
-                          usage="A 1024", default_i_val=256)
+                          usage="M 1024", default_i_val=256)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
       CALL keyword_create(keyword, __LOCATION__, name="N", &
                           description="Dimension 2 of C", &
-                          usage="A 1024", default_i_val=256)
+                          usage="N 1024", default_i_val=256)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -990,7 +988,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="NCOL_BLOCK", &
                           description="block_size for cols", &
-                          usage="nrow_block 64", default_i_val=32)
+                          usage="NCOL_BLOCK 64", default_i_val=32)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -1110,15 +1108,12 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="DATA_TYPE", &
                           description="Data type of the matrices", &
-                          usage="DATA_TYPE real_4", &
+                          usage="DATA_TYPE real_8", &
                           default_i_val=dbcsr_type_real_8, &
-                          enum_c_vals=s2a("real_4", "real_8", "complex_4", "complex_8"), &
-                          enum_i_vals=(/dbcsr_type_real_4, dbcsr_type_real_8, &
-                                        dbcsr_type_complex_4, dbcsr_type_complex_8/), &
+                          enum_c_vals=s2a("real_8", "complex_8"), &
+                          enum_i_vals=(/dbcsr_type_real_8, dbcsr_type_complex_8/), &
                           enum_desc=s2a( &
-                          "Real (Single Precision)", &
                           "Real (Double Precision)", &
-                          "Complex (Single Precision)", &
                           "Complex (Double Precision)"))
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -1137,17 +1132,17 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="M", &
                           description="Dimension 1 of C", &
-                          usage="A 1024", default_i_val=256)
+                          usage="M 1024", default_i_val=256)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
       CALL keyword_create(keyword, __LOCATION__, name="N", &
                           description="Dimension 2 of C", &
-                          usage="A 1024", default_i_val=256)
+                          usage="N 1024", default_i_val=256)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
       CALL keyword_create(keyword, __LOCATION__, name="K", &
                           description="Inner dimension M   ", &
-                          usage="A 1024", default_i_val=256)
+                          usage="K 1024", default_i_val=256)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -1217,13 +1212,13 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="BSPARSITY", &
                           description="Sparsity of B matrix", &
-                          usage="ASPARSITY 80", default_r_val=0.0_dp)
+                          usage="BSPARSITY 80", default_r_val=0.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="CSPARSITY", &
                           description="Sparsity of C matrix", &
-                          usage="ASPARSITY 90", default_r_val=0.0_dp)
+                          usage="CSPARSITY 90", default_r_val=0.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -1277,17 +1272,17 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="M", &
                           description="Dimension 1 of C", &
-                          usage="A 1024", default_i_val=256)
+                          usage="M 1024", default_i_val=256)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
       CALL keyword_create(keyword, __LOCATION__, name="N", &
                           description="Dimension 2 of C", &
-                          usage="A 1024", default_i_val=256)
+                          usage="N 1024", default_i_val=256)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
       CALL keyword_create(keyword, __LOCATION__, name="K", &
                           description="Inner dimension M   ", &
-                          usage="A 1024", default_i_val=256)
+                          usage="K 1024", default_i_val=256)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -1335,13 +1330,13 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="BSPARSITY", &
                           description="Sparsity of B matrix", &
-                          usage="ASPARSITY 80", default_r_val=0.0_dp)
+                          usage="BSPARSITY 80", default_r_val=0.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="CSPARSITY", &
                           description="Sparsity of C matrix", &
-                          usage="ASPARSITY 90", default_r_val=0.0_dp)
+                          usage="CSPARSITY 90", default_r_val=0.0_dp)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 

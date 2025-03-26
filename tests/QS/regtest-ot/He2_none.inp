@@ -1,10 +1,16 @@
+&GLOBAL
+  PRINT_LEVEL MEDIUM
+  PROJECT He2_none
+  RUN_TYPE ENERGY
+&END GLOBAL
+
 &FORCE_EVAL
   METHOD Quickstep
   &DFT
     BASIS_SET_FILE_NAME BASIS_SET
-    POTENTIAL_FILE_NAME POTENTIAL
-    LSD
     CHARGE +1
+    LSD
+    POTENTIAL_FILE_NAME POTENTIAL
     &MGRID
       CUTOFF 100
     &END MGRID
@@ -15,16 +21,17 @@
     &END QS
     &SCF
       EPS_SCF 1.0E-6
-      SCF_GUESS ATOMIC
+      IGNORE_CONVERGENCE_FAILURE
       MAX_SCF 4
-      &OUTER_SCF
-        TYPE NONE
-        OPTIMIZER NONE
-        EPS_SCF 1.0E-6
-        MAX_SCF 4
-      &END
+      SCF_GUESS ATOMIC
       &OT
       &END OT
+      &OUTER_SCF
+        EPS_SCF 1.0E-6
+        MAX_SCF 4
+        OPTIMIZER NONE
+        TYPE NONE
+      &END OUTER_SCF
     &END SCF
     &XC
       &XC_FUNCTIONAL Pade
@@ -36,8 +43,8 @@
       ABC 6.0 4.0 4.0
     &END CELL
     &COORD
-    He   4.0  2.0 2.0
-    He   2.0  2.0 2.0
+      He   4.0  2.0 2.0
+      He   2.0  2.0 2.0
     &END COORD
     &KIND He
       BASIS_SET DZVP-GTH-PADE
@@ -45,8 +52,3 @@
     &END KIND
   &END SUBSYS
 &END FORCE_EVAL
-&GLOBAL
-  PROJECT He2_none
-  RUN_TYPE ENERGY
-  PRINT_LEVEL MEDIUM
-&END GLOBAL

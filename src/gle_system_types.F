@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -35,22 +35,22 @@ MODULE gle_system_types
 
 !
    TYPE gle_thermo_type
-      INTEGER                                 :: degrees_of_freedom
-      REAL(KIND=dp)                           :: nkt, kin_energy, thermostat_energy
-      REAL(KIND=dp), DIMENSION(:), POINTER    :: s
-      TYPE(rng_stream_type)                   :: gaussian_rng_stream
+      INTEGER                                 :: degrees_of_freedom = -1
+      REAL(KIND=dp)                           :: nkt = 0.0_dp, kin_energy = 0.0_dp, thermostat_energy = 0.0_dp
+      REAL(KIND=dp), DIMENSION(:), POINTER    :: s => NULL()
+      TYPE(rng_stream_type)                   :: gaussian_rng_stream = rng_stream_type()
    END TYPE gle_thermo_type
 
 ! **************************************************************************************************
    TYPE gle_type
-      INTEGER                                 :: ndim
-      INTEGER                                 :: glob_num_gle, loc_num_gle, region
-      INTEGER, DIMENSION(:), POINTER          :: mal
-      REAL(dp)                                :: temp, dt, dt_fact
-      REAL(dp), POINTER                       :: gle_s(:, :), gle_t(:, :)
-      REAL(dp), POINTER                       :: a_mat(:, :), c_mat(:, :)
-      TYPE(gle_thermo_type), POINTER          :: nvt(:)
-      TYPE(map_info_type), POINTER            :: map_info
+      INTEGER                                 :: ndim = -1
+      INTEGER                                 :: glob_num_gle = -1, loc_num_gle = -1, region = -1
+      INTEGER, DIMENSION(:), POINTER          :: mal => NULL()
+      REAL(dp)                                :: temp = 0.0_dp, dt = 0.0_dp, dt_fact = 0.0_dp
+      REAL(dp), POINTER                       :: gle_s(:, :) => NULL(), gle_t(:, :) => NULL()
+      REAL(dp), POINTER                       :: a_mat(:, :) => NULL(), c_mat(:, :) => NULL()
+      TYPE(gle_thermo_type), POINTER          :: nvt(:) => NULL()
+      TYPE(map_info_type), POINTER            :: map_info => NULL()
    END TYPE gle_type
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'gle_system_types'

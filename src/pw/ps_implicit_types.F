@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -21,10 +21,8 @@ MODULE ps_implicit_types
    USE dirichlet_bc_types,              ONLY: dbc_release,&
                                               dirichlet_bc_p_type
    USE kinds,                           ONLY: dp
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_r3d_rs_type
 #include "../base/base_uses.f90"
 
    IMPLICIT NONE
@@ -49,9 +47,9 @@ MODULE ps_implicit_types
       LOGICAL                           :: do_dbc_cube = .FALSE.
       TYPE(dielectric_type), POINTER    :: dielectric => NULL()
       TYPE(dct_type)                    :: dct_env = dct_type()
-      TYPE(pw_type), POINTER            :: initial_guess => NULL()
-      TYPE(pw_type), POINTER            :: v_eps => NULL()
-      TYPE(pw_type), POINTER            :: cstr_charge => NULL()
+      TYPE(pw_r3d_rs_type), POINTER            :: initial_guess => NULL()
+      TYPE(pw_r3d_rs_type), POINTER            :: v_eps => NULL()
+      TYPE(pw_r3d_rs_type), POINTER            :: cstr_charge => NULL()
       REAL(dp), DIMENSION(:), ALLOCATABLE :: initial_lambda
       REAL(dp)                          :: ehartree = 0.0_dp
       REAL(dp)                          :: electric_enthalpy = 0.0_dp
@@ -101,16 +99,16 @@ CONTAINS
          do_dbc_cube = ps_implicit_env%do_dbc_cube
 
          IF (can_give_back) THEN
-            CALL pw_pool_give_back_pw(pw_pool, ps_implicit_env%initial_guess)
-            CALL pw_pool_give_back_pw(pw_pool, ps_implicit_env%v_eps)
-            CALL pw_pool_give_back_pw(pw_pool, ps_implicit_env%cstr_charge)
+            CALL pw_pool%give_back_pw(ps_implicit_env%initial_guess)
+            CALL pw_pool%give_back_pw(ps_implicit_env%v_eps)
+            CALL pw_pool%give_back_pw(ps_implicit_env%cstr_charge)
             DEALLOCATE (ps_implicit_env%initial_guess, ps_implicit_env%v_eps, ps_implicit_env%cstr_charge)
             CALL dbc_release(ps_implicit_env%contacts, do_dbc_cube, pw_pool=pw_pool)
          ELSE
-            CALL pw_release(ps_implicit_env%initial_guess)
-            CALL pw_release(ps_implicit_env%v_eps)
+            CALL ps_implicit_env%initial_guess%release()
+            CALL ps_implicit_env%v_eps%release()
             IF (ASSOCIATED(ps_implicit_env%cstr_charge)) THEN
-               CALL pw_release(ps_implicit_env%cstr_charge)
+               CALL ps_implicit_env%cstr_charge%release()
                DEALLOCATE (ps_implicit_env%cstr_charge)
             END IF
             DEALLOCATE (ps_implicit_env%initial_guess, ps_implicit_env%v_eps)

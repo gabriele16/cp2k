@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -12,8 +12,7 @@
 MODULE xc_derivative_types
 
    USE kinds,                           ONLY: dp
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_cr3d,&
-                                              pw_pool_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
    USE xc_derivative_desc,              ONLY: create_split_desc
 #include "../base/base_uses.f90"
 
@@ -52,18 +51,18 @@ CONTAINS
 !> \brief allocates and initializes a derivative type
 !> \param derivative the object to create
 !> \param desc the derivative description
-!> \param cr3d_ptr the data array (the ownership of it passes to the
+!> \param r3d_ptr the data array (the ownership of it passes to the
 !>                      derivative type), the array is not zeroed
 ! **************************************************************************************************
-   SUBROUTINE xc_derivative_create(derivative, desc, cr3d_ptr)
+   SUBROUTINE xc_derivative_create(derivative, desc, r3d_ptr)
 
       TYPE(xc_derivative_type)                           :: derivative
       INTEGER, DIMENSION(:), INTENT(in)                  :: desc
       REAL(kind=dp), CONTIGUOUS, DIMENSION(:, :, :), &
-         POINTER                                         :: cr3d_ptr
+         POINTER                                         :: r3d_ptr
 
       CALL create_split_desc(desc, derivative%split_desc)
-      derivative%deriv_data => cr3d_ptr
+      derivative%deriv_data => r3d_ptr
 
    END SUBROUTINE xc_derivative_create
 
@@ -80,8 +79,7 @@ CONTAINS
 
       IF (PRESENT(pw_pool)) THEN
          IF (ASSOCIATED(pw_pool)) THEN
-            CALL pw_pool_give_back_cr3d(pw_pool, derivative%deriv_data, &
-                                        accept_non_compatible=.TRUE.)
+            CALL pw_pool%give_back_cr3d(derivative%deriv_data)
          END IF
       END IF
       IF (ASSOCIATED(derivative%deriv_data)) THEN

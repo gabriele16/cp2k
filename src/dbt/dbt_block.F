@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -16,7 +16,7 @@ MODULE dbt_block
    #:set ndims = range(2,maxdim+1)
 
    USE OMP_LIB, ONLY: omp_get_thread_num, omp_get_num_threads
-   USE dbcsr_api, ONLY: &
+   USE cp_dbcsr_api, ONLY: &
       dbcsr_type, dbcsr_release, &
       dbcsr_iterator_type, dbcsr_iterator_start, dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, &
       dbcsr_has_symmetry, dbcsr_desymmetrize, dbcsr_get_num_blocks, dbcsr_iterator_stop, &
@@ -300,7 +300,7 @@ CONTAINS
       TYPE(dbt_type), INTENT(INOUT)  :: tensor_out
       TYPE(dbcsr_type), POINTER               :: matrix_in_desym
 
-      INTEGER                            :: blk, iblk, nblk, nblk_per_thread, a, b
+      INTEGER                            :: iblk, nblk, nblk_per_thread, a, b
       INTEGER, ALLOCATABLE, DIMENSION(:) :: blk_ind_1, blk_ind_2
       INTEGER, DIMENSION(2)              :: ind_2d
       TYPE(dbcsr_iterator_type)          :: iter
@@ -320,7 +320,7 @@ CONTAINS
       ALLOCATE (blk_ind_1(nblk), blk_ind_2(nblk))
       CALL dbcsr_iterator_start(iter, matrix_in_desym)
       DO iblk = 1, nblk
-         CALL dbcsr_iterator_next_block(iter, ind_2d(1), ind_2d(2), blk)
+         CALL dbcsr_iterator_next_block(iter, ind_2d(1), ind_2d(2))
          blk_ind_1(iblk) = ind_2d(1); blk_ind_2(iblk) = ind_2d(2)
       END DO
       CALL dbcsr_iterator_stop(iter)

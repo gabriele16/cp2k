@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -26,10 +26,10 @@ MODULE subcell_types
 
 ! **************************************************************************************************
    TYPE subcell_type
-      INTEGER                        :: natom
-      REAL(KIND=dp), DIMENSION(3)    :: s_max, s_min
-      INTEGER, DIMENSION(:), POINTER :: atom_list
-      REAL(KIND=dp), DIMENSION(3, 8)  :: corners
+      INTEGER                        :: natom = -1
+      REAL(KIND=dp), DIMENSION(3)    :: s_max = -1.0_dp, s_min = -1.0_dp
+      INTEGER, DIMENSION(:), POINTER :: atom_list => NULL()
+      REAL(KIND=dp), DIMENSION(3, 8)  :: corners = -1.0_dp
    END TYPE subcell_type
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'subcell_types'

@@ -609,8 +609,11 @@ checksum() {
   local __shasum_command='sha256sum'
   # check if we have sha256sum command, Mac OS X does not have
   # sha256sum, but has an equivalent with shasum -a 256
-  command -v "$__shasum_command" > /dev/null 2>&1 ||
+  if command -v "$__shasum_command" > /dev/null 2>&1 && ! ${__shasum_command} --version 2>&1 | grep -q 'Darwin'; then
+    __shasum_command='sha256sum'
+  else
     __shasum_command="shasum -a 256"
+  fi
   if echo "$__sha256  $__filename" | ${__shasum_command} --check; then
     echo "Checksum of $__filename Ok"
   else
@@ -621,19 +624,27 @@ checksum() {
 }
 
 # downloader for the package tars, includes checksum
-download_pkg_from_cp2k_org() {
-  # usage: download_pkg_from_cp2k_org sha256 filename
+download_pkg_from_urlpath() {
+  # usage: download_pkg_from_url_path sha256 filename urlpath [outfile]
   local __sha256="$1"
   local __filename="$2"
-  local __url="https://www.cp2k.org/static/downloads/$__filename"
+  local __url="$3/${__filename}"
+  local __outfile="${4:-${__filename}}"
+  local __command="wget ${DOWNLOADER_FLAGS} --quiet ${__url} -O ${__outfile}"
+  echo "${__command}"
   # download
-  echo "wget ${DOWNLOADER_FLAGS} --quiet $__url"
-  if ! wget ${DOWNLOADER_FLAGS} --quiet $__url; then
-    report_error "failed to download $__url"
+  if ! eval "${__command}"; then
+    report_error "failed to download ${__url}"
     return 1
   fi
   # checksum
-  checksum "$__filename" "$__sha256"
+  checksum "${__outfile}" "${__sha256}"
+}
+
+# download from CP2K.org
+download_pkg_from_cp2k_org() {
+  # usage: download_pkg_from_cp2k_org sha256 filename
+  download_pkg_from_urlpath "$1" "$2" https://www.cp2k.org/static/downloads
 }
 
 # verify the checksums inside the given checksum file
@@ -643,8 +654,11 @@ verify_checksums() {
 
   # check if we have sha256sum command, Mac OS X does not have
   # sha256sum, but has an equivalent with shasum -a 256
-  command -v "$__shasum_command" > /dev/null 2>&1 ||
+  if command -v "$__shasum_command" > /dev/null 2>&1 && ! ${__shasum_command} --version 2>&1 | grep -q 'Darwin'; then
+    __shasum_command='sha256sum'
+  else
     __shasum_command="shasum -a 256"
+  fi
 
   ${__shasum_command} --check "${__checksum_file}" > /dev/null 2>&1
 }
@@ -657,8 +671,11 @@ write_checksums() {
 
   # check if we have sha256sum command, Mac OS X does not have
   # sha256sum, but has an equivalent with shasum -a 256
-  command -v "$__shasum_command" > /dev/null 2>&1 ||
+  if command -v "$__shasum_command" > /dev/null 2>&1 && ! ${__shasum_command} --version 2>&1 | grep -q 'Darwin'; then
+    __shasum_command='sha256sum'
+  else
     __shasum_command="shasum -a 256"
+  fi
 
   ${__shasum_command} "${VERSION_FILE}" "$@" > "${__checksum_file}"
 }

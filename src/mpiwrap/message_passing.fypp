@@ -1,6 +1,6 @@
 #!-------------------------------------------------------------------------------------------------!
 #!   CP2K: A general program to perform molecular dynamics simulations                             !
-#!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                  !
+#!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                  !
 #!                                                                                                 !
 #!   SPDX-License-Identifier: GPL-2.0-or-later                                                     !
 #!-------------------------------------------------------------------------------------------------!
@@ -4711,8 +4711,8 @@
 !> \param[out] stat      (optional) allocation status result
 ! **************************************************************************************************
    SUBROUTINE mp_free_mem_${nametype1}$ (DATA, stat)
-      ${type1}$, CONTIGUOUS, DIMENSION(:), &
-         POINTER, ASYNCHRONOUS                                :: DATA
+      ${type1}$, DIMENSION(:), &
+         POINTER, ASYNCHRONOUS                 :: DATA
       INTEGER, INTENT(OUT), OPTIONAL           :: stat
 
 #if defined(__parallel)

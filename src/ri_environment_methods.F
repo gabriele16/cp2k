@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -21,14 +21,16 @@ MODULE ri_environment_methods
                                               get_atomic_kind_set
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_add, dbcsr_create, dbcsr_get_info, dbcsr_iterator_blocks_left, &
+        dbcsr_iterator_next_block, dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, &
+        dbcsr_multiply, dbcsr_p_type, dbcsr_release, dbcsr_set, dbcsr_type, &
+        dbcsr_type_antisymmetric, dbcsr_type_no_symmetry, dbcsr_type_symmetric
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_dot,&
+                                              dbcsr_scale_by_vector
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_diag,                   ONLY: cp_dbcsr_syevd
    USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add, dbcsr_create, dbcsr_dot, dbcsr_get_info, dbcsr_iterator_blocks_left, &
-        dbcsr_iterator_next_block, dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, &
-        dbcsr_multiply, dbcsr_p_type, dbcsr_release, dbcsr_scale_by_vector, dbcsr_set, dbcsr_type, &
-        dbcsr_type_antisymmetric, dbcsr_type_no_symmetry, dbcsr_type_symmetric
    USE iterate_matrix,                  ONLY: invert_Hotelling
    USE kinds,                           ONLY: dp
    USE lri_environment_types,           ONLY: allocate_lri_coefs,&
@@ -39,7 +41,8 @@ MODULE ri_environment_methods
                                               lri_kind_type
    USE message_passing,                 ONLY: mp_comm_type,&
                                               mp_para_env_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_lri_rho_elec
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type,&
@@ -330,9 +333,7 @@ CONTAINS
          vect(:) = vect(:) - vecr(:)
          rerror = MAXVAL(ABS(vect(:)))
          DEALLOCATE (vect)
-         IF (rerror > threshold) THEN
-            CPWARN("RI solver: CG did not converge properly")
-         END IF
+         CPWARN_IF(rerror > threshold, "RI solver: CG did not converge properly")
       END IF
 
       CALL timestop(handle)
@@ -372,7 +373,8 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: avec
       TYPE(lri_density_type), POINTER                    :: lri_density
       TYPE(lri_kind_type), DIMENSION(:), POINTER         :: lri_coef
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_g, rho_r
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho_g
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
 
       CALL timeset(routineN, handle)
 
@@ -593,8 +595,8 @@ CONTAINS
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'ri_matvec'
 
       CHARACTER                                          :: matrix_type
-      INTEGER                                            :: group_handle, handle, iatom, jatom, m1, &
-                                                            m2, mb, n1, n2, nb
+      INTEGER                                            :: handle, iatom, jatom, m1, m2, mb, n1, &
+                                                            n2, nb
       LOGICAL                                            :: symm
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: block
       TYPE(dbcsr_iterator_type)                          :: iter
@@ -602,8 +604,7 @@ CONTAINS
 
       CALL timeset(routineN, handle)
 
-      CALL dbcsr_get_info(mat, matrix_type=matrix_type, group=group_handle)
-      CALL group%set_handle(group_handle)
+      CALL dbcsr_get_info(mat, matrix_type=matrix_type, group=group)
 
       SELECT CASE (matrix_type)
       CASE (dbcsr_type_no_symmetry)

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -23,6 +23,11 @@ MODULE qs_loc_main
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE cell_types,                      ONLY: cell_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_create,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set,&
+                                              dbcsr_type,&
+                                              dbcsr_type_symmetric
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply,&
                                               dbcsr_allocate_matrix_set,&
@@ -33,11 +38,6 @@ MODULE qs_loc_main
    USE cp_fm_types,                     ONLY: &
         cp_fm_create, cp_fm_get_info, cp_fm_get_submatrix, cp_fm_init_random, cp_fm_release, &
         cp_fm_set_all, cp_fm_set_submatrix, cp_fm_to_fm, cp_fm_type
-   USE dbcsr_api,                       ONLY: dbcsr_create,&
-                                              dbcsr_p_type,&
-                                              dbcsr_set,&
-                                              dbcsr_type,&
-                                              dbcsr_type_symmetric
    USE input_constants,                 ONLY: &
         do_loc_cpo_atomic, do_loc_cpo_random, do_loc_cpo_restart, do_loc_cpo_space_nmo, &
         do_loc_cpo_space_wan, op_loc_berry, op_loc_boys, op_loc_pipek, state_loc_list
@@ -103,7 +103,8 @@ CONTAINS
       CHARACTER(len=*), PARAMETER                        :: routineN = 'qs_loc_driver'
 
       INTEGER                                            :: dim_op, handle, i, imo, imoloc, j, lb, &
-                                                            loc_method, nao, nmosub, ub
+                                                            loc_method, nao, nmosub, restricted, ub
+      INTEGER, DIMENSION(:), POINTER                     :: ivec
       LOGICAL, SAVE                                      :: first_time = .TRUE.
       REAL(dp), DIMENSION(6)                             :: weights
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: vecbuffer
@@ -117,6 +118,7 @@ CONTAINS
       TYPE(localized_wfn_control_type), POINTER          :: localized_wfn_control
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(mp_para_env_type), POINTER                    :: para_env
+      TYPE(section_vals_type), POINTER                   :: input, low_spin_roks_section
 
       CALL timeset(routineN, handle)
       NULLIFY (para_env, mos, dft_control)
@@ -130,7 +132,17 @@ CONTAINS
                           moloc_coeff=moloc_coeff, op_sm_set=op_sm_set, op_fm_set=op_fm_set, cell=cell, &
                           weights=weights, dim_op=dim_op)
 
-      CALL get_qs_env(qs_env=qs_env, dft_control=dft_control, para_env=para_env, mos=mos)
+      CALL get_qs_env(qs_env=qs_env, dft_control=dft_control, &
+                      para_env=para_env, mos=mos, input=input)
+
+      !calculation of single occupied states to which unitary transformations should not be applied in LOW SPIN ROKS
+      IF (dft_control%restricted) THEN
+         low_spin_roks_section => section_vals_get_subs_vals(input, "DFT%LOW_SPIN_ROKS")
+         CALL section_vals_val_get(low_spin_roks_section, "SPIN_CONFIGURATION", i_rep_val=1, i_vals=ivec)
+         restricted = SIZE(ivec)
+      ELSE
+         restricted = 0
+      END IF
 
       NULLIFY (locorb)
       IF (PRESENT(ext_mo_coeff)) THEN
@@ -166,7 +178,8 @@ CONTAINS
          SELECT CASE (localized_wfn_control%operator_type)
          CASE (op_loc_berry)
             CALL optimize_loc_berry(loc_method, qs_loc_env, moloc_coeff(myspin), op_sm_set, &
-                                    op_fm_set, para_env, cell, weights, myspin, print_loc_section)
+                                    op_fm_set, para_env, cell, weights, myspin, print_loc_section, &
+                                    restricted=restricted)
          CASE (op_loc_boys)
             CPABORT("Boys localization not implemented")
          CASE (op_loc_pipek)
@@ -245,8 +258,9 @@ CONTAINS
 
       INTEGER                                            :: dim_op, handle, jspin, loc_method, nao, &
                                                             ndummy, nextra, ngextra, nguess, nmo, &
-                                                            nmosub, norextra
+                                                            nmosub, norextra, restricted
       INTEGER, DIMENSION(2)                              :: nelectron_spin
+      INTEGER, DIMENSION(:), POINTER                     :: ivec
       LOGICAL                                            :: do_ortho, has_unit_metric, &
                                                             my_guess_atomic, my_guess_wan
       REAL(dp), DIMENSION(6)                             :: weights
@@ -268,11 +282,22 @@ CONTAINS
          POINTER                                         :: sab_orb
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
+      TYPE(section_vals_type), POINTER                   :: input, low_spin_roks_section
 
       CALL timeset(routineN, handle)
 
       NULLIFY (moloc_coeff, op_sm_set)
-      CALL get_qs_env(qs_env=qs_env, dft_control=dft_control, para_env=para_env, mos=mos)
+      CALL get_qs_env(qs_env=qs_env, dft_control=dft_control, para_env=para_env, mos=mos, input=input)
+
+      !calculation of single occupied states to which unitary transformations should not be applied in LOW SPIN ROKS
+      IF (dft_control%restricted) THEN
+         low_spin_roks_section => section_vals_get_subs_vals(input, "DFT%LOW_SPIN_ROKS")
+         CALL section_vals_val_get(low_spin_roks_section, "SPIN_CONFIGURATION", i_rep_val=1, i_vals=ivec)
+         restricted = SIZE(ivec)
+      ELSE
+         restricted = 0
+      END IF
+
       CALL get_qs_loc_env(qs_loc_env=qs_loc_env, &
                           localized_wfn_control=localized_wfn_control, &
                           moloc_coeff=moloc_coeff, op_sm_set=op_sm_set, cell=cell, &
@@ -316,7 +341,7 @@ CONTAINS
                ALLOCATE (p_rmpv(jspin)%matrix)
                tmatrix => p_rmpv(jspin)%matrix
                CALL dbcsr_create(matrix=tmatrix, template=refmatrix, &
-                                 matrix_type=dbcsr_type_symmetric, nze=0)
+                                 matrix_type=dbcsr_type_symmetric)
                CALL cp_dbcsr_alloc_block_from_nbl(tmatrix, sab_orb)
                CALL dbcsr_set(tmatrix, 0.0_dp)
             END DO
@@ -419,19 +444,21 @@ CONTAINS
 
             CALL optimize_loc_berry(loc_method, qs_loc_env, moloc_coeff(myspin), op_sm_set, &
                                     op_fm_set, para_env, cell, weights, myspin, print_loc_section, &
-                                    nextra=nextra, nmo=nmo, vectors_2=vectors_2, &
-                                    guess_mos=mos_guess)
+                                    restricted=restricted, &
+                                    nextra=nextra, nmo=nmo, vectors_2=vectors_2, guess_mos=mos_guess)
             CALL cp_fm_release(mos_guess)
          ELSE
             CALL optimize_loc_berry(loc_method, qs_loc_env, moloc_coeff(myspin), op_sm_set, &
                                     op_fm_set, para_env, cell, weights, myspin, print_loc_section, &
+                                    restricted=restricted, &
                                     nextra=nextra, nmo=nmo, vectors_2=vectors_2)
          END IF
          CALL cp_fm_release(vectors_2)
          IF (my_guess_atomic) CALL dbcsr_deallocate_matrix_set(p_rmpv)
       ELSE
          CALL optimize_loc_berry(loc_method, qs_loc_env, moloc_coeff(myspin), op_sm_set, &
-                                 op_fm_set, para_env, cell, weights, myspin, print_loc_section, nextra=0)
+                                 op_fm_set, para_env, cell, weights, myspin, print_loc_section, &
+                                 restricted=restricted, nextra=0)
       END IF
 
       CALL timestop(handle)
@@ -513,6 +540,7 @@ CONTAINS
       END IF
 
       ncubes = SIZE(list_cubes)
+      CALL cp_fm_get_info(moloc_coeff(ispin), ncol_global=nmo)
       ncubes = MIN(ncubes, nmo)
       ALLOCATE (centers(6, ncubes))
       DO i = 1, ncubes

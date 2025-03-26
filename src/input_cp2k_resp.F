@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -164,8 +164,8 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="CONSTRAINT", &
-                          description="specifies a linear constraint on the fitted charges."// &
-                          "This can be used to give equal values to equivalent atoms."// &
+                          description="specifies a linear constraint on the fitted charges. "// &
+                          "This can be used to give equal values to equivalent atoms. "// &
                           "sum over atom_list c_i * q_i = t", &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
@@ -217,8 +217,8 @@ CONTAINS
 
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="RESTRAINT", &
-                          description="specifies a restraint on the fitted charges."// &
-                          "This can be used to restrain values to zero."// &
+                          description="specifies a restraint on the fitted charges. "// &
+                          "This can be used to restrain values to zero. "// &
                           "s*(sum over atom_list q_i - t)**2", &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
@@ -289,7 +289,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="X_HI", &
                           description="Specifies the upper boundary of the box along X used to "// &
-                          " sample the potential. Only valid for nonperiodic RESP fitting.", &
+                          "sample the potential. Only valid for nonperiodic RESP fitting.", &
                           usage="X_HI  5.", type_of_var=real_t, n_var=1, unit_str='angstrom')
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -382,7 +382,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="RMAX_KIND", &
                           description="Specifies the maximum distance a fit point is away from an atom "// &
                           "of a given kind", &
-                          usage="RMAX 2.5 Br", repeats=.TRUE., &
+                          usage="RMAX_KIND 2.5 Br", repeats=.TRUE., &
                           n_var=-1, type_of_var=char_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
@@ -390,7 +390,7 @@ CONTAINS
       CALL keyword_create(keyword, __LOCATION__, name="RMIN_KIND", &
                           description="Specifies the minimum distance a fit point is away from an atom "// &
                           "of a given kind", &
-                          usage="RMIN 2.1 Br", repeats=.TRUE., &
+                          usage="RMIN_KIND 2.1 Br", repeats=.TRUE., &
                           n_var=-1, type_of_var=char_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)

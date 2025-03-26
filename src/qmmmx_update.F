@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -76,7 +76,7 @@ CONTAINS
       CALL force_env_get(force_env, subsys=subsys)
       CALL update_force_mixing_labels(subsys, qmmm_section, labels_changed=labels_changed)
       IF (.NOT. labels_changed) RETURN
-      CPWARN("Adaptive force-mixing labels changed, rebuilding QM/MM calculations! ")
+      CPWARN("Adaptive force-mixing labels changed, rebuilding QM/MM calculations!")
 
       CALL update_force_eval(force_env, root_section, .FALSE.)
 

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -45,13 +45,8 @@ MODULE hirshfeld_methods
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_type
    USE pw_methods,                      ONLY: pw_integrate_function
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: REALDATA3D,&
-                                              REALSPACE,&
-                                              pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_r3d_rs_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_kind_types,                   ONLY: get_qs_kind,&
@@ -281,8 +276,8 @@ CONTAINS
       REAL(KIND=dp)                                      :: tnfun
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rhonorm
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r
+      TYPE(pw_r3d_rs_type)                               :: rhonorm
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
       TYPE(qs_rho_type), POINTER                         :: rho
 
       NULLIFY (rho_r)
@@ -295,19 +290,19 @@ CONTAINS
       CALL get_qs_env(qs_env=qs_env, pw_env=pw_env, rho=rho)
       CALL qs_rho_get(rho, rho_r=rho_r, rho_r_valid=rho_r_valid)
       CALL pw_env_get(pw_env=pw_env, auxbas_pw_pool=auxbas_pw_pool)
-      CALL pw_pool_create_pw(auxbas_pw_pool, rhonorm, use_data=REALDATA3D, in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(rhonorm)
       ! loop over spins
       DO is = 1, SIZE(rho_r)
          IF (rho_r_valid) THEN
-            CALL hfun_scale(rhonorm%cr3d, rho_r(is)%cr3d, &
-                            hirshfeld_env%fnorm%cr3d)
+            CALL hfun_scale(rhonorm%array, rho_r(is)%array, &
+                            hirshfeld_env%fnorm%array)
          ELSE
             CPABORT("We need rho in real space")
          END IF
          CALL hirshfeld_integration(qs_env, hirshfeld_env, rhonorm, charges(:, is))
          charges(:, is) = charges(:, is)*hirshfeld_env%charges(:)
       END DO
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, rhonorm)
+      CALL auxbas_pw_pool%give_back_pw(rhonorm)
 
    END SUBROUTINE comp_hirshfeld_charges
 ! **************************************************************************************************
@@ -370,8 +365,8 @@ CONTAINS
       REAL(KIND=dp)                                      :: res, tnfun
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rhonorm
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r
+      TYPE(pw_r3d_rs_type)                               :: rhonorm
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r
       TYPE(qs_rho_type), POINTER                         :: rho
 
       NULLIFY (rho_r)
@@ -383,7 +378,7 @@ CONTAINS
       CALL get_qs_env(qs_env=qs_env, pw_env=pw_env, rho=rho)
       CALL qs_rho_get(rho, rho_r=rho_r, rho_r_valid=rho_r_valid)
       CALL pw_env_get(pw_env=pw_env, auxbas_pw_pool=auxbas_pw_pool)
-      CALL pw_pool_create_pw(auxbas_pw_pool, rhonorm, use_data=REALDATA3D, in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(rhonorm)
       !
       DO iloop = 1, maxloop
 
@@ -395,8 +390,8 @@ CONTAINS
          ! loop over spins
          DO is = 1, SIZE(rho_r)
             IF (rho_r_valid) THEN
-               CALL hfun_scale(rhonorm%cr3d, rho_r(is)%cr3d, &
-                               hirshfeld_env%fnorm%cr3d)
+               CALL hfun_scale(rhonorm%array, rho_r(is)%array, &
+                               hirshfeld_env%fnorm%array)
             ELSE
                CPABORT("We need rho in real space")
             END IF
@@ -422,7 +417,7 @@ CONTAINS
 
       END DO
       !
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, rhonorm)
+      CALL auxbas_pw_pool%give_back_pw(rhonorm)
 
    END SUBROUTINE comp_hirshfeld_i_charges
 
@@ -451,7 +446,7 @@ CONTAINS
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), POINTER                             :: fnorm
+      TYPE(pw_r3d_rs_type), POINTER                      :: fnorm
       TYPE(realspace_grid_desc_type), POINTER            :: auxbas_rs_desc
       TYPE(realspace_grid_type), POINTER                 :: rs_rho
 
@@ -520,11 +515,11 @@ CONTAINS
       NULLIFY (fnorm)
       CALL get_hirshfeld_info(hirshfeld_env, fnorm=fnorm)
       IF (ASSOCIATED(fnorm)) THEN
-         CALL pw_release(fnorm)
+         CALL fnorm%release()
          DEALLOCATE (fnorm)
       END IF
       ALLOCATE (fnorm)
-      CALL pw_pool_create_pw(auxbas_pw_pool, fnorm, use_data=REALDATA3D, in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(fnorm)
       CALL set_hirshfeld_info(hirshfeld_env, fnorm=fnorm)
 
       CALL transfer_rs2pw(rs_rho, fnorm)
@@ -545,7 +540,7 @@ CONTAINS
 
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(hirshfeld_type), POINTER                      :: hirshfeld_env
-      TYPE(pw_type)                                      :: rfun
+      TYPE(pw_r3d_rs_type)                               :: rfun
       REAL(KIND=dp), DIMENSION(:), INTENT(inout)         :: fval
       REAL(KIND=dp), DIMENSION(:, :), INTENT(inout), &
          OPTIONAL                                        :: fderiv

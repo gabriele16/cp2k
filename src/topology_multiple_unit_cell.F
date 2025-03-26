@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -69,7 +69,7 @@ CONTAINS
          IF (ANY(iwork /= multiple_unit_cell)) &
             CALL cp_abort(__LOCATION__, "SUBSYS%TOPOLOGY%MULTIPLE_UNIT_CELL and "// &
                           "SUBSYS%CELL%MULTIPLE_UNIT_CELL have been "// &
-                          "setup to two different values!! Correct this error!!")
+                          "setup to two different values!! Correct this error!")
          cell => topology%cell_muc
          natoms = topology%natoms*PRODUCT(multiple_unit_cell)
 

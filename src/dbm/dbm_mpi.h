@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -9,6 +9,7 @@
 #define DBM_MPI_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #if defined(__parallel)
@@ -114,6 +115,13 @@ bool dbm_mpi_comms_are_similar(const dbm_mpi_comm_t comm1,
 void dbm_mpi_max_int(int *values, const int count, const dbm_mpi_comm_t comm);
 
 /*******************************************************************************
+ * \brief Wrapper around MPI_Allreduce for op MPI_MAX and datatype MPI_UINT64_T.
+ * \author Hans Pabst
+ ******************************************************************************/
+void dbm_mpi_max_uint64(uint64_t *values, const int count,
+                        const dbm_mpi_comm_t comm);
+
+/*******************************************************************************
  * \brief Wrapper around MPI_Allreduce for op MPI_MAX and datatype MPI_DOUBLE.
  * \author Ole Schuett
  ******************************************************************************/
@@ -182,6 +190,18 @@ void dbm_mpi_alltoallv_double(const double *sendbuf, const int *sendcounts,
                               const int *sdispls, double *recvbuf,
                               const int *recvcounts, const int *rdispls,
                               const dbm_mpi_comm_t comm);
+
+/*******************************************************************************
+ * \brief Wrapper around MPI_Alloc_mem.
+ * \author Hans Pabst
+ ******************************************************************************/
+void *dbm_mpi_alloc_mem(size_t size);
+
+/*******************************************************************************
+ * \brief Wrapper around MPI_Free_mem.
+ * \author Hans Pabst
+ ******************************************************************************/
+void dbm_mpi_free_mem(void *ptr);
 
 #endif
 

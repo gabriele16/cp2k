@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -1051,7 +1051,7 @@ CONTAINS
       IF (ionode) rand = rng_stream%next()
       CALL group%bcast(rand, source)
 
-! find the test cell lenghts for the discrete volume move
+! find the test cell lengths for the discrete volume move
       IF (ldiscrete) THEN
          IF (rand .LT. 0.5_dp) THEN
             lincrease = .TRUE.

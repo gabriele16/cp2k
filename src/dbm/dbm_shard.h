@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -33,13 +33,12 @@ typedef struct {
   dbm_block_t *blocks;
 
   int hashtable_size;  // should be a power of two
-  int hashtable_mask;  // should be hashtable_size - 1, ie. a bit-mask
   int hashtable_prime; // should be a coprime of hashtable_size
   int *hashtable;      // maps row/col to block numbers
 
   int data_promised;  // referenced by a dbm_block_t.offset, but not yet
                       // allocated
-  int data_allocated; // we over allocate to amortized the resizing cost
+  int data_allocated; // over-allocated to amortize the cost of resizing
   int data_size;      // actually allocated and initialized
   double *data;
 

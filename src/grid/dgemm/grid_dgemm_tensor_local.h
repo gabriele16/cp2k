@@ -1,6 +1,6 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
@@ -250,9 +250,10 @@ extern size_t realloc_tensor(tensor *t);
 extern void alloc_tensor(tensor *t);
 
 #define idx5(a, i, j, k, l, m)                                                 \
-  a.data[(i)*a.offsets[0] + (j)*a.offsets[1] + (k)*a.offsets[2] + (l)*a.ld_ + m]
+  a.data[(i) * a.offsets[0] + (j) * a.offsets[1] + (k) * a.offsets[2] +        \
+         (l) * a.ld_ + m]
 #define idx4(a, i, j, k, l)                                                    \
-  a.data[(i)*a.offsets[0] + (j)*a.offsets[1] + (k)*a.ld_ + (l)]
-#define idx3(a, i, j, k) a.data[(i)*a.offsets[0] + (j)*a.ld_ + (k)]
-#define idx2(a, i, j) a.data[(i)*a.ld_ + (j)]
+  a.data[(i) * a.offsets[0] + (j) * a.offsets[1] + (k) * a.ld_ + (l)]
+#define idx3(a, i, j, k) a.data[(i) * a.offsets[0] + (j) * a.ld_ + (k)]
+#define idx2(a, i, j) a.data[(i) * a.ld_ + (j)]
 #endif

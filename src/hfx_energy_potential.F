@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -30,11 +30,11 @@ MODULE hfx_energy_potential
                                  cp_print_key_should_output, &
                                  cp_print_key_unit_nr
    USE message_passing, ONLY: mp_para_env_type
-   USE dbcsr_api, ONLY: dbcsr_copy, &
-                        dbcsr_dot, &
-                        dbcsr_get_matrix_type, &
-                        dbcsr_p_type, &
-                        dbcsr_type_antisymmetric
+   USE cp_dbcsr_api, ONLY: dbcsr_copy, &
+                           dbcsr_get_matrix_type, &
+                           dbcsr_p_type, &
+                           dbcsr_type_antisymmetric, &
+                           dbcsr_dot_threadsafe
    USE gamma, ONLY: init_md_ftable
    USE hfx_communication, ONLY: distribute_ks_matrix, &
                                 get_atomic_block_maps, &
@@ -586,8 +586,9 @@ CONTAINS
          IF (.NOT. ks_fully_occ) THEN
             CALL cp_warn(__LOCATION__, &
                          "The Kohn Sham matrix is not 100% occupied. This "// &
-                         "may result in incorrect Hartree-Fock results. Try to decrease EPS_PGF_ORB "// &
-                         "and EPS_FILTER_MATRIX in the QS section. For more information "// &
+                         "may result in incorrect Hartree-Fock results. Setting "// &
+                         "MIN_PAIR_LIST_RADIUS to -1 in the QS section ensures a "// &
+                         "fully occupied KS matrix. For more information "// &
                          "see FAQ: https://www.cp2k.org/faq:hfx_eps_warning")
          END IF
       END IF
@@ -1924,8 +1925,7 @@ CONTAINS
          !! ** Calculate the exchange energy
          ene_x_aa = 0.0_dp
          DO img = 1, nkimages
-            CALL dbcsr_dot(ks_matrix(ispin, img)%matrix, rho_ao(ispin, img)%matrix, &
-                           etmp)
+            CALL dbcsr_dot_threadsafe(ks_matrix(ispin, img)%matrix, rho_ao(ispin, img)%matrix, etmp)
             ene_x_aa = ene_x_aa + etmp
          END DO
          !for ADMMS, we need the exchange matrix k(d) for both spins
@@ -1938,8 +1938,7 @@ CONTAINS
          ene_x_bb = 0.0_dp
          IF (nspins == 2 .AND. .NOT. treat_lsd_in_core) THEN
             DO img = 1, nkimages
-               CALL dbcsr_dot(ks_matrix(2, img)%matrix, rho_ao(2, img)%matrix, &
-                              etmp)
+               CALL dbcsr_dot_threadsafe(ks_matrix(2, img)%matrix, rho_ao(2, img)%matrix, etmp)
                ene_x_bb = ene_x_bb + etmp
             END DO
             !for ADMMS, we need the exchange matrix k(d) for both spins
@@ -2465,13 +2464,14 @@ CONTAINS
       REAL(dp), DIMENSION(*), INTENT(INOUT)              :: pbd, pbc, pad, pac, kbd, kbc, kad, kac
       INTEGER, INTENT(IN)                                :: iatom, jatom, katom, latom, iset, jset, &
                                                             kset, lset
-      INTEGER, DIMENSION(:, :), POINTER                  :: offset_bd_set, offset_bc_set, &
+      INTEGER, DIMENSION(:, :), POINTER, INTENT(IN)      :: offset_bd_set, offset_bc_set, &
                                                             offset_ad_set, offset_ac_set
       INTEGER, INTENT(IN)                                :: atomic_offset_bd, atomic_offset_bc, &
                                                             atomic_offset_ad, atomic_offset_ac
 
       INTEGER                                            :: i, j, ma, mb, mc, md, offset_ac, &
                                                             offset_ad, offset_bc, offset_bd
+      REAL(dp)                                           :: ki
 
       IF (jatom >= latom) THEN
          i = 1
@@ -2572,8 +2572,9 @@ CONTAINS
          j = offset_bd
          DO md = 1, md_max
             DO mb = 1, mb_max
+               ki = kbd(i)
 !$OMP           ATOMIC
-               ks(j) = ks(j) + kbd(i)
+               ks(j) = ks(j) + ki
                i = i + 1
                j = j + 1
             END DO
@@ -2583,8 +2584,9 @@ CONTAINS
          DO md = 1, md_max
             j = offset_bd + md - 1
             DO mb = 1, mb_max
+               ki = kbd(i)
 !$OMP           ATOMIC
-               ks(j) = ks(j) + kbd(i)
+               ks(j) = ks(j) + ki
                i = i + 1
                j = j + md_max
             END DO
@@ -2595,8 +2597,9 @@ CONTAINS
          j = offset_bc
          DO mc = 1, mc_max
             DO mb = 1, mb_max
+               ki = kbc(i)
 !$OMP           ATOMIC
-               ks(j) = ks(j) + kbc(i)
+               ks(j) = ks(j) + ki
                i = i + 1
                j = j + 1
             END DO
@@ -2606,8 +2609,9 @@ CONTAINS
          DO mc = 1, mc_max
             j = offset_bc + mc - 1
             DO mb = 1, mb_max
+               ki = kbc(i)
 !$OMP           ATOMIC
-               ks(j) = ks(j) + kbc(i)
+               ks(j) = ks(j) + ki
                i = i + 1
                j = j + mc_max
             END DO
@@ -2618,8 +2622,9 @@ CONTAINS
          j = offset_ad
          DO md = 1, md_max
             DO ma = 1, ma_max
+               ki = kad(i)
 !$OMP           ATOMIC
-               ks(j) = ks(j) + kad(i)
+               ks(j) = ks(j) + ki
                i = i + 1
                j = j + 1
             END DO
@@ -2629,8 +2634,9 @@ CONTAINS
          DO md = 1, md_max
             j = offset_ad + md - 1
             DO ma = 1, ma_max
+               ki = kad(i)
 !$OMP           ATOMIC
-               ks(j) = ks(j) + kad(i)
+               ks(j) = ks(j) + ki
                i = i + 1
                j = j + md_max
             END DO
@@ -2641,8 +2647,9 @@ CONTAINS
          j = offset_ac
          DO mc = 1, mc_max
             DO ma = 1, ma_max
+               ki = kac(i)
 !$OMP           ATOMIC
-               ks(j) = ks(j) + kac(i)
+               ks(j) = ks(j) + ki
                i = i + 1
                j = j + 1
             END DO
@@ -2652,8 +2659,9 @@ CONTAINS
          DO mc = 1, mc_max
             j = offset_ac + mc - 1
             DO ma = 1, ma_max
+               ki = kac(i)
 !$OMP           ATOMIC
-               ks(j) = ks(j) + kac(i)
+               ks(j) = ks(j) + ki
                i = i + 1
                j = j + mc_max
             END DO

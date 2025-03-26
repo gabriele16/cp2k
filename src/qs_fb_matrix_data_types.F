@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -60,11 +60,11 @@ MODULE qs_fb_matrix_data_types
 !> \author Lianheng Tong (LT) lianheng.tong@kcl.ac.uk
 ! **************************************************************************************************
    TYPE fb_matrix_data_data
-      INTEGER :: nmax
-      INTEGER :: nblks
-      INTEGER :: nencode
-      TYPE(fb_hash_table_obj) :: ind
-      TYPE(fb_buffer_d_obj) :: blks
+      INTEGER :: nmax = -1
+      INTEGER :: nblks = -1
+      INTEGER :: nencode = -1
+      TYPE(fb_hash_table_obj) :: ind = fb_hash_table_obj()
+      TYPE(fb_buffer_d_obj) :: blks = fb_buffer_d_obj()
       INTEGER, DIMENSION(:), POINTER :: lds => NULL()
    END TYPE fb_matrix_data_data
 

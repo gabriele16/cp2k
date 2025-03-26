@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -14,12 +14,12 @@
 MODULE kg_correction
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_add,&
+                                              dbcsr_p_type
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_dot
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: dbcsr_add,&
-                                              dbcsr_dot,&
-                                              dbcsr_p_type
    USE ec_methods,                      ONLY: create_kernel
    USE input_constants,                 ONLY: kg_tnadd_atomic,&
                                               kg_tnadd_embed,&
@@ -40,9 +40,9 @@ MODULE kg_correction
                                               pw_env_type
    USE pw_methods,                      ONLY: pw_integral_ab,&
                                               pw_scale
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_integrate_potential,          ONLY: integrate_v_rspace,&
@@ -147,10 +147,10 @@ CONTAINS
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: density_matrix
       TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho1_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho1_g, rho1_r, rho_r, tau1_r, vxc_rho, &
-                                                            vxc_tau
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho1_r, rho_r, tau1_r, vxc_rho, vxc_tau
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: old_rho, rho1, rho_struct
       TYPE(section_vals_type), POINTER                   :: xc_section
@@ -263,7 +263,7 @@ CONTAINS
          CALL integrate_v_rspace(v_rspace=vxc_rho(ispin), &
                                  pmat=density_matrix(ispin), hmat=ks_matrix(ispin), &
                                  qs_env=qs_env, calculate_forces=calc_force)
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_rho(ispin))
+         CALL auxbas_pw_pool%give_back_pw(vxc_rho(ispin))
       END DO
       DEALLOCATE (vxc_rho)
       ekin_mol = -ekin_imol
@@ -337,7 +337,7 @@ CONTAINS
                                     calculate_forces=calc_force, &
                                     task_list_external=kg_env%subset(isub)%task_list)
             ! clean up vxc_rho
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_rho(ispin))
+            CALL auxbas_pw_pool%give_back_pw(vxc_rho(ispin))
             IF (ASSOCIATED(vxc_tau)) THEN
                CALL pw_scale(vxc_tau(ispin), -alpha*vxc_tau(ispin)%pw_grid%dvol)
                CALL integrate_v_rspace(v_rspace=vxc_tau(ispin), &
@@ -348,7 +348,7 @@ CONTAINS
                                        calculate_forces=calc_force, &
                                        task_list_external=kg_env%subset(isub)%task_list)
                ! clean up vxc_rho
-               CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_tau(ispin))
+               CALL auxbas_pw_pool%give_back_pw(vxc_tau(ispin))
             END IF
          END DO
          DEALLOCATE (vxc_rho)
@@ -412,7 +412,7 @@ CONTAINS
       TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), DIMENSION(:), POINTER               :: vxc_rho, vxc_tau
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: vxc_rho, vxc_tau
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: old_rho, rho_struct
       TYPE(virial_type), POINTER                         :: virial
@@ -477,7 +477,7 @@ CONTAINS
          CALL pw_scale(vxc_rho(ispin), vxc_rho(ispin)%pw_grid%dvol)
          lri_v_int => lri_density%lri_coefs(ispin)%lri_kinds
          CALL integrate_v_rspace_one_center(vxc_rho(ispin), qs_env, lri_v_int, calc_force, "LRI_AUX")
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_rho(ispin))
+         CALL auxbas_pw_pool%give_back_pw(vxc_rho(ispin))
       END DO
       DEALLOCATE (vxc_rho)
       ekin_mol = -ekin_imol
@@ -507,7 +507,7 @@ CONTAINS
                                                lri_v_int, calc_force, &
                                                "LRI_AUX", atomlist=atomlist)
             ! clean up vxc_rho
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_rho(ispin))
+            CALL auxbas_pw_pool%give_back_pw(vxc_rho(ispin))
          END DO
          DEALLOCATE (vxc_rho)
 
@@ -585,9 +585,10 @@ CONTAINS
       TYPE(lri_environment_type), POINTER                :: lri_env, lri_env1
       TYPE(lri_kind_type), DIMENSION(:), POINTER         :: lri_v_int
       TYPE(mp_para_env_type), POINTER                    :: para_env
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho1_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho1_g, rho1_r, tau1_r, vxc_rho, vxc_tau
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho1_r, tau1_r, vxc_rho, vxc_tau
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho, rho1, rho_struct
       TYPE(section_vals_type), POINTER                   :: xc_section
@@ -720,7 +721,7 @@ CONTAINS
             lri_v_int => lri_density%lri_coefs(ispin)%lri_kinds
          END IF
          CALL integrate_v_rspace_one_center(vxc_rho(ispin), qs_env, lri_v_int, calc_force, "LRI_AUX")
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_rho(ispin))
+         CALL auxbas_pw_pool%give_back_pw(vxc_rho(ispin))
       END DO
 
       DEALLOCATE (vxc_rho)
@@ -789,7 +790,7 @@ CONTAINS
                                                lri_v_int, calc_force, &
                                                "LRI_AUX", atomlist=atomlist)
             ! clean up vxc_rho
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, vxc_rho(ispin))
+            CALL auxbas_pw_pool%give_back_pw(vxc_rho(ispin))
          END DO
          DEALLOCATE (vxc_rho)
 

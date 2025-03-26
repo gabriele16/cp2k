@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -11,8 +11,14 @@ MODULE qs_tddfpt2_forces
    USE atomic_kind_types,               ONLY: atomic_kind_type,&
                                               get_atomic_kind,&
                                               get_atomic_kind_set
+   USE bibliography,                    ONLY: Sertcan2024,&
+                                              cite_reference
    USE cp_control_types,                ONLY: dft_control_type,&
                                               tddfpt2_control_type
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_add, dbcsr_complete_redistribute, dbcsr_copy, dbcsr_create, dbcsr_p_type, &
+        dbcsr_release, dbcsr_scale, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_dot
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               copy_fm_to_dbcsr,&
@@ -32,9 +38,6 @@ MODULE qs_tddfpt2_forces
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add, dbcsr_complete_redistribute, dbcsr_copy, dbcsr_create, dbcsr_dot, dbcsr_p_type, &
-        dbcsr_release, dbcsr_scale, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric
    USE exstates_types,                  ONLY: excited_energy_type,&
                                               exstate_potential_release
    USE hartree_local_methods,           ONLY: Vh_1c_gg_integrals,&
@@ -55,7 +58,8 @@ MODULE qs_tddfpt2_forces
                                               section_vals_get_subs_vals,&
                                               section_vals_type,&
                                               section_vals_val_get
-   USE kinds,                           ONLY: dp
+   USE kinds,                           ONLY: default_string_length,&
+                                              dp
    USE message_passing,                 ONLY: mp_para_env_type
    USE mulliken,                        ONLY: ao_charges
    USE parallel_gemm_api,               ONLY: parallel_gemm
@@ -68,14 +72,9 @@ MODULE qs_tddfpt2_forces
                                               pw_zero
    USE pw_poisson_methods,              ONLY: pw_poisson_solve
    USE pw_poisson_types,                ONLY: pw_poisson_type
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_rho_elec
    USE qs_density_matrices,             ONLY: calculate_wx_matrix,&
                                               calculate_xwx_matrix
@@ -176,6 +175,9 @@ CONTAINS
       CALL timeset(routineN, handle)
 
       CALL get_qs_env(qs_env, dft_control=dft_control)
+
+      IF (dft_control%qs_control%gapw .OR. dft_control%qs_control%gapw_xc) CALL cite_reference(Sertcan2024)
+
       nspins = dft_control%nspins
       tddfpt_control => dft_control%tddfpt2_control
       ! rhs of linres equation
@@ -647,10 +649,11 @@ CONTAINS
       TYPE(tddfpt_ground_state_mos), DIMENSION(:), &
          POINTER                                         :: gs_mos
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_hz
-      TYPE(cp_fm_type), DIMENSION(:), INTENT(IN)         :: cpmos
+      TYPE(cp_fm_type), DIMENSION(:), INTENT(INOUT)      :: cpmos
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'tddfpt_resvec2'
 
+      CHARACTER(LEN=default_string_length)               :: basis_type
       INTEGER                                            :: handle, iounit, ispin, mspin, n_rep_hf, &
                                                             nao, nao_aux, natom, norb, nspins
       LOGICAL                                            :: deriv2_analytic, distribute_fock_matrix, &
@@ -675,21 +678,21 @@ CONTAINS
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
          POINTER                                         :: sab, sab_aux_fit
       TYPE(oce_matrix_type), POINTER                     :: oce
+      TYPE(pw_c1d_gs_type)                               :: rho_tot_gspace, v_hartree_gspace
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho_g, rho_g_aux, rhoz_g_aux, trho_g, &
+                                                            trho_xc_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rho_tot_gspace, v_hartree_gspace, &
-                                                            v_hartree_rspace
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_g, rho_g_aux, rho_r, rho_r_aux, &
-                                                            rhoz_g_aux, rhoz_r_aux, tau_r, trho_g, &
-                                                            trho_r, trho_xc_g, trho_xc_r, v_xc, &
-                                                            v_xc_tau
+      TYPE(pw_r3d_rs_type)                               :: v_hartree_rspace
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho_r, rho_r_aux, rhoz_r_aux, tau_r, &
+                                                            trho_r, trho_xc_r, v_xc, v_xc_tau
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho, rho_aux_fit, rho_xc, rhoz_aux, trho
       TYPE(rho_atom_type), DIMENSION(:), POINTER         :: rho1_atom_set, rho_atom_set
       TYPE(section_vals_type), POINTER                   :: hfx_section, input, xc_section
-      TYPE(task_list_type), POINTER                      :: task_list_aux_fit
+      TYPE(task_list_type), POINTER                      :: task_list
 
       CALL timeset(routineN, handle)
 
@@ -701,32 +704,29 @@ CONTAINS
       gapw = dft_control%qs_control%gapw
       gapw_xc = dft_control%qs_control%gapw_xc
 
+      CPASSERT(.NOT. dft_control%tddfpt2_control%do_exck)
+      CPASSERT(.NOT. dft_control%tddfpt2_control%do_hfxsr)
+      CPASSERT(.NOT. dft_control%tddfpt2_control%do_hfxlr)
+
       NULLIFY (auxbas_pw_pool, poisson_env)
       ! gets the tmp grids
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, &
                       poisson_env=poisson_env)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, v_hartree_gspace, &
-                             use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, rho_tot_gspace, &
-                             use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, v_hartree_rspace, &
-                             use_data=REALDATA3D, in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(v_hartree_gspace)
+      CALL auxbas_pw_pool%create_pw(rho_tot_gspace)
+      CALL auxbas_pw_pool%create_pw(v_hartree_rspace)
 
       ALLOCATE (trho_r(nspins), trho_g(nspins))
       DO ispin = 1, nspins
-         CALL pw_pool_create_pw(auxbas_pw_pool, trho_r(ispin), &
-                                use_data=REALDATA3D, in_space=REALSPACE)
-         CALL pw_pool_create_pw(auxbas_pw_pool, trho_g(ispin), &
-                                use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+         CALL auxbas_pw_pool%create_pw(trho_r(ispin))
+         CALL auxbas_pw_pool%create_pw(trho_g(ispin))
       END DO
       IF (gapw_xc) THEN
          ALLOCATE (trho_xc_r(nspins), trho_xc_g(nspins))
          DO ispin = 1, nspins
-            CALL pw_pool_create_pw(auxbas_pw_pool, trho_xc_r(ispin), &
-                                   use_data=REALDATA3D, in_space=REALSPACE)
-            CALL pw_pool_create_pw(auxbas_pw_pool, trho_xc_g(ispin), &
-                                   use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+            CALL auxbas_pw_pool%create_pw(trho_xc_r(ispin))
+            CALL auxbas_pw_pool%create_pw(trho_xc_g(ispin))
          END DO
       END IF
 
@@ -838,7 +838,7 @@ CONTAINS
             CALL get_qs_env(qs_env, rho_atom_set=rho_atom_set)
             rho1_atom_set => local_rho_set%rho_atom_set
             CALL calculate_xc_2nd_deriv_atom(rho_atom_set, rho1_atom_set, qs_env, xc_section, para_env, &
-                                             do_tddft=.TRUE., do_triplet=.FALSE.)
+                                             do_triplet=.FALSE.)
          END IF
       ELSE
          CPABORT("NYA 00006")
@@ -881,25 +881,25 @@ CONTAINS
                              rho_atom_external=local_rho_set%rho_atom_set)
       END IF
 
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, v_hartree_gspace)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, v_hartree_rspace)
-      CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_tot_gspace)
+      CALL auxbas_pw_pool%give_back_pw(v_hartree_gspace)
+      CALL auxbas_pw_pool%give_back_pw(v_hartree_rspace)
+      CALL auxbas_pw_pool%give_back_pw(rho_tot_gspace)
       DO ispin = 1, nspins
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, trho_r(ispin))
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, trho_g(ispin))
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc(ispin))
+         CALL auxbas_pw_pool%give_back_pw(trho_r(ispin))
+         CALL auxbas_pw_pool%give_back_pw(trho_g(ispin))
+         CALL auxbas_pw_pool%give_back_pw(v_xc(ispin))
       END DO
       DEALLOCATE (trho_r, trho_g, v_xc)
       IF (gapw_xc) THEN
          DO ispin = 1, nspins
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, trho_xc_r(ispin))
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, trho_xc_g(ispin))
+            CALL auxbas_pw_pool%give_back_pw(trho_xc_r(ispin))
+            CALL auxbas_pw_pool%give_back_pw(trho_xc_g(ispin))
          END DO
          DEALLOCATE (trho_xc_r, trho_xc_g)
       END IF
       IF (ASSOCIATED(v_xc_tau)) THEN
          DO ispin = 1, nspins
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc_tau(ispin))
+            CALL auxbas_pw_pool%give_back_pw(v_xc_tau(ispin))
          END DO
          DEALLOCATE (v_xc_tau)
       END IF
@@ -910,7 +910,8 @@ CONTAINS
             ! add ADMM xc_section_aux terms: f_x[rhoz_ADMM]
             CALL get_qs_env(qs_env, admm_env=admm_env)
             CALL get_admm_env(admm_env, rho_aux_fit=rho_aux_fit, matrix_s_aux_fit=msaux, &
-                              task_list_aux_fit=task_list_aux_fit)
+                              task_list_aux_fit=task_list)
+            basis_type = "AUX_FIT"
             !
             NULLIFY (mpe, mhz)
             ALLOCATE (mpe(nspins, 1))
@@ -926,6 +927,8 @@ CONTAINS
             ! GAPW/GAPW_XC initializations
             NULLIFY (local_rho_set_admm)
             IF (admm_env%do_gapw) THEN
+               basis_type = "AUX_FIT_SOFT"
+               task_list => admm_env%admm_gapw_env%task_list
                CALL get_qs_env(qs_env, atomic_kind_set=atomic_kind_set)
                CALL get_admm_env(admm_env, sab_aux_fit=sab_aux_fit)
                CALL local_rho_set_create(local_rho_set_admm)
@@ -946,16 +949,14 @@ CONTAINS
             ! rhoz_aux
             ALLOCATE (rhoz_r_aux(nspins), rhoz_g_aux(nspins))
             DO ispin = 1, nspins
-               CALL pw_pool_create_pw(auxbas_pw_pool, rhoz_r_aux(ispin), &
-                                      use_data=REALDATA3D, in_space=REALSPACE)
-               CALL pw_pool_create_pw(auxbas_pw_pool, rhoz_g_aux(ispin), &
-                                      use_data=COMPLEXDATA1D, in_space=RECIPROCALSPACE)
+               CALL auxbas_pw_pool%create_pw(rhoz_r_aux(ispin))
+               CALL auxbas_pw_pool%create_pw(rhoz_g_aux(ispin))
             END DO
             DO ispin = 1, nspins
                CALL calculate_rho_elec(ks_env=ks_env, matrix_p=mpe(ispin, 1)%matrix, &
                                        rho=rhoz_r_aux(ispin), rho_gspace=rhoz_g_aux(ispin), &
-                                       basis_type="AUX_FIT", &
-                                       task_list_external=task_list_aux_fit)
+                                       basis_type=basis_type, &
+                                       task_list_external=task_list)
             END DO
             !
             NULLIFY (v_xc)
@@ -976,23 +977,23 @@ CONTAINS
             DO ispin = 1, nspins
                CALL pw_scale(v_xc(ispin), v_xc(ispin)%pw_grid%dvol)
                CALL integrate_v_rspace(qs_env=qs_env, v_rspace=v_xc(ispin), &
-                                       hmat=mhz(ispin, 1), basis_type="AUX_FIT", &
+                                       hmat=mhz(ispin, 1), basis_type=basis_type, &
                                        calculate_forces=.FALSE., &
-                                       task_list_external=task_list_aux_fit)
+                                       task_list_external=task_list)
             END DO
             DO ispin = 1, nspins
-               CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc(ispin))
-               CALL pw_pool_give_back_pw(auxbas_pw_pool, rhoz_r_aux(ispin))
-               CALL pw_pool_give_back_pw(auxbas_pw_pool, rhoz_g_aux(ispin))
+               CALL auxbas_pw_pool%give_back_pw(v_xc(ispin))
+               CALL auxbas_pw_pool%give_back_pw(rhoz_r_aux(ispin))
+               CALL auxbas_pw_pool%give_back_pw(rhoz_g_aux(ispin))
             END DO
             DEALLOCATE (v_xc, rhoz_r_aux, rhoz_g_aux)
             !
             IF (admm_env%do_gapw) THEN
-               CALL get_qs_env(qs_env, rho_atom_set=rho_atom_set)
+               rho_atom_set => admm_env%admm_gapw_env%local_rho_set%rho_atom_set
                rho1_atom_set => local_rho_set_admm%rho_atom_set
                CALL calculate_xc_2nd_deriv_atom(rho_atom_set, rho1_atom_set, qs_env, xc_section, &
                                                 para_env, kind_set_external=admm_env%admm_gapw_env%admm_kind_set)
-               CALL update_ks_atom(qs_env, mhz(:, 1), matrix_pe_admm, forces=.FALSE., tddft=.TRUE., &
+               CALL update_ks_atom(qs_env, mhz(:, 1), matrix_pe_admm, forces=.FALSE., tddft=.FALSE., &
                                    rho_atom_external=rho1_atom_set, &
                                    kind_set_external=admm_env%admm_gapw_env%admm_kind_set, &
                                    oce_external=admm_env%admm_gapw_env%oce, &
@@ -1142,7 +1143,7 @@ CONTAINS
       TYPE(tddfpt_ground_state_mos), DIMENSION(:), &
          POINTER                                         :: gs_mos
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_hz
-      TYPE(cp_fm_type), DIMENSION(:), INTENT(IN)         :: cpmos
+      TYPE(cp_fm_type), DIMENSION(:), INTENT(INOUT)      :: cpmos
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'tddfpt_resvec2_xtb'
 

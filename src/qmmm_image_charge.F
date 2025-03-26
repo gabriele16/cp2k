@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -39,6 +39,7 @@ MODULE qmmm_image_charge
    USE kinds,                           ONLY: default_path_length,&
                                               dp
    USE mathconstants,                   ONLY: pi
+   USE mathlib,                         ONLY: invmat_symm
    USE memory_utilities,                ONLY: reallocate
    USE message_passing,                 ONLY: mp_para_env_type
    USE pw_env_types,                    ONLY: pw_env_get,&
@@ -50,14 +51,9 @@ MODULE qmmm_image_charge
                                               pw_zero
    USE pw_poisson_methods,              ONLY: pw_poisson_solve
    USE pw_poisson_types,                ONLY: pw_poisson_type
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qmmm_types_low,                  ONLY: qmmm_env_qm_type
    USE qs_collocate_density,            ONLY: calculate_rho_metal,&
                                               calculate_rho_single_gaussian
@@ -99,7 +95,8 @@ CONTAINS
    SUBROUTINE calculate_image_pot(v_hartree_rspace, rho_hartree_gspace, energy, &
                                   qmmm_env, qs_env)
 
-      TYPE(pw_type), INTENT(IN)                          :: v_hartree_rspace, rho_hartree_gspace
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: v_hartree_rspace
+      TYPE(pw_c1d_gs_type), INTENT(IN)                   :: rho_hartree_gspace
       TYPE(qs_energy_type), POINTER                      :: energy
       TYPE(qmmm_env_qm_type), POINTER                    :: qmmm_env
       TYPE(qs_environment_type), POINTER                 :: qs_env
@@ -154,7 +151,7 @@ CONTAINS
    SUBROUTINE calc_image_coeff_gaussalgorithm(v_hartree_rspace, coeff, qmmm_env, &
                                               qs_env)
 
-      TYPE(pw_type), INTENT(IN)                          :: v_hartree_rspace
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: v_hartree_rspace
       REAL(KIND=dp), DIMENSION(:), POINTER               :: coeff
       TYPE(qmmm_env_qm_type), POINTER                    :: qmmm_env
       TYPE(qs_environment_type), POINTER                 :: qs_env
@@ -186,8 +183,8 @@ CONTAINS
       pot_const(:) = -pot_const(:) + V0*SQRT((pi/eta)**3)
 
       !solve linear system of equations T*coeff=-pot_const
-      !LU factorization of T  by DGETRF done in calculate_image_matrix
-      CALL DGETRS('N', natom, 1, qs_env%image_matrix, natom, qs_env%ipiv, &
+      !LU factorization of T by DGETRF done in calculate_image_matrix
+      CALL dgetrs('N', natom, 1, qs_env%image_matrix, natom, qs_env%ipiv, &
                   pot_const, natom, info)
       CPASSERT(info == 0)
 
@@ -210,7 +207,7 @@ CONTAINS
    SUBROUTINE calc_image_coeff_iterative(v_hartree_rspace, coeff, qmmm_env, &
                                          qs_env)
 
-      TYPE(pw_type), INTENT(IN)                          :: v_hartree_rspace
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: v_hartree_rspace
       REAL(KIND=dp), DIMENSION(:), POINTER               :: coeff
       TYPE(qmmm_env_qm_type), POINTER                    :: qmmm_env
       TYPE(qs_environment_type), POINTER                 :: qs_env
@@ -221,7 +218,7 @@ CONTAINS
       REAL(KIND=dp)                                      :: alpha, eta, rsnew, rsold, V0
       REAL(KIND=dp), DIMENSION(:), POINTER               :: Ad, d, pot_const, r, vmetal_const, z
       TYPE(cp_logger_type), POINTER                      :: logger
-      TYPE(pw_type)                                      :: auxpot_Ad_rspace, v_metal_rspace_guess
+      TYPE(pw_r3d_rs_type)                               :: auxpot_Ad_rspace, v_metal_rspace_guess
       TYPE(section_vals_type), POINTER                   :: input
 
       CALL timeset(routineN, handle)
@@ -289,12 +286,12 @@ CONTAINS
          iter_steps = iter_steps + 1
          ! SQRT(rsnew) < 1.0E-08
          IF (rsnew < 1.0E-16) THEN
-            CALL pw_release(auxpot_Ad_rspace)
+            CALL auxpot_Ad_rspace%release()
             EXIT
          END IF
          d = z + rsnew/rsold*d
          rsold = rsnew
-         CALL pw_release(auxpot_Ad_rspace)
+         CALL auxpot_Ad_rspace%release()
       END DO
 
       ! print iteration info
@@ -314,7 +311,7 @@ CONTAINS
          qs_env%calc_image_preconditioner = .TRUE.
       END IF
 
-      CALL pw_release(v_metal_rspace_guess)
+      CALL v_metal_rspace_guess%release()
       DEALLOCATE (pot_const)
       DEALLOCATE (vmetal_const)
       DEALLOCATE (r)
@@ -338,7 +335,7 @@ CONTAINS
    SUBROUTINE integrate_potential_ga_rspace(potential, qmmm_env, qs_env, int_res, &
                                             atom_num, atom_num_ref)
 
-      TYPE(pw_type), INTENT(IN)                          :: potential
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: potential
       TYPE(qmmm_env_qm_type), POINTER                    :: qmmm_env
       TYPE(qs_environment_type), POINTER                 :: qs_env
       REAL(KIND=dp), DIMENSION(:), POINTER               :: int_res
@@ -454,7 +451,7 @@ CONTAINS
    SUBROUTINE integrate_potential_devga_rspace(potential, coeff, forces, qmmm_env, &
                                                qs_env)
 
-      TYPE(pw_type), INTENT(IN)                          :: potential
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: potential
       REAL(KIND=dp), DIMENSION(:), POINTER               :: coeff
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: forces
       TYPE(qmmm_env_qm_type), POINTER                    :: qmmm_env
@@ -620,7 +617,7 @@ CONTAINS
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'calculate_image_matrix'
 
-      INTEGER                                            :: handle, j, k, natom, output_unit, stat
+      INTEGER                                            :: handle, natom, output_unit, stat
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(section_vals_type), POINTER                   :: input
 
@@ -668,20 +665,12 @@ CONTAINS
 
       IF (qmmm_env%image_charge_pot%coeff_iterative) THEN
          !inversion --> preconditioner matrix for CG
-         CALL DPOTRF('L', natom, qs_env%image_matrix, natom, stat)
-         CPASSERT(stat == 0)
-         CALL DPOTRI('L', natom, qs_env%image_matrix, natom, stat)
-         CPASSERT(stat == 0)
-         DO j = 1, natom
-            DO k = j + 1, natom
-               qs_env%image_matrix(j, k) = qs_env%image_matrix(k, j)
-            END DO
-         END DO
+         CALL invmat_symm(qs_env%image_matrix)
          CALL write_image_matrix(qs_env%image_matrix, qs_env)
       ELSE
          !pivoting prior to DGETRS (Gaussian elimination)
          IF (PRESENT(ipiv)) THEN
-            CALL DGETRF(natom, natom, image_matrix, natom, ipiv, stat)
+            CALL dgetrf(natom, natom, image_matrix, natom, ipiv, stat)
             CPASSERT(stat == 0)
          END IF
       END IF
@@ -706,10 +695,11 @@ CONTAINS
       INTEGER                                            :: handle, iatom, iatom_ref, natom
       REAL(KIND=dp), DIMENSION(:), POINTER               :: int_res
       TYPE(mp_para_env_type), POINTER                    :: para_env
+      TYPE(pw_c1d_gs_type)                               :: rho_gb, vb_gspace
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rho_gb, vb_gspace, vb_rspace
+      TYPE(pw_r3d_rs_type)                               :: vb_rspace
 
       CALL timeset(routineN, handle)
       NULLIFY (pw_env, auxbas_pw_pool, poisson_env, para_env, int_res)
@@ -723,18 +713,9 @@ CONTAINS
 
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, &
                       poisson_env=poisson_env)
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             rho_gb, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             vb_gspace, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             vb_rspace, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(rho_gb)
+      CALL auxbas_pw_pool%create_pw(vb_gspace)
+      CALL auxbas_pw_pool%create_pw(vb_rspace)
 
       ! calculate vb only once for one reference atom
       iatom_ref = 1 !
@@ -758,9 +739,9 @@ CONTAINS
          image_matrix(iatom + 1:natom, iatom) = int_res(iatom + 1:natom)
       END DO
 
-      CALL pw_release(vb_gspace)
-      CALL pw_release(vb_rspace)
-      CALL pw_release(rho_gb)
+      CALL vb_gspace%release()
+      CALL vb_rspace%release()
+      CALL rho_gb%release()
 
       DEALLOCATE (int_res)
 
@@ -869,9 +850,9 @@ CONTAINS
    SUBROUTINE calculate_potential_metal(v_metal_rspace, coeff, rho_hartree_gspace, energy, &
                                         qs_env)
 
-      TYPE(pw_type), INTENT(OUT)                         :: v_metal_rspace
+      TYPE(pw_r3d_rs_type), INTENT(OUT)                  :: v_metal_rspace
       REAL(KIND=dp), DIMENSION(:), POINTER               :: coeff
-      TYPE(pw_type), INTENT(IN), OPTIONAL                :: rho_hartree_gspace
+      TYPE(pw_c1d_gs_type), INTENT(IN), OPTIONAL         :: rho_hartree_gspace
       TYPE(qs_energy_type), OPTIONAL, POINTER            :: energy
       TYPE(qs_environment_type), POINTER                 :: qs_env
 
@@ -880,10 +861,10 @@ CONTAINS
       INTEGER                                            :: handle
       REAL(KIND=dp)                                      :: en_external, en_vmetal_rhohartree, &
                                                             total_rho_metal
+      TYPE(pw_c1d_gs_type)                               :: rho_metal, v_metal_gspace
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_poisson_type), POINTER                     :: poisson_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type)                                      :: rho_metal, v_metal_gspace
 
       CALL timeset(routineN, handle)
 
@@ -895,20 +876,11 @@ CONTAINS
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, &
                       poisson_env=poisson_env)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             rho_metal, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(rho_metal)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             v_metal_gspace, &
-                             use_data=COMPLEXDATA1D, &
-                             in_space=RECIPROCALSPACE)
+      CALL auxbas_pw_pool%create_pw(v_metal_gspace)
 
-      CALL pw_pool_create_pw(auxbas_pw_pool, &
-                             v_metal_rspace, &
-                             use_data=REALDATA3D, &
-                             in_space=REALSPACE)
+      CALL auxbas_pw_pool%create_pw(v_metal_rspace)
 
       CALL pw_zero(rho_metal)
       CALL calculate_rho_metal(rho_metal, coeff, total_rho_metal=total_rho_metal, &
@@ -930,8 +902,8 @@ CONTAINS
       CALL pw_zero(v_metal_rspace)
       CALL pw_transfer(v_metal_gspace, v_metal_rspace)
       CALL pw_scale(v_metal_rspace, v_metal_rspace%pw_grid%dvol)
-      CALL pw_release(v_metal_gspace)
-      CALL pw_release(rho_metal)
+      CALL v_metal_gspace%release()
+      CALL rho_metal%release()
 
       CALL timestop(handle)
 
@@ -945,8 +917,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE add_image_pot_to_hartree_pot(v_hartree, v_metal, qs_env)
 
-      TYPE(pw_type), INTENT(INOUT)                       :: v_hartree
-      TYPE(pw_type), INTENT(IN)                          :: v_metal
+      TYPE(pw_r3d_rs_type), INTENT(INOUT)                :: v_hartree
+      TYPE(pw_r3d_rs_type), INTENT(IN)                   :: v_metal
       TYPE(qs_environment_type), POINTER                 :: qs_env
 
       CHARACTER(len=*), PARAMETER :: routineN = 'add_image_pot_to_hartree_pot'

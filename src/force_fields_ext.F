@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -176,7 +176,7 @@ CONTAINS
                gro_info%bond_k(itype) = cp_unit_to_cp2k(gro_info%bond_k(itype), "kjmol*nm^-2")
             END IF
             gro_info%bond_r0(itype) = cp_unit_to_cp2k(gro_info%bond_r0(itype), "nm")
-            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT BONDTYPE INFO HERE!!!!"
+            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT BONDTYPE INFO HERE!"
          END DO
       END IF
 
@@ -203,7 +203,7 @@ CONTAINS
                gro_info%bend_k(itype) = ekt/ACOS(csq)**2
             END IF
             gro_info%bend_k(itype) = cp_unit_to_cp2k(gro_info%bend_k(itype), "kjmol")
-            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT BONDANGLETYPE INFO HERE!!!!"
+            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT BONDANGLETYPE INFO HERE!"
          END DO
       END IF
 
@@ -222,7 +222,7 @@ CONTAINS
             CALL parser_get_object(parser, gro_info%impr_phi0(itype))
             gro_info%impr_phi0(itype) = cp_unit_to_cp2k(gro_info%impr_phi0(itype), "deg")
             gro_info%impr_k(itype) = cp_unit_to_cp2k(gro_info%impr_k(itype), "kjmol*deg^-2")
-            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT IMPDIHEDRALTYPE INFO HERE!!!!"
+            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT IMPDIHEDRALTYPE INFO HERE!"
          END DO
       END IF
 
@@ -243,7 +243,7 @@ CONTAINS
             CALL parser_get_object(parser, gro_info%torsion_m(itype))
             gro_info%torsion_phi0(itype) = ACOS(cosphi0)
             gro_info%torsion_k(itype) = cp_unit_to_cp2k(gro_info%torsion_k(itype), "kjmol")
-            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT DIHEDRALTYPE INFO HERE!!!!"
+            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT DIHEDRALTYPE INFO HERE!"
          END DO
       END IF
 
@@ -293,7 +293,7 @@ CONTAINS
             gro_info%nonbond_c12_14(jatom, iatom) = gro_info%nonbond_c12_14(iatom, jatom)
             gro_info%nonbond_c6(jatom, iatom) = gro_info%nonbond_c6(iatom, jatom)
             gro_info%nonbond_c12(jatom, iatom) = gro_info%nonbond_c12(iatom, jatom)
-            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT LJPARAMETERS INFO HERE!!!!"
+            IF (iw > 0) WRITE (iw, *) "GROMOS_FF| PUT LJPARAMETERS INFO HERE!"
          END DO
       END IF
       CALL parser_release(parser)
@@ -763,12 +763,13 @@ CONTAINS
          amb_info%torsion_k(i) = cp_unit_to_cp2k(amb_info%torsion_k(i), "kcalmol")
       END DO
 
-      DO i = 1, SIZE(amb_info%raw_torsion_k)
-
-         ! Do some units conversion into internal atomic units
-         amb_info%raw_torsion_phi0(i) = cp_unit_to_cp2k(amb_info%raw_torsion_phi0(i), "rad")
-         amb_info%raw_torsion_k(i) = cp_unit_to_cp2k(amb_info%raw_torsion_k(i), "kcalmol")
-      END DO
+      ! Do some units conversion into internal atomic units
+      IF (ASSOCIATED(amb_info%raw_torsion_phi0)) THEN
+         DO i = 1, SIZE(amb_info%raw_torsion_k)
+            amb_info%raw_torsion_phi0(i) = cp_unit_to_cp2k(amb_info%raw_torsion_phi0(i), "rad")
+            amb_info%raw_torsion_k(i) = cp_unit_to_cp2k(amb_info%raw_torsion_k(i), "kcalmol")
+         END DO
+      END IF
 
       !-----------------------------------------------------------------------------
       ! 4. Converts all the Nonbonded info from the param file here

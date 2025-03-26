@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -16,12 +16,12 @@ MODULE efield_utils
                                               pbc
    USE cp_control_types,                ONLY: dft_control_type,&
                                               efield_type
-   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
-                                              dbcsr_deallocate_matrix_set
-   USE dbcsr_api,                       ONLY: dbcsr_add,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_add,&
                                               dbcsr_copy,&
                                               dbcsr_p_type,&
                                               dbcsr_set
+   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
+                                              dbcsr_deallocate_matrix_set
    USE input_constants,                 ONLY: constant_env,&
                                               custom_env,&
                                               gaussian_env,&
@@ -54,9 +54,9 @@ CONTAINS
 
 ! **************************************************************************************************
 !> \brief Replace the original implementation of the electric-electronic
-!>        interaction in the lenght gauge. This calculation is no longer done in
+!>        interaction in the length gauge. This calculation is no longer done in
 !>        the grid but using matrices to match the velocity gauge implementation.
-!>        Note: The energy is store in energy%core and computed later on.
+!>        Note: The energy is stored in energy%core and computed later on.
 !> \param qs_env ...
 !> \author Guillaume Le Breton (02.23)
 ! **************************************************************************************************
@@ -127,10 +127,11 @@ CONTAINS
 
       c = 137.03599962875_dp
       field = 0._dp
+      nu = 0.0_dp
       nfield = SIZE(dft_control%efield_fields)
       DO i = 1, nfield
          efield => dft_control%efield_fields(i)%efield
-         IF (.NOT. efield%envelop_id == custom_env) nu = c/(efield%wavelength) !in case of a custom efield we do not need nu
+         IF (.NOT. efield%envelop_id == custom_env .AND. efield%wavelength > EPSILON(0.0_dp)) nu = c/(efield%wavelength) !in case of a custom efield we do not need nu
          strength = SQRT(efield%strength/(3.50944_dp*10.0_dp**16))
          IF (DOT_PRODUCT(efield%polarisation, efield%polarisation) == 0) THEN
             pol(:) = 1.0_dp/3.0_dp
@@ -176,7 +177,7 @@ CONTAINS
 !> \brief Computes the force and the energy due to a efield on the cores
 !>        Note: In the velocity gauge, the energy term is not added because
 !>        it would lead to an unbalanced energy (center of negative charge not
-!>        computed in velocity gauge).
+!>        involved in the electric energy in this gauge).
 !> \param qs_env ...
 !> \param calculate_forces ...
 !> \author Florian Schiffmann (02.09)
@@ -205,7 +206,7 @@ CONTAINS
       NULLIFY (dft_control)
       CALL timeset(routineN, handle)
       CALL get_qs_env(qs_env, dft_control=dft_control)
-      IF (dft_control%apply_efield_field) THEN
+      IF (dft_control%apply_efield_field .OR. dft_control%apply_vector_potential) THEN
          my_force = .FALSE.
          IF (PRESENT(calculate_forces)) my_force = calculate_forces
 
@@ -225,10 +226,11 @@ CONTAINS
 
             natom = SIZE(list)
             DO iatom = 1, natom
-
-               atom_a = list(iatom)
-               r(:) = pbc(particle_set(atom_a)%r(:), cell)
-               efield_ener = efield_ener - zeff*DOT_PRODUCT(r, field)
+               IF (dft_control%apply_efield_field) THEN
+                  atom_a = list(iatom)
+                  r(:) = pbc(particle_set(atom_a)%r(:), cell)
+                  efield_ener = efield_ener - zeff*DOT_PRODUCT(r, field)
+               END IF
                IF (my_force) THEN
                   CALL get_qs_env(qs_env=qs_env, force=force)
                   force(ikind)%efield(:, iatom) = force(ikind)%efield(:, iatom) - field*zeff
@@ -236,7 +238,7 @@ CONTAINS
             END DO
 
          END DO
-         energy%efield_core = efield_ener
+         IF (dft_control%apply_efield_field) energy%efield_core = efield_ener
       END IF
       CALL timestop(handle)
    END SUBROUTINE calculate_ecore_efield

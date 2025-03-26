@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -29,9 +29,9 @@ MODULE input_cp2k_check
    USE input_parsing,                   ONLY: section_vals_parse
    USE input_section_types,             ONLY: &
         section_type, section_vals_create, section_vals_get, section_vals_get_subs_vals, &
-        section_vals_get_subs_vals3, section_vals_release, section_vals_remove_values, &
-        section_vals_set_subs_vals, section_vals_type, section_vals_val_get, section_vals_val_set, &
-        section_vals_val_unset
+        section_vals_get_subs_vals2, section_vals_get_subs_vals3, section_vals_release, &
+        section_vals_remove_values, section_vals_set_subs_vals, section_vals_type, &
+        section_vals_val_get, section_vals_val_set, section_vals_val_unset
    USE input_val_types,                 ONLY: logical_t
    USE kinds,                           ONLY: default_path_length,&
                                               default_string_length,&
@@ -109,7 +109,7 @@ CONTAINS
             IF ((explicit_embed .AND. (nforce_eval == 1)) .OR. (.NOT. explicit_embed .AND. (nforce_eval > 1))) THEN
                CALL cp_abort(__LOCATION__, &
                              "Error multiple force_env without RESPA or MIXED or EMBED, or RESPA with one single "// &
-                             " or MIXED with only two force_env section.")
+                             "or MIXED with only two force_env section.")
             END IF
          END IF
       END IF
@@ -122,15 +122,6 @@ CONTAINS
          section1 => section_vals_get_subs_vals(section, "XAS_TDP%KERNEL")
          section2 => section_vals_get_subs_vals(section, "XAS_TDP%KERNEL%XC_FUNCTIONAL")
          CALL xc_functionals_expand(section2, section1)
-         section1 => section_vals_get_subs_vals(section, "TDDFPT%XC")
-         section2 => section_vals_get_subs_vals(section, "TDDFPT%XC%XC_FUNCTIONAL")
-         CALL section_vals_get(section2, explicit=explicit)
-         IF (explicit) THEN
-            CALL xc_functionals_expand(section2, section1)
-         ELSE
-            section2 => section_vals_get_subs_vals(section, "XC%XC_FUNCTIONAL")
-            CALL section_vals_set_subs_vals(section, "TDDFPT%XC%XC_FUNCTIONAL", section2)
-         END IF
       END DO
 
       CALL timestop(handle)
@@ -145,10 +136,28 @@ CONTAINS
    SUBROUTINE xc_functionals_expand(functionals, xc_section)
       TYPE(section_vals_type), POINTER                   :: functionals, xc_section
 
-      INTEGER                                            :: shortcut
+      CHARACTER(LEN=512)                                 :: wrn_msg
+      INTEGER                                            :: ifun, nfun, shortcut
+      TYPE(section_vals_type), POINTER                   :: xc_fun
 
       CALL section_vals_val_get(functionals, "_SECTION_PARAMETERS_", &
                                 i_val=shortcut)
+
+      ifun = 0
+      nfun = 0
+      DO
+         ifun = ifun + 1
+         xc_fun => section_vals_get_subs_vals2(functionals, i_section=ifun)
+         IF (.NOT. ASSOCIATED(xc_fun)) EXIT
+         nfun = nfun + 1
+      END DO
+!
+      IF (shortcut /= xc_funct_no_shortcut .AND. shortcut /= xc_none .AND. nfun > 0) THEN
+         WRITE (wrn_msg, '(A)') "User requested a shortcut while defining an explicit XC functional. "// &
+            "This is not recommended as it could lead to spurious behaviour. Please check input parameters."
+         CPWARN(wrn_msg)
+      END IF
+
       SELECT CASE (shortcut)
       CASE (xc_funct_no_shortcut, xc_none)
          ! nothing to expand

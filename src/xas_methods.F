@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -27,6 +27,14 @@ MODULE xas_methods
                                               pbc
    USE cp_array_utils,                  ONLY: cp_2d_r_p_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_convert_offsets_to_sizes,&
+                                              dbcsr_copy,&
+                                              dbcsr_create,&
+                                              dbcsr_distribution_type,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set,&
+                                              dbcsr_type,&
+                                              dbcsr_type_antisymmetric
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: copy_fm_to_dbcsr,&
                                               cp_dbcsr_sm_fm_multiply,&
@@ -52,14 +60,6 @@ MODULE xas_methods
                                               cp_print_key_finished_output,&
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_convert_offsets_to_sizes,&
-                                              dbcsr_copy,&
-                                              dbcsr_create,&
-                                              dbcsr_distribution_type,&
-                                              dbcsr_p_type,&
-                                              dbcsr_set,&
-                                              dbcsr_type,&
-                                              dbcsr_type_antisymmetric
    USE input_constants,                 ONLY: &
         do_loc_none, state_loc_list, state_loc_range, xas_1s_type, xas_2p_type, xas_2s_type, &
         xas_3d_type, xas_3p_type, xas_3s_type, xas_4d_type, xas_4f_type, xas_4p_type, xas_4s_type, &
@@ -854,8 +854,7 @@ CONTAINS
          DO i = 1, 3
             ALLOCATE (xas_env%ostrength_sm(i)%matrix)
             CALL dbcsr_copy(xas_env%ostrength_sm(i)%matrix, matrix_s(1)%matrix, &
-                            "xas_env%ostrength_sm"// &
-                            "-"//TRIM(ADJUSTL(cp_to_string(i))))
+                            "xas_env%ostrength_sm-"//TRIM(ADJUSTL(cp_to_string(i))))
             CALL dbcsr_set(xas_env%ostrength_sm(i)%matrix, 0.0_dp)
          END DO
       ELSEIF (xas_control%dipole_form == xas_dip_vel) THEN
@@ -879,7 +878,7 @@ CONTAINS
                            name="xas_env%ostrength_sm", &
                            dist=dbcsr_dist, matrix_type=dbcsr_type_antisymmetric, &
                            row_blk_size=row_blk_sizes, col_blk_size=row_blk_sizes, &
-                           nze=0, mutable_work=.TRUE.)
+                           mutable_work=.TRUE.)
          CALL cp_dbcsr_alloc_block_from_nbl(xas_env%ostrength_sm(1)%matrix, sab_orb)
          CALL dbcsr_set(xas_env%ostrength_sm(1)%matrix, 0.0_dp)
          DO i = 2, 3

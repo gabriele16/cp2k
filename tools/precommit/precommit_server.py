@@ -45,13 +45,13 @@ def shellcheck():
 @app.route("/mdformat", methods=["POST"])
 @app.route("/markdownlint", methods=["POST"])  # for backwards compatibility
 def mdformat():
-    return run_tool(["mdformat"])
+    return run_tool(["mdformat", "--wrap=100"])
 
 
 # ======================================================================================
 @app.route("/clangformat", methods=["POST"])
 def clangformat():
-    return run_tool(["clang-format", "--style=llvm", "-i"])
+    return run_tool(["clang_format_wrapper.sh"])
 
 
 # ======================================================================================

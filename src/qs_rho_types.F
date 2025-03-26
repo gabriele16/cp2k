@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -16,7 +16,7 @@
 !> \author Fawzi Mohamed
 ! **************************************************************************************************
 MODULE qs_rho_types
-   USE dbcsr_api,                       ONLY: dbcsr_p_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_p_type
    USE kinds,                           ONLY: dp
    USE kpoint_transitional,             ONLY: get_1d_pointer,&
                                               get_2d_pointer,&
@@ -24,10 +24,9 @@ MODULE qs_rho_types
                                               kpoint_transitional_type,&
                                               set_1d_pointer,&
                                               set_2d_pointer
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -62,30 +61,33 @@ MODULE qs_rho_types
 ! **************************************************************************************************
    TYPE qs_rho_type
       PRIVATE
-      TYPE(kpoint_transitional_type)                 :: rho_ao
-      TYPE(kpoint_transitional_type)                 :: rho_ao_im
-      TYPE(pw_type), DIMENSION(:), POINTER         :: rho_r => Null(), &
-                                                      rho_g => Null(), &
-                                                      tau_r => Null(), &
-                                                      tau_g => Null()
-      TYPE(pw_type), DIMENSION(:, :), POINTER :: drho_r => NULL(), drho_g => NULL()
+      TYPE(kpoint_transitional_type)                        :: rho_ao = kpoint_transitional_type()
+      TYPE(kpoint_transitional_type)                        :: rho_ao_im = kpoint_transitional_type()
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER           :: rho_r => Null()
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER           :: rho_g => Null()
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER           :: tau_r => Null()
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER           :: tau_g => Null()
+      TYPE(pw_r3d_rs_type), DIMENSION(:, :), POINTER        :: drho_r => NULL()
+      TYPE(pw_c1d_gs_type), DIMENSION(:, :), POINTER        :: drho_g => NULL()
       ! Final rho_iter of last SCCS cycle (r-space)
-      TYPE(pw_type), POINTER                       :: rho_r_sccs => Null()
-      LOGICAL                                        :: rho_g_valid = .FALSE., &
-                                                        rho_r_valid = .FALSE., &
-                                                        drho_r_valid = .FALSE., &
-                                                        drho_g_valid = .FALSE., &
-                                                        tau_r_valid = .FALSE., &
-                                                        tau_g_valid = .FALSE., &
-                                                        soft_valid = .FALSE., &
-                                                        complex_rho_ao = .FALSE.
-      REAL(KIND=dp), DIMENSION(:), POINTER           :: tot_rho_r => Null(), &
-                                                        tot_rho_g => Null()
+      TYPE(pw_r3d_rs_type), POINTER                         :: rho_r_sccs => Null()
+      !
+      LOGICAL                                               :: rho_g_valid = .FALSE., &
+                                                               rho_r_valid = .FALSE., &
+                                                               drho_r_valid = .FALSE., &
+                                                               drho_g_valid = .FALSE., &
+                                                               tau_r_valid = .FALSE., &
+                                                               tau_g_valid = .FALSE., &
+                                                               soft_valid = .FALSE., &
+                                                               complex_rho_ao = .FALSE.
+      !
+      REAL(KIND=dp), DIMENSION(:), POINTER                  :: tot_rho_r => Null(), &
+                                                               tot_rho_g => Null()
    END TYPE qs_rho_type
 
 ! **************************************************************************************************
    TYPE qs_rho_p_type
-      TYPE(qs_rho_type), POINTER                     :: rho
+      TYPE(qs_rho_type), POINTER                     :: rho => NULL()
    END TYPE qs_rho_p_type
 
 CONTAINS
@@ -128,14 +130,14 @@ CONTAINS
 
       IF (ASSOCIATED(rho_struct%rho_r)) THEN
          DO i = 1, SIZE(rho_struct%rho_r)
-            CALL pw_release(rho_struct%rho_r(i))
+            CALL rho_struct%rho_r(i)%release()
          END DO
          DEALLOCATE (rho_struct%rho_r)
       END IF
       IF (ASSOCIATED(rho_struct%drho_r)) THEN
          DO j = 1, SIZE(rho_struct%drho_r, 2)
             DO i = 1, SIZE(rho_struct%drho_r, 1)
-               CALL pw_release(rho_struct%drho_r(i, j))
+               CALL rho_struct%drho_r(i, j)%release()
             END DO
          END DO
          DEALLOCATE (rho_struct%drho_r)
@@ -143,31 +145,31 @@ CONTAINS
       IF (ASSOCIATED(rho_struct%drho_g)) THEN
          DO i = 1, SIZE(rho_struct%drho_g, 2)
             DO j = 1, SIZE(rho_struct%drho_g, 1)
-               CALL pw_release(rho_struct%drho_g(i, j))
+               CALL rho_struct%drho_g(i, j)%release()
             END DO
          END DO
          DEALLOCATE (rho_struct%drho_g)
       END IF
       IF (ASSOCIATED(rho_struct%tau_r)) THEN
          DO i = 1, SIZE(rho_struct%tau_r)
-            CALL pw_release(rho_struct%tau_r(i))
+            CALL rho_struct%tau_r(i)%release()
          END DO
          DEALLOCATE (rho_struct%tau_r)
       END IF
       IF (ASSOCIATED(rho_struct%rho_g)) THEN
          DO i = 1, SIZE(rho_struct%rho_g)
-            CALL pw_release(rho_struct%rho_g(i))
+            CALL rho_struct%rho_g(i)%release()
          END DO
          DEALLOCATE (rho_struct%rho_g)
       END IF
       IF (ASSOCIATED(rho_struct%tau_g)) THEN
          DO i = 1, SIZE(rho_struct%tau_g)
-            CALL pw_release(rho_struct%tau_g(i))
+            CALL rho_struct%tau_g(i)%release()
          END DO
          DEALLOCATE (rho_struct%tau_g)
       END IF
       IF (ASSOCIATED(rho_struct%rho_r_sccs)) THEN
-         CALL pw_release(rho_struct%rho_r_sccs)
+         CALL rho_struct%rho_r_sccs%release()
          DEALLOCATE (rho_struct%rho_r_sccs)
       END IF
 
@@ -175,10 +177,8 @@ CONTAINS
 
       CALL kpoint_transitional_release(rho_struct%rho_ao_im)
 
-      IF (ASSOCIATED(rho_struct%tot_rho_r)) &
-         DEALLOCATE (rho_struct%tot_rho_r)
-      IF (ASSOCIATED(rho_struct%tot_rho_g)) &
-         DEALLOCATE (rho_struct%tot_rho_g)
+      IF (ASSOCIATED(rho_struct%tot_rho_r)) DEALLOCATE (rho_struct%tot_rho_r)
+      IF (ASSOCIATED(rho_struct%tot_rho_g)) DEALLOCATE (rho_struct%tot_rho_g)
 
    END SUBROUTINE qs_rho_clear
 
@@ -231,15 +231,22 @@ CONTAINS
          POINTER                                         :: rho_ao, rho_ao_im
       TYPE(dbcsr_p_type), DIMENSION(:, :), OPTIONAL, &
          POINTER                                         :: rho_ao_kp, rho_ao_im_kp
-      TYPE(pw_type), DIMENSION(:), OPTIONAL, POINTER     :: rho_r
-      TYPE(pw_type), DIMENSION(:, :), OPTIONAL, POINTER  :: drho_r
-      TYPE(pw_type), DIMENSION(:), OPTIONAL, POINTER     :: rho_g
-      TYPE(pw_type), DIMENSION(:, :), OPTIONAL, POINTER  :: drho_g
-      TYPE(pw_type), DIMENSION(:), OPTIONAL, POINTER     :: tau_r, tau_g
+      TYPE(pw_r3d_rs_type), DIMENSION(:), OPTIONAL, &
+         POINTER                                         :: rho_r
+      TYPE(pw_r3d_rs_type), DIMENSION(:, :), OPTIONAL, &
+         POINTER                                         :: drho_r
+      TYPE(pw_c1d_gs_type), DIMENSION(:), OPTIONAL, &
+         POINTER                                         :: rho_g
+      TYPE(pw_c1d_gs_type), DIMENSION(:, :), OPTIONAL, &
+         POINTER                                         :: drho_g
+      TYPE(pw_r3d_rs_type), DIMENSION(:), OPTIONAL, &
+         POINTER                                         :: tau_r
+      TYPE(pw_c1d_gs_type), DIMENSION(:), OPTIONAL, &
+         POINTER                                         :: tau_g
       LOGICAL, INTENT(out), OPTIONAL                     :: rho_r_valid, drho_r_valid, rho_g_valid, &
                                                             drho_g_valid, tau_r_valid, tau_g_valid
       REAL(KIND=dp), DIMENSION(:), OPTIONAL, POINTER     :: tot_rho_r, tot_rho_g
-      TYPE(pw_type), OPTIONAL, POINTER                   :: rho_r_sccs
+      TYPE(pw_r3d_rs_type), OPTIONAL, POINTER            :: rho_r_sccs
       LOGICAL, INTENT(out), OPTIONAL                     :: soft_valid, complex_rho_ao
 
       IF (PRESENT(rho_ao)) rho_ao => get_1d_pointer(rho_struct%rho_ao)
@@ -303,15 +310,22 @@ CONTAINS
          POINTER                                         :: rho_ao, rho_ao_im
       TYPE(dbcsr_p_type), DIMENSION(:, :), OPTIONAL, &
          POINTER                                         :: rho_ao_kp, rho_ao_im_kp
-      TYPE(pw_type), DIMENSION(:), OPTIONAL, POINTER     :: rho_r
-      TYPE(pw_type), DIMENSION(:, :), OPTIONAL, POINTER  :: drho_r
-      TYPE(pw_type), DIMENSION(:), OPTIONAL, POINTER     :: rho_g
-      TYPE(pw_type), DIMENSION(:, :), OPTIONAL, POINTER  :: drho_g
-      TYPE(pw_type), DIMENSION(:), OPTIONAL, POINTER     :: tau_r, tau_g
+      TYPE(pw_r3d_rs_type), DIMENSION(:), OPTIONAL, &
+         POINTER                                         :: rho_r
+      TYPE(pw_r3d_rs_type), DIMENSION(:, :), OPTIONAL, &
+         POINTER                                         :: drho_r
+      TYPE(pw_c1d_gs_type), DIMENSION(:), OPTIONAL, &
+         POINTER                                         :: rho_g
+      TYPE(pw_c1d_gs_type), DIMENSION(:, :), OPTIONAL, &
+         POINTER                                         :: drho_g
+      TYPE(pw_r3d_rs_type), DIMENSION(:), OPTIONAL, &
+         POINTER                                         :: tau_r
+      TYPE(pw_c1d_gs_type), DIMENSION(:), OPTIONAL, &
+         POINTER                                         :: tau_g
       LOGICAL, INTENT(in), OPTIONAL                      :: rho_r_valid, drho_r_valid, rho_g_valid, &
                                                             drho_g_valid, tau_r_valid, tau_g_valid
       REAL(KIND=dp), DIMENSION(:), OPTIONAL, POINTER     :: tot_rho_r, tot_rho_g
-      TYPE(pw_type), OPTIONAL, POINTER                   :: rho_r_sccs
+      TYPE(pw_r3d_rs_type), OPTIONAL, POINTER            :: rho_r_sccs
       LOGICAL, INTENT(in), OPTIONAL                      :: soft_valid, complex_rho_ao
 
       IF (PRESENT(rho_ao)) CALL set_1d_pointer(rho_struct%rho_ao, rho_ao)
@@ -352,14 +366,14 @@ CONTAINS
 
       IF (ASSOCIATED(rho_struct%rho_r)) THEN
          DO i = 1, SIZE(rho_struct%rho_r)
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_struct%rho_r(i))
+            CALL auxbas_pw_pool%give_back_pw(rho_struct%rho_r(i))
          END DO
          DEALLOCATE (rho_struct%rho_r)
          NULLIFY (rho_struct%rho_r)
       END IF
       IF (ASSOCIATED(rho_struct%rho_g)) THEN
          DO i = 1, SIZE(rho_struct%rho_g)
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_struct%rho_g(i))
+            CALL auxbas_pw_pool%give_back_pw(rho_struct%rho_g(i))
          END DO
          DEALLOCATE (rho_struct%rho_g)
          NULLIFY (rho_struct%rho_g)

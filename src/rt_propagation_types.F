@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -24,6 +24,11 @@ MODULE rt_propagation_types
                                               cite_reference
    USE cp_control_types,                ONLY: dft_control_type,&
                                               rtp_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_create,&
+                                              dbcsr_deallocate_matrix,&
+                                              dbcsr_init_p,&
+                                              dbcsr_p_type,&
+                                              dbcsr_type
    USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
                                               dbcsr_deallocate_matrix_set
    USE cp_fm_pool_types,                ONLY: cp_fm_pool_p_type,&
@@ -36,11 +41,6 @@ MODULE rt_propagation_types
                                               cp_fm_release,&
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_to_string
-   USE dbcsr_api,                       ONLY: dbcsr_create,&
-                                              dbcsr_deallocate_matrix,&
-                                              dbcsr_init_p,&
-                                              dbcsr_p_type,&
-                                              dbcsr_type
    USE kinds,                           ONLY: dp
    USE qs_matrix_pools,                 ONLY: mpools_get,&
                                               qs_matrix_pools_type
@@ -85,6 +85,7 @@ MODULE rt_propagation_types
       TYPE(dbcsr_p_type), POINTER, DIMENSION(:)     :: C_mat => NULL()
       TYPE(dbcsr_p_type), POINTER, DIMENSION(:)     :: S_der => NULL()
       TYPE(dbcsr_p_type), POINTER, DIMENSION(:)     :: SinvH => NULL()
+      TYPE(dbcsr_p_type), POINTER, DIMENSION(:)     :: SinvH_imag => NULL()
       TYPE(dbcsr_p_type), POINTER, DIMENSION(:)     :: SinvB => NULL()
       TYPE(rtp_rho_type), POINTER                   :: rho => NULL()
       TYPE(rtp_mos_type), POINTER                   :: mos => NULL()
@@ -125,6 +126,7 @@ MODULE rt_propagation_types
 ! *** Public subroutines ***
 
    PUBLIC :: rt_prop_create, &
+             rtp_create_SinvH_imag, &
              rt_prop_create_mos, &
              get_rtp, &
              rt_prop_release, &
@@ -256,6 +258,26 @@ CONTAINS
    END SUBROUTINE rt_prop_create
 
 ! **************************************************************************************************
+!> \brief Initialize SinvH_imag for rtp
+!> \param rtp ...
+!> \param nspins ...
+! **************************************************************************************************
+   SUBROUTINE rtp_create_SinvH_imag(rtp, nspins)
+      TYPE(rt_prop_type), INTENT(INOUT)                  :: rtp
+      INTEGER                                            :: nspins
+
+      INTEGER                                            :: i
+
+      NULLIFY (rtp%SinvH_imag)
+      CALL dbcsr_allocate_matrix_set(rtp%SinvH_imag, nspins)
+      DO i = 1, nspins
+         CALL dbcsr_init_p(rtp%SinvH_imag(i)%matrix)
+         CALL dbcsr_create(rtp%SinvH_imag(i)%matrix, template=rtp%SinvH(1)%matrix, matrix_type="N")
+      END DO
+
+   END SUBROUTINE rtp_create_SinvH_imag
+
+! **************************************************************************************************
 !> \brief Initialize the mos for rtp
 !> \param rtp ...
 !> \param mos ...
@@ -376,12 +398,13 @@ CONTAINS
 !> \param dt ...
 !> \param nsteps ...
 !> \param SinvH ...
+!> \param SinvH_imag ...
 !> \param SinvB ...
 !> \param admm_mos ...
 ! **************************************************************************************************
    SUBROUTINE get_rtp(rtp, exp_H_old, exp_H_new, H_last_iter, rho_old, rho_next, rho_new, mos, mos_new, mos_old, mos_next, &
                       S_inv, S_half, S_minus_half, B_mat, C_mat, propagator_matrix, mixing, mixing_factor, &
-                      S_der, dt, nsteps, SinvH, SinvB, admm_mos)
+                      S_der, dt, nsteps, SinvH, SinvH_imag, SinvB, admm_mos)
 
       TYPE(rt_prop_type), INTENT(IN)                     :: rtp
       TYPE(dbcsr_p_type), DIMENSION(:), OPTIONAL, &
@@ -399,7 +422,7 @@ CONTAINS
       REAL(dp), INTENT(out), OPTIONAL                    :: dt
       INTEGER, INTENT(out), OPTIONAL                     :: nsteps
       TYPE(dbcsr_p_type), DIMENSION(:), OPTIONAL, &
-         POINTER                                         :: SinvH, SinvB
+         POINTER                                         :: SinvH, SinvH_imag, SinvB
       TYPE(cp_fm_type), DIMENSION(:), OPTIONAL, POINTER  :: admm_mos
 
       IF (PRESENT(exp_H_old)) exp_H_old => rtp%exp_H_old
@@ -422,6 +445,7 @@ CONTAINS
       IF (PRESENT(B_mat)) B_mat => rtp%B_mat
       IF (PRESENT(C_mat)) C_mat => rtp%C_mat
       IF (PRESENT(SinvH)) SinvH => rtp%SinvH
+      IF (PRESENT(SinvH_imag)) SinvH_imag => rtp%SinvH_imag
       IF (PRESENT(SinvB)) SinvB => rtp%SinvB
       IF (PRESENT(S_der)) S_der => rtp%S_der
 
@@ -466,6 +490,8 @@ CONTAINS
          CALL dbcsr_deallocate_matrix_set(rtp%S_der)
       IF (ASSOCIATED(rtp%SinvH)) &
          CALL dbcsr_deallocate_matrix_set(rtp%SinvH)
+      IF (ASSOCIATED(rtp%SinvH_imag)) &
+         CALL dbcsr_deallocate_matrix_set(rtp%SinvH_imag)
       IF (ASSOCIATED(rtp%SinvB)) &
          CALL dbcsr_deallocate_matrix_set(rtp%SinvB)
       IF (ASSOCIATED(rtp%history)) &

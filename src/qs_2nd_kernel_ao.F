@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -16,17 +16,17 @@ MODULE qs_2nd_kernel_ao
    USE admm_types,                      ONLY: admm_type,&
                                               get_admm_env
    USE cp_control_types,                ONLY: dft_control_type
-   USE cp_dbcsr_operations,             ONLY: cp_dbcsr_plus_fm_fm_t,&
-                                              dbcsr_allocate_matrix_set,&
-                                              dbcsr_deallocate_matrix_set
-   USE cp_fm_types,                     ONLY: cp_fm_get_info,&
-                                              cp_fm_type
-   USE dbcsr_api,                       ONLY: dbcsr_add,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_add,&
                                               dbcsr_copy,&
                                               dbcsr_create,&
                                               dbcsr_p_type,&
                                               dbcsr_release,&
                                               dbcsr_set
+   USE cp_dbcsr_operations,             ONLY: cp_dbcsr_plus_fm_fm_t,&
+                                              dbcsr_allocate_matrix_set,&
+                                              dbcsr_deallocate_matrix_set
+   USE cp_fm_types,                     ONLY: cp_fm_get_info,&
+                                              cp_fm_type
    USE hfx_admm_utils,                  ONLY: tddft_hfx_matrix
    USE input_constants,                 ONLY: do_admm_aux_exch_func_none,&
                                               do_admm_basis_projection,&
@@ -39,9 +39,9 @@ MODULE qs_2nd_kernel_ao
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_type
    USE pw_methods,                      ONLY: pw_scale
-   USE pw_pool_types,                   ONLY: pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_integrate_potential,          ONLY: integrate_v_rspace
@@ -156,8 +156,8 @@ CONTAINS
          xc_section => section_vals_get_subs_vals(input, "DFT%XC")
       END IF
 
-      CALL calc_kpp1(p_env%rho1_xc, p_env%rho1, xc_section, .FALSE., &
-                     .FALSE., dft_control%qs_control%lrigpw, .TRUE., linres_control%lr_triplet, &
+      CALL calc_kpp1(p_env%rho1_xc, p_env%rho1, xc_section, &
+                     dft_control%qs_control%lrigpw, linres_control%lr_triplet, &
                      qs_env, p_env, calc_forces=my_calc_forces, calc_virial=my_calc_virial, virial=virial)
 
       ! hfx section
@@ -281,10 +281,10 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: rho_ao_aux
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(linres_control_type), POINTER                 :: linres_control
+      TYPE(pw_c1d_gs_type), DIMENSION(:), POINTER        :: rho1_aux_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho1_aux_g, rho1_aux_r, tau1_aux_r, &
-                                                            v_xc, v_xc_tau
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: rho1_aux_r, tau1_aux_r, v_xc, v_xc_tau
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho_aux
       TYPE(section_vals_type), POINTER                   :: xc_section
@@ -358,7 +358,7 @@ CONTAINS
          DEALLOCATE (work_hmat%matrix)
 
          DO ispin = 1, nspins
-            CALL pw_pool_give_back_pw(auxbas_pw_pool, v_xc(ispin))
+            CALL auxbas_pw_pool%give_back_pw(v_xc(ispin))
          END DO
          DEALLOCATE (v_xc)
 

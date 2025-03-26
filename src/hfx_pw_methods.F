@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -19,6 +19,7 @@ MODULE hfx_pw_methods
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE cell_types,                      ONLY: cell_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_type
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm
    USE cp_fm_types,                     ONLY: cp_fm_get_info,&
                                               cp_fm_type
@@ -26,7 +27,6 @@ MODULE hfx_pw_methods
                                               cp_logger_type
    USE cp_output_handling,              ONLY: cp_print_key_finished_output,&
                                               cp_print_key_unit_nr
-   USE dbcsr_api,                       ONLY: dbcsr_type
    USE input_constants,                 ONLY: do_potential_coulomb,&
                                               do_potential_short,&
                                               do_potential_truncated
@@ -45,16 +45,9 @@ MODULE hfx_pw_methods
                                               pw_zero
    USE pw_poisson_methods,              ONLY: pw_poisson_solve
    USE pw_poisson_types,                ONLY: pw_poisson_type
-   USE pw_pool_types,                   ONLY: pw_pool_create_pw,&
-                                              pw_pool_give_back_pw,&
-                                              pw_pool_type
-   USE pw_types,                        ONLY: COMPLEXDATA1D,&
-                                              REALDATA3D,&
-                                              REALSPACE,&
-                                              RECIPROCALSPACE,&
-                                              pw_create,&
-                                              pw_release,&
-                                              pw_type
+   USE pw_pool_types,                   ONLY: pw_pool_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_wavefunction
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -100,7 +93,7 @@ CONTAINS
       INTEGER                                            :: blocksize, handle, ig, iloc, iorb, &
                                                             iorb_block, ispin, iw, jloc, jorb, &
                                                             jorb_block, norb, potential_type
-      LOGICAL                                            :: do_pw_hfx, explicit
+      LOGICAL                                            :: do_kpoints, do_pw_hfx, explicit
       REAL(KIND=dp)                                      :: exchange_energy, fraction, g2, g3d, gg, &
                                                             omega, pair_energy, rcut, scaling
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
@@ -111,10 +104,11 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mo_array
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pw_c1d_gs_type)                               :: greenfn, pot_g, rho_g
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_grid_type), POINTER                        :: grid
-      TYPE(pw_type)                                      :: greenfn, pot_g, rho_g, rho_r
-      TYPE(pw_type), ALLOCATABLE, DIMENSION(:)           :: rho_i, rho_j
+      TYPE(pw_r3d_rs_type)                               :: rho_r
+      TYPE(pw_r3d_rs_type), ALLOCATABLE, DIMENSION(:)    :: rho_i, rho_j
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(section_vals_type), POINTER                   :: ip_section
 
@@ -128,30 +122,23 @@ CONTAINS
          CALL section_vals_val_get(hfx_section, "PW_HFX_BLOCKSIZE", i_val=blocksize)
 
          CALL get_qs_env(qs_env, mos=mo_array, pw_env=pw_env, dft_control=dft_control, &
-                         cell=cell, particle_set=particle_set, &
+                         cell=cell, particle_set=particle_set, do_kpoints=do_kpoints, &
                          atomic_kind_set=atomic_kind_set, qs_kind_set=qs_kind_set)
+         IF (do_kpoints) CPABORT("PW HFX not implemented with K-points")
 
          ! limit the blocksize by the number of orbitals
          CALL get_mo_set(mo_set=mo_array(1), mo_coeff=mo_coeff)
          CALL cp_fm_get_info(mo_coeff, ncol_global=norb)
          blocksize = MAX(1, MIN(blocksize, norb))
 
-         CALL pw_pool_create_pw(auxbas_pw_pool, rho_r, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
-         CALL pw_pool_create_pw(auxbas_pw_pool, rho_g, &
-                                use_data=COMPLEXDATA1D, &
-                                in_space=RECIPROCALSPACE)
-         CALL pw_pool_create_pw(auxbas_pw_pool, pot_g, &
-                                use_data=COMPLEXDATA1D, &
-                                in_space=RECIPROCALSPACE)
+         CALL auxbas_pw_pool%create_pw(rho_r)
+         CALL auxbas_pw_pool%create_pw(rho_g)
+         CALL auxbas_pw_pool%create_pw(pot_g)
 
          ALLOCATE (rho_i(blocksize))
          ALLOCATE (rho_j(blocksize))
 
-         CALL pw_pool_create_pw(auxbas_pw_pool, greenfn, &
-                                use_data=COMPLEXDATA1D, &
-                                in_space=RECIPROCALSPACE)
+         CALL auxbas_pw_pool%create_pw(greenfn)
          ip_section => section_vals_get_subs_vals(hfx_section, "INTERACTION_POTENTIAL")
          CALL section_vals_get(ip_section, explicit=explicit)
          potential_type = do_potential_coulomb
@@ -167,10 +154,10 @@ CONTAINS
                g2 = grid%gsq(ig)
                gg = SQRT(g2)
                g3d = fourpi/g2
-               greenfn%cc(ig) = g3d*(1.0_dp - COS(rcut*gg))
+               greenfn%array(ig) = g3d*(1.0_dp - COS(rcut*gg))
             END DO
             IF (grid%have_g0) &
-               greenfn%cc(1) = 0.5_dp*fourpi*rcut*rcut
+               greenfn%array(1) = 0.5_dp*fourpi*rcut*rcut
          ELSEIF (potential_type == do_potential_short) THEN
             CALL section_vals_val_get(ip_section, "OMEGA", r_val=omega)
             IF (omega > 0.0_dp) omega = 0.25_dp/(omega*omega)
@@ -179,20 +166,16 @@ CONTAINS
                g2 = grid%gsq(ig)
                gg = -omega*g2
                g3d = fourpi/g2
-               greenfn%cc(ig) = g3d*(1.0_dp - EXP(gg))
+               greenfn%array(ig) = g3d*(1.0_dp - EXP(gg))
             END DO
-            IF (grid%have_g0) greenfn%cc(1) = 0.0_dp
+            IF (grid%have_g0) greenfn%array(1) = 0.0_dp
          ELSE
             CPWARN("PW_SCF: Potential type not supported, calculation uses Coulomb potential.")
          END IF
 
          DO iorb_block = 1, blocksize
-            CALL pw_create(rho_i(iorb_block), rho_r%pw_grid, &
-                           use_data=REALDATA3D, &
-                           in_space=REALSPACE)
-            CALL pw_create(rho_j(iorb_block), rho_r%pw_grid, &
-                           use_data=REALDATA3D, &
-                           in_space=REALSPACE)
+            CALL rho_i(iorb_block)%create(rho_r%pw_grid)
+            CALL rho_j(iorb_block)%create(rho_r%pw_grid)
          END DO
 
          exchange_energy = 0.0_dp
@@ -258,14 +241,14 @@ CONTAINS
          END DO
 
          DO iorb_block = 1, blocksize
-            CALL pw_release(rho_i(iorb_block))
-            CALL pw_release(rho_j(iorb_block))
+            CALL rho_i(iorb_block)%release()
+            CALL rho_j(iorb_block)%release()
          END DO
 
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_r)
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_g)
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, pot_g)
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, greenfn)
+         CALL auxbas_pw_pool%give_back_pw(rho_r)
+         CALL auxbas_pw_pool%give_back_pw(rho_g)
+         CALL auxbas_pw_pool%give_back_pw(pot_g)
+         CALL auxbas_pw_pool%give_back_pw(greenfn)
 
          iw = cp_print_key_unit_nr(logger, hfx_section, "HF_INFO", &
                                    extension=".scfLog")

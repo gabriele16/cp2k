@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -21,8 +21,8 @@ MODULE qs_update_s_mstruct
                                               kg_tnadd_embed,&
                                               kg_tnadd_embed_ri
    USE pw_methods,                      ONLY: pw_transfer
-   USE pw_types,                        ONLY: pw_release,&
-                                              pw_type
+   USE pw_types,                        ONLY: pw_c1d_gs_type,&
+                                              pw_r3d_rs_type
    USE qs_collocate_density,            ONLY: calculate_ppl_grid,&
                                               calculate_rho_core,&
                                               calculate_rho_nlcc
@@ -69,7 +69,8 @@ CONTAINS
       INTEGER                                            :: handle
       LOGICAL                                            :: do_ppl
       TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(pw_type), POINTER                             :: rho_core, rho_nlcc, rho_nlcc_g, vppl
+      TYPE(pw_c1d_gs_type), POINTER                      :: rho_core, rho_nlcc_g
+      TYPE(pw_r3d_rs_type), POINTER                      :: rho_nlcc, vppl
 
       CALL timeset(routineN, handle)
 
@@ -90,7 +91,7 @@ CONTAINS
                                     qs_env%qs_charges%total_rho_core_rspace, qs_env, only_nopaw=.TRUE.)
          ELSE
             IF (ASSOCIATED(rho_core)) THEN
-               CALL pw_release(rho_core)
+               CALL rho_core%release()
                DEALLOCATE (rho_core)
             END IF
          END IF

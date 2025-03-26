@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -11,6 +11,14 @@ MODULE optbas_opt_utils
                                               gto_basis_set_type
    USE cell_types,                      ONLY: cell_type
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_create,&
+                                              dbcsr_distribution_type,&
+                                              dbcsr_get_info,&
+                                              dbcsr_p_type,&
+                                              dbcsr_release,&
+                                              dbcsr_transposed,&
+                                              dbcsr_type,&
+                                              dbcsr_type_no_symmetry
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm,&
                                               cp_dbcsr_sm_fm_multiply
    USE cp_fm_basic_linalg,              ONLY: cp_fm_invert,&
@@ -23,14 +31,6 @@ MODULE optbas_opt_utils
                                               cp_fm_get_info,&
                                               cp_fm_release,&
                                               cp_fm_type
-   USE dbcsr_api,                       ONLY: dbcsr_create,&
-                                              dbcsr_distribution_type,&
-                                              dbcsr_get_info,&
-                                              dbcsr_p_type,&
-                                              dbcsr_release,&
-                                              dbcsr_transposed,&
-                                              dbcsr_type,&
-                                              dbcsr_type_no_symmetry
    USE distribution_1d_types,           ONLY: distribution_1d_type
    USE distribution_2d_types,           ONLY: distribution_2d_type
    USE input_section_types,             ONLY: section_vals_val_get
@@ -108,8 +108,7 @@ CONTAINS
                           row_blk_size=row_blk_sizes, col_blk_size=col_blk_sizes)
       CALL dbcsr_create(matrix=Qt, name="Qt", &
                         dist=dbcsr_dist, matrix_type=dbcsr_type_no_symmetry, &
-                        row_blk_size=col_blk_sizes, col_blk_size=row_blk_sizes, &
-                        nze=0)
+                        row_blk_size=col_blk_sizes, col_blk_size=row_blk_sizes)
       CALL dbcsr_transposed(Qt, Q)
       !
       fval = 0.0_dp

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -85,7 +85,7 @@ CONTAINS
       IF (.NOT. my_coupled_thermostat) THEN
          CALL keyword_create(keyword, __LOCATION__, name="TYPE", &
                              description="Specify the thermostat used for the constant temperature ensembles.", &
-                             usage="thermostat NOSE", &
+                             usage="TYPE NOSE", &
                              default_i_val=do_thermo_nose, &
                              enum_c_vals=s2a("NOSE"), &
                              enum_i_vals=(/do_thermo_nose/), &
@@ -158,7 +158,7 @@ CONTAINS
       IF (.NOT. my_coupled_thermostat) THEN
          CALL keyword_create(keyword, __LOCATION__, name="TYPE", &
                              description="Specify the thermostat used for the constant temperature ensembles.", &
-                             usage="thermostat NOSE", &
+                             usage="TYPE NOSE", &
                              default_i_val=do_thermo_nose, &
                              enum_c_vals=s2a("NOSE"), &
                              enum_i_vals=(/do_thermo_nose/), &
@@ -233,7 +233,7 @@ CONTAINS
       IF (.NOT. my_coupled_thermostat) THEN
          CALL keyword_create(keyword, __LOCATION__, name="TYPE", &
                              description="Specify the thermostat used for the constant temperature ensembles.", &
-                             usage="thermostat NOSE", &
+                             usage="TYPE NOSE", &
                              default_i_val=do_thermo_nose, &
                              enum_c_vals=s2a("NOSE", "CSVR", "GLE", "AD_LANGEVIN"), &
                              enum_i_vals=(/do_thermo_nose, &
@@ -261,7 +261,7 @@ CONTAINS
       ELSE
          CALL keyword_create(keyword, __LOCATION__, name="TYPE", &
                              description="Specify the thermostat used for the constant temperature ensembles.", &
-                             usage="thermostat NOSE", &
+                             usage="TYPE NOSE", &
                              default_i_val=do_thermo_same_as_part, &
                              enum_c_vals=s2a("SAME_AS_PARTICLE", "NOSE", "CSVR"), &
                              enum_i_vals=(/do_thermo_same_as_part, do_thermo_nose, do_thermo_csvr/), &
@@ -328,7 +328,7 @@ CONTAINS
 
       CALL cp_print_key_section_create(print_key, __LOCATION__, "ENERGY", &
                                        description="Controls the output of kinetic energy, and potential energy "// &
-                                       " of the defined thermostat.", print_level=high_print_level, common_iter_levels=1, &
+                                       "of the defined thermostat.", print_level=high_print_level, common_iter_levels=1, &
                                        filename="")
       CALL section_add_subsection(section, print_key)
       CALL section_release(print_key)
@@ -350,7 +350,7 @@ CONTAINS
 
       CALL section_create(section, __LOCATION__, name="DEFINE_REGION", &
                           description="This section provides the possibility to define arbitrary region "// &
-                          " for the "//TRIM(label)//".", &
+                          "for the "//TRIM(label)//".", &
                           n_keywords=1, n_subsections=0, repeats=.TRUE.)
 
       NULLIFY (keyword)
@@ -475,7 +475,7 @@ CONTAINS
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="GLE", &
                           description="paramameters of the gle thermostat. This section can be generated "// &
-                          " from https://gle4md.org/index.html?page=matrix", &
+                          "from <https://gle4md.org/index.html?page=matrix>.", &
                           citations=(/Ceriotti2009, Ceriotti2009b/))
 
       NULLIFY (keyword, subsection)
@@ -495,7 +495,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="A_LIST", &
                           description="A matrix The defaults give optimal sampling for most "// &
-                          "cristalline and liquid compounds. Generated with the parameters set kv_4-4.a"// &
+                          "cristalline and liquid compounds. Generated with the parameters set kv_4-4.a "// &
                           "centered on w_0=40 cm^-1.", usage="A_LIST real real real", &
                           type_of_var=real_t, unit_str="internal_cp2k", &
                           n_var=-1, repeats=.TRUE.)

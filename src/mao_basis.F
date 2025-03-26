@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -17,13 +17,13 @@ MODULE mao_basis
    USE basis_set_types,                 ONLY: gto_basis_set_p_type,&
                                               gto_basis_set_type
    USE cp_control_types,                ONLY: dft_control_type
-   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
-                                              dbcsr_deallocate_matrix_set
-   USE dbcsr_api,                       ONLY: dbcsr_create,&
+   USE cp_dbcsr_api,                    ONLY: dbcsr_create,&
                                               dbcsr_distribution_type,&
                                               dbcsr_p_type,&
-                                              dbcsr_reserve_diag_blocks,&
                                               dbcsr_type_no_symmetry
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_reserve_diag_blocks
+   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
+                                              dbcsr_deallocate_matrix_set
    USE kinds,                           ONLY: dp
    USE mao_methods,                     ONLY: mao_build_q
    USE mao_optimizer,                   ONLY: mao_optimize
@@ -269,7 +269,7 @@ CONTAINS
          ALLOCATE (mao_coef(ispin)%matrix)
          CALL dbcsr_create(matrix=mao_coef(ispin)%matrix, &
                            name="MAO_COEF", dist=dbcsr_dist, matrix_type=dbcsr_type_no_symmetry, &
-                           row_blk_size=row_blk_sizes, col_blk_size=col_blk_sizes, nze=0)
+                           row_blk_size=row_blk_sizes, col_blk_size=col_blk_sizes)
          CALL dbcsr_reserve_diag_blocks(matrix=mao_coef(ispin)%matrix)
       END DO
       DEALLOCATE (row_blk_sizes, col_blk_sizes)

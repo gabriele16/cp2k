@@ -1,0 +1,103 @@
+&GLOBAL
+  PRINT_LEVEL low
+  PROJECT_NAME pwater-in-helium
+  RUN_TYPE PINT
+&END GLOBAL
+
+&MOTION
+  &PINT
+    DT 0.5
+    HARM_INT EXACT
+    NRESPA 1
+    NUM_STEPS 5
+    P 16
+    PROC_PER_REPLICA 1
+    PROPAGATOR RPMD
+    TEMP 7.5
+    TRANSFORMATION NORMAL
+    T_TOL 0.0
+    &HELIUM
+      CELL_SHAPE OCTAHEDRON
+      COORD_INIT_TEMP -1
+      DROPLET_RADIUS 20
+      GET_FORCES LAST
+      INOROT 80
+      IROT 1000
+      NATOMS 20
+      NBEADS 16
+      NUM_ENV 1
+      PERIODIC F
+      POTENTIAL_FILE_NAME lj-test-pot.dat
+      SAMPLING_METHOD WORM
+      SOLUTE_INTERACTION NNP
+      &NNP
+        NNP_INPUT_FILE_NAME ./input.nn
+        SCALE_FILE_NAME ./scaling.data
+        &MODEL
+          WEIGHTS ./weights
+        &END MODEL
+        &SR_CUTOFF
+          ELEMENT H
+          RADIUS 1.25
+        &END SR_CUTOFF
+        &SR_CUTOFF
+          ELEMENT O
+          RADIUS 2.05
+        &END SR_CUTOFF
+        !         &PRINT
+        !           &EXTRAPOLATION
+        !           &END EXTRAPOLATION
+        !         &END PRINT
+      &END NNP
+      &WORM
+        ALLOW_OPEN T
+        CENTROID_DRMAX 0.2
+        CENTROID_WEIGHT 5
+        CRAWL_REPETITION 2
+        CRAWL_WEIGHT 10
+        HEAD_TAIL_WEIGHT 10
+        OPEN_CLOSE_SCALE 100.0
+        OPEN_CLOSE_WEIGHT 20
+        SHOW_STATISTICS T
+        STAGING_L 5
+        STAGING_WEIGHT 10
+        SWAP_WEIGHT 100
+      &END WORM
+    &END HELIUM
+    &PILE
+    &END PILE
+  &END PINT
+&END MOTION
+
+&FORCE_EVAL
+  METHOD FIST
+  &MM
+    &FORCEFIELD
+      PARMTYPE CHM
+      PARM_FILE_NAME ../../Fist/sample_pot/water.pot
+      &CHARGE
+        ATOM OT
+        CHARGE -0.8476
+      &END CHARGE
+      &CHARGE
+        ATOM HT
+        CHARGE 0.4238
+      &END CHARGE
+    &END FORCEFIELD
+    &POISSON
+      &EWALD
+        GMAX 25
+      &END EWALD
+    &END POISSON
+  &END MM
+  &SUBSYS
+    &CELL
+      ABC 8.0 8.0 8.0
+      PERIODIC NONE
+    &END CELL
+    &TOPOLOGY
+      COORD_FILE_FORMAT PDB
+      COORD_FILE_NAME ../../Fist/sample_pdb/water_1.pdb
+    &END TOPOLOGY
+  &END SUBSYS
+&END FORCE_EVAL

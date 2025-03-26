@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -72,7 +72,7 @@ CONTAINS
       IF (current_nmax > -1) THEN
          CALL cp_abort(__LOCATION__, &
                        "An incomplete Gamma function table is already "// &
-                       " allocated. Use the init routine for an update")
+                       "allocated. Use the init routine for an update")
       END IF
 
       IF (nmax < 0) THEN
@@ -545,18 +545,15 @@ CONTAINS
                        "incomplete Gamma function is invalid")
       END IF
 
-!   *** Check, if the current initialization is sufficient ***
-
+!$OMP CRITICAL
+      !   *** Check, if the current initialization is sufficient ***
       IF (nmax > current_nmax) THEN
-
          CALL deallocate_md_ftable()
-
-!     *** Pretabulation of the F_n(t) function ***
-!     *** for the Taylor series expansion      ***
-
+         !     *** Pretabulation of the F_n(t) function ***
+         !     *** for the Taylor series expansion      ***
          CALL create_md_ftable(nmax, 0.0_dp, 12.0_dp, 0.1_dp)
-
       END IF
+!$OMP END CRITICAL
 
    END SUBROUTINE init_md_ftable
 

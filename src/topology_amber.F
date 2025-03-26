@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -207,8 +207,7 @@ CONTAINS
       END IF
 
       IF (my_end) THEN
-         IF (j /= natom) &
-            CPWARN("No VELOCITY or BOX information found in CRD file. ")
+         CPWARN_IF(j /= natom, "No VELOCITY or BOX information found in CRD file.")
       ELSE
          ! Velocities
          CALL reallocate(velocity, 1, 3, 1, natom)
@@ -256,12 +255,11 @@ CONTAINS
          DEALLOCATE (velocity)
       END IF
       IF (my_end) THEN
-         IF (j /= natom) &
-            CPWARN("BOX information missing in CRD file. ")
+         CPWARN_IF(j /= natom, "BOX information missing in CRD file.")
       ELSE
          IF (j /= natom) &
             CALL cp_warn(__LOCATION__, &
-                         "BOX information found in CRD file. They will be ignored."// &
+                         "BOX information found in CRD file. They will be ignored. "// &
                          "Please provide the BOX information directly from the main CP2K input!")
       END IF
       CALL parser_release(parser)

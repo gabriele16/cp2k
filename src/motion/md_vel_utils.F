@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -2297,8 +2297,9 @@ CONTAINS
          norm = 0.0_dp
          DO iatom = 1, natom
             iparticle = atom_index(iatom)
-            IF (particle_set(iparticle)%shell_index /= 0) &
+            IF (particle_set(iparticle)%shell_index /= 0) THEN
                CPWARN("Warning: The primary knock-on atom is a core-shell atom")
+            END IF
             atomic_kind => particle_set(iparticle)%atomic_kind
             CALL get_atomic_kind(atomic_kind=atomic_kind, mass=matom(iatom))
             norm = norm + matom(iatom)*weight(iatom)

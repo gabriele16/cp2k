@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -264,7 +264,7 @@ CONTAINS
          DO i = 1, topology%natoms
             IF (kind_of(i) == 0) THEN
                WRITE (*, *) i, kind_of(i)
-               WRITE (*, *) "Two molecules have been defined as identical molecules but atoms mismatch charges!!"
+               WRITE (*, *) "Two molecules have been defined as identical molecules but atoms mismatch charges!"
             END IF
          END DO
          CPABORT("")

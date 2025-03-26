@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -566,7 +566,7 @@ CONTAINS
       IF (DEBUG .GE. 5) &
          WRITE (tmc_env%w_env%io_unit, *) "worker ", &
          tmc_env%tmc_comp_set%para_env_sub_group%mepos, "of group ", &
-         tmc_env%tmc_comp_set%group_nr, "stops working!!!!!!!!!!!!!!!!!!"
+         tmc_env%tmc_comp_set%group_nr, "stops working!"
 
       IF (PRESENT(ana_list)) THEN
          DO itmp = 1, tmc_env%params%nr_temp

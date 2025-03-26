@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -16,7 +16,7 @@
 MODULE xc_adiabatic_utils
 
    USE cp_control_types,                ONLY: dft_control_type
-   USE dbcsr_api,                       ONLY: dbcsr_p_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_p_type
    USE hfx_communication,               ONLY: scale_and_add_fock_to_ks_matrix
    USE hfx_derivatives,                 ONLY: derivatives_four_center
    USE hfx_types,                       ONLY: hfx_type
@@ -28,7 +28,7 @@ MODULE xc_adiabatic_utils
                                               section_vals_val_get
    USE kinds,                           ONLY: dp
    USE message_passing,                 ONLY: mp_para_env_type
-   USE pw_types,                        ONLY: pw_type
+   USE pw_types,                        ONLY: pw_r3d_rs_type
    USE qs_energy_types,                 ONLY: qs_energy_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -72,7 +72,7 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: ks_matrix
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(qs_energy_type), POINTER                      :: energy
-      TYPE(pw_type), DIMENSION(:), POINTER               :: v_rspace_new, v_tau_rspace
+      TYPE(pw_r3d_rs_type), DIMENSION(:), POINTER        :: v_rspace_new, v_tau_rspace
       REAL(dp), DIMENSION(:)                             :: hf_energy
       LOGICAL, INTENT(in)                                :: just_energy, calculate_forces, use_virial
 
@@ -136,8 +136,8 @@ CONTAINS
          CASE (do_adiabatic_model_pade)
             IF (n_rep_hf /= 2) &
                CALL cp_abort(__LOCATION__, &
-                             " For this kind of adiababatic hybrid functional 2 HF sections have to be provided. "// &
-                             " Please check your input file.")
+                             "For this kind of adiababatic hybrid functional 2 HF sections have to be provided. "// &
+                             "Please check your input file.")
             CALL rescale_MCY3_pade(qs_env, hf_energy, energy, adiabatic_lambda, &
                                    adiabatic_omega, scale_dEx1, scale_ddW0, scale_dDFA, &
                                    scale_dEx2, total_energy_xc)

@@ -1,28 +1,33 @@
 /*----------------------------------------------------------------------------*/
 /*  CP2K: A general program to perform molecular dynamics simulations         */
-/*  Copyright 2000-2023 CP2K developers group <https://cp2k.org>              */
+/*  Copyright 2000-2025 CP2K developers group <https://cp2k.org>              */
 /*                                                                            */
 /*  SPDX-License-Identifier: BSD-3-Clause                                     */
 /*----------------------------------------------------------------------------*/
 
 #include <assert.h>
+#include <limits.h>
+#include <omp.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "../offload/offload_runtime.h"
 #include "dbm_hyperparams.h"
+#include "dbm_internal.h"
 #include "dbm_library.h"
+#include "dbm_mempool.h"
 #include "dbm_multiply.h"
 #include "dbm_multiply_comm.h"
 #include "dbm_multiply_cpu.h"
 #include "dbm_multiply_gpu.h"
-#include "dbm_multiply_internal.h"
 
-/*******************************************************************************
- * \brief Returns the larger of two given integer (missing from the C standard)
- * \author Ole Schuett
- ******************************************************************************/
-static inline int imax(int x, int y) { return (x > y ? x : y); }
+#if defined(__LIBXSMM)
+#include <libxsmm.h>
+#endif
+
+#if !defined(DBM_VALIDATE_AGAINST_LIBXSMM) && 0
+#define DBM_VALIDATE_AGAINST_LIBXSMM
+#endif
 
 /*******************************************************************************
  * \brief Private routine for computing the max filter threshold for each row.
@@ -33,6 +38,7 @@ static float *compute_rows_max_eps(const bool trans, const dbm_matrix_t *matrix,
   const int nrows = (trans) ? matrix->ncols : matrix->nrows;
   int *nblocks_per_row = calloc(nrows, sizeof(int));
   float *row_max_eps = malloc(nrows * sizeof(float));
+  assert(row_max_eps != NULL);
 
 #pragma omp parallel
   {
@@ -72,14 +78,14 @@ typedef struct {
 } backend_context_t;
 
 /*******************************************************************************
- * \brief Private routine for intializing the multiplication backend.
+ * \brief Private routine for initializing the multiplication backend.
  * \author Ole Schuett
  ******************************************************************************/
 static backend_context_t *backend_start(const dbm_matrix_t *matrix_c) {
   backend_context_t *ctx = calloc(1, sizeof(backend_context_t));
 
 #if defined(__OFFLOAD) && !defined(__NO_OFFLOAD_DBM)
-  dbm_multiply_gpu_start(MAX_BATCH_SIZE, dbm_get_num_shards(matrix_c),
+  dbm_multiply_gpu_start(DBM_MAX_BATCH_SIZE, dbm_get_num_shards(matrix_c),
                          matrix_c->shards, &ctx->gpu);
 #else
   (void)matrix_c; // mark as used
@@ -99,7 +105,7 @@ static void backend_upload_packs(const dbm_pack_t *pack_a,
 #if defined(__OFFLOAD) && !defined(__NO_OFFLOAD_DBM)
   dbm_multiply_gpu_upload_packs(pack_a, pack_b, &ctx->gpu);
 #else
-  (void)pack_a;   // mark as used
+  (void)pack_a; // mark as used
   (void)pack_b;
   (void)ctx;
 #endif
@@ -115,13 +121,54 @@ static void backend_process_batch(const int ntasks, dbm_task_t batch[ntasks],
                                   dbm_shard_t *shard_c,
                                   backend_context_t *ctx) {
 #if defined(__OFFLOAD) && !defined(__NO_OFFLOAD_DBM)
-  (void)pack_a; // mark as used
-  (void)pack_b;
-  (void)shard_c;
   dbm_multiply_gpu_process_batch(ntasks, batch, alpha, kshard, &ctx->gpu);
+#if defined(DBM_VALIDATE_AGAINST_LIBXSMM) && defined(__LIBXSMM)
+  dbm_shard_gpu_t *const shard_g = &ctx->gpu.shards_c_dev[kshard];
+  dbm_shard_t shard_r;
+  dbm_shard_allocate_promised_blocks(shard_c);
+  /* start transferring GPU result to host */
+  assert(shard_c->data_size == shard_g->data_size);
+  dbm_shard_init(&shard_r);
+  dbm_shard_copy(&shard_r, shard_c);
+  offloadMemcpyAsyncDtoH(shard_c->data, shard_g->data,
+                         shard_c->data_size * sizeof(double), shard_g->stream);
+  dbm_multiply_cpu_process_batch(ntasks, batch, alpha, pack_a, pack_b,
+                                 &shard_r);
+  /* finish transferring GPU result to host */
+  offloadStreamSynchronize(shard_g->stream);
+  libxsmm_matdiff_info diff;
+  libxsmm_matdiff_clear(&diff);
+  for (int itask = 0; itask < ntasks; ++itask) {
+    const dbm_task_t task = batch[itask];
+    const double *const tst = &shard_c->data[task.offset_c];
+    const double *const ref = &shard_r.data[task.offset_c];
+    libxsmm_matdiff_info d;
+    if (EXIT_SUCCESS == libxsmm_matdiff(&d, LIBXSMM_DATATYPE(double), task.m,
+                                        task.n, ref, tst, NULL /*ldref*/,
+                                        NULL /*ldtst*/)) {
+      libxsmm_matdiff_reduce(&diff, &d);
+    }
+  }
+  const char *const maxeps_env = getenv("DBM_MULTIPLY_MAXEPS");
+  const double maxeps = (NULL == maxeps_env ? 1E-13 : fabs(atof(maxeps_env)));
+  const double epsilon = libxsmm_matdiff_epsilon(&diff);
+  if (maxeps < epsilon) {
+    if (LIBXSMM_NOTNAN(diff.v_tst)) {
+      fprintf(stderr, "INFO ACC/LIBDBM: diff=%g (|%g-%g|=%g)\n", epsilon,
+              diff.v_ref, diff.v_tst, diff.linf_abs);
+    } else {
+      fprintf(stderr, "INFO ACC/LIBDBM: diff=%g\n", epsilon);
+    }
+  }
+  dbm_shard_release(&shard_r);
 #else
-  (void)kshard; // mark as used
-  (void)ctx;
+  (void)pack_a;
+  (void)pack_b;
+  (void)shard_c; // mark as used
+#endif
+#else
+  (void)kshard;
+  (void)ctx; // mark as used
   dbm_multiply_cpu_process_batch(ntasks, batch, alpha, pack_a, pack_b, shard_c);
 #endif
 }
@@ -166,9 +213,9 @@ static void multiply_packs(const bool transa, const bool transb,
 
   const int nshard_rows = matrix_c->dist->rows.nshards;
   const int nshard_cols = matrix_c->dist->cols.nshards;
-  int shard_row_start[nshard_rows], shard_col_start[nshard_cols];
-  memset(shard_row_start, 0, nshard_rows * sizeof(int));
-  memset(shard_col_start, 0, nshard_cols * sizeof(int));
+  int *shard_row_start = calloc(nshard_rows, sizeof(int));
+  int *shard_col_start = calloc(nshard_cols, sizeof(int));
+  assert(NULL != shard_row_start && NULL != shard_col_start);
 
   const int *sum_index_sizes_a =
       (transa) ? matrix_a->row_sizes : matrix_a->col_sizes;
@@ -181,9 +228,12 @@ static void multiply_packs(const bool transa, const bool transb,
 
 #pragma omp parallel reduction(+ : flop_sum)
   {
+    // Thread-private array covering given work in piece-wise fashion.
+    dbm_task_t *batch =
+        dbm_mempool_host_malloc(sizeof(dbm_task_t) * DBM_MAX_BATCH_SIZE);
 
     // Blocks are ordered first by shard. Creating lookup tables of boundaries.
-#pragma omp for
+#pragma omp for nowait
     for (int iblock = 1; iblock < pack_a->nblocks; iblock++) {
       const int shard_row = pack_a->blocks[iblock].free_index % nshard_rows;
       const int prev_shard_row =
@@ -202,12 +252,11 @@ static void multiply_packs(const bool transa, const bool transb,
       }
     }
 
-#pragma omp for collapse(2) schedule(dynamic)
+#pragma omp for collapse(2) DBM_OMP_SCHEDULE
     for (int shard_row = 0; shard_row < nshard_rows; shard_row++) {
       for (int shard_col = 0; shard_col < nshard_cols; shard_col++) {
         const int ishard = shard_row * nshard_cols + shard_col;
         dbm_shard_t *shard_c = &matrix_c->shards[ishard];
-        dbm_task_t batch[MAX_BATCH_SIZE];
         int ntasks = 0;
 
         // Use a merge-join to find pairs of blocks with matching sum indices.
@@ -260,8 +309,11 @@ static void multiply_packs(const bool transa, const bool transb,
             }
 
             // Count flops.
-            assert(m * n * k > 0);
-            flop_sum += 2 * m * n * k;
+            const int64_t task_flops = 2LL * m * n * k;
+            if (task_flops == 0) {
+              continue;
+            }
+            flop_sum += task_flops;
             dbm_library_counter_increment(m, n, k);
 
             // Add block multiplication to batch.
@@ -271,9 +323,9 @@ static void multiply_packs(const bool transa, const bool transb,
             batch[ntasks].offset_a = blk_a->offset;
             batch[ntasks].offset_b = blk_b->offset;
             batch[ntasks].offset_c = blk_c->offset;
-            ntasks++;
+            ++ntasks;
 
-            if (ntasks == MAX_BATCH_SIZE) {
+            if (ntasks == DBM_MAX_BATCH_SIZE) {
               backend_process_batch(ntasks, batch, alpha, pack_a, pack_b,
                                     ishard, shard_c, ctx);
               ntasks = 0;
@@ -284,7 +336,13 @@ static void multiply_packs(const bool transa, const bool transb,
                               shard_c, ctx);
       }
     }
+
+    dbm_mempool_host_free(batch);
   }
+
+  free(shard_row_start);
+  free(shard_col_start);
+
   *flop += flop_sum;
 }
 
@@ -342,10 +400,6 @@ void dbm_multiply(const bool transa, const bool transb, const double alpha,
   dbm_comm_iterator_stop(iter);
   free(rows_max_eps);
   backend_stop(ctx);
-
-  // Compute average flops per rank.
-  dbm_mpi_sum_int64(flop, 1, matrix_c->dist->comm);
-  *flop = (*flop + matrix_c->dist->nranks - 1) / matrix_c->dist->nranks;
 
   // Final filter pass.
   dbm_filter(matrix_c, filter_eps);

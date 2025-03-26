@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -17,6 +17,13 @@ MODULE qs_wannier90
                                               get_cell
    USE cp_blacs_env,                    ONLY: cp_blacs_env_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_api,                    ONLY: dbcsr_create,&
+                                              dbcsr_deallocate_matrix,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set,&
+                                              dbcsr_type,&
+                                              dbcsr_type_antisymmetric,&
+                                              dbcsr_type_symmetric
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply,&
                                               dbcsr_deallocate_matrix_set
@@ -32,13 +39,6 @@ MODULE qs_wannier90
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_logger_get_default_io_unit,&
                                               cp_logger_type
-   USE dbcsr_api,                       ONLY: dbcsr_create,&
-                                              dbcsr_deallocate_matrix,&
-                                              dbcsr_p_type,&
-                                              dbcsr_set,&
-                                              dbcsr_type,&
-                                              dbcsr_type_antisymmetric,&
-                                              dbcsr_type_symmetric
    USE input_section_types,             ONLY: section_vals_get,&
                                               section_vals_get_subs_vals,&
                                               section_vals_type,&
@@ -82,7 +82,7 @@ MODULE qs_wannier90
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'qs_wannier90'
 
    TYPE berry_matrix_type
-      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER      :: sinmat, cosmat
+      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER      :: sinmat => NULL(), cosmat => NULL()
    END TYPE berry_matrix_type
 
    PUBLIC :: wannier90_interface
@@ -340,7 +340,7 @@ CONTAINS
          CALL create_kp_from_gamma(qs_env, qs_env_kp)
       END IF
       IF (iw > 0) THEN
-         WRITE (unit=iw, FMT="(/,T2,A)") "Start K-Point Calculation ... "
+         WRITE (unit=iw, FMT="(/,T2,A)") "Start K-Point Calculation ..."
       END IF
       CALL get_qs_env(qs_env=qs_env_kp, para_env=para_env, blacs_env=blacs_env)
       CALL kpoint_env_initialize(kpoint, para_env, blacs_env)

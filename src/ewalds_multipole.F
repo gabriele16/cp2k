@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -194,7 +194,7 @@ CONTAINS
             CALL debug_ewald_multipoles_fields2(ewald_env, ewald_pw, nonbond_env, &
                                                 cell, particle_set, local_particles, radii, charges, dipoles, &
                                                 quadrupoles, task, iw)
-            CPABORT("Debug Multipole Requested:  POT+EFIELDS+GRAD to give the correct energy!!")
+            CPABORT("Debug Multipole Requested:  POT+EFIELDS+GRAD to give the correct energy!")
          END IF
       END IF
 
@@ -691,7 +691,7 @@ CONTAINS
       CALL ewald_env_get(ewald_env, alpha=alpha, group=group)
       CALL ewald_pw_get(ewald_pw, pw_big_pool=pw_pool, dg=dg)
       CALL dg_get(dg, dg_rho0=dg_rho0)
-      rho0 => dg_rho0%density%cr3d
+      rho0 => dg_rho0%density%array
       pw_grid => pw_pool%pw_grid
       bds => pw_grid%bounds
 

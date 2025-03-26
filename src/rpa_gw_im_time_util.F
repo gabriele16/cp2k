@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!   Copyright 2000-2025 CP2K developers group <https://cp2k.org>                                   !
 !                                                                                                  !
 !   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
 !--------------------------------------------------------------------------------------------------!
@@ -16,6 +16,17 @@ MODULE rpa_gw_im_time_util
    USE basis_set_types,                 ONLY: gto_basis_set_p_type
    USE cell_types,                      ONLY: cell_type,&
                                               pbc
+   USE cp_dbcsr_api,                    ONLY: &
+        dbcsr_create, dbcsr_distribution_get, dbcsr_distribution_new, dbcsr_distribution_release, &
+        dbcsr_distribution_type, dbcsr_filter, dbcsr_get_info, dbcsr_get_stored_coordinates, &
+        dbcsr_init_p, dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, &
+        dbcsr_iterator_readonly_start, dbcsr_iterator_start, dbcsr_iterator_stop, &
+        dbcsr_iterator_type, dbcsr_multiply, dbcsr_p_type, dbcsr_release, dbcsr_release_p, &
+        dbcsr_type, dbcsr_type_no_symmetry
+   USE cp_dbcsr_contrib,                ONLY: dbcsr_add_on_diag,&
+                                              dbcsr_get_diag,&
+                                              dbcsr_reserve_all_blocks,&
+                                              dbcsr_set_diag
    USE cp_dbcsr_operations,             ONLY: copy_fm_to_dbcsr,&
                                               cp_dbcsr_m_by_n_from_row_template
    USE cp_fm_types,                     ONLY: cp_fm_create,&
@@ -23,13 +34,6 @@ MODULE rpa_gw_im_time_util
                                               cp_fm_set_element,&
                                               cp_fm_to_fm,&
                                               cp_fm_type
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_add_on_diag, dbcsr_create, dbcsr_distribution_get, dbcsr_distribution_new, &
-        dbcsr_distribution_release, dbcsr_distribution_type, dbcsr_filter, dbcsr_get_diag, &
-        dbcsr_get_info, dbcsr_get_stored_coordinates, dbcsr_init_p, dbcsr_iterator_blocks_left, &
-        dbcsr_iterator_next_block, dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, &
-        dbcsr_multiply, dbcsr_p_type, dbcsr_release, dbcsr_release_p, dbcsr_reserve_all_blocks, &
-        dbcsr_set_diag, dbcsr_type, dbcsr_type_no_symmetry
    USE dbt_api,                         ONLY: &
         dbt_contract, dbt_copy, dbt_copy_matrix_to_tensor, dbt_create, dbt_default_distvec, &
         dbt_destroy, dbt_get_info, dbt_pgrid_create, dbt_pgrid_destroy, dbt_pgrid_type, dbt_type
@@ -580,11 +584,10 @@ CONTAINS
       num_entries_send = 0
       num_blocks_send = 0
 
-      CALL dbcsr_iterator_start(iter, mat_orig)
+      CALL dbcsr_iterator_readonly_start(iter, mat_orig)
       DO WHILE (dbcsr_iterator_blocks_left(iter))
 
-         CALL dbcsr_iterator_next_block(iter, row, col, data_block, &
-                                        row_size=row_size, col_size=col_size)
+         CALL dbcsr_iterator_next_block(iter, row, col, row_size=row_size, col_size=col_size)
 
          row_reflected = image_atom(row)
 
@@ -648,7 +651,7 @@ CONTAINS
       ALLOCATE (entry_counter(0:para_env%num_pe - 1))
       entry_counter(:) = 0
 
-      CALL dbcsr_iterator_start(iter, mat_orig)
+      CALL dbcsr_iterator_readonly_start(iter, mat_orig)
       DO WHILE (dbcsr_iterator_blocks_left(iter))
 
          CALL dbcsr_iterator_next_block(iter, row, col, data_block, &
@@ -740,12 +743,15 @@ CONTAINS
 !> \param atom_from_basis_index ...
 !> \param basis_size ...
 !> \param basis_type ...
+!> \param first_bf_from_atom ...
 ! **************************************************************************************************
-   SUBROUTINE get_atom_index_from_basis_function_index(qs_env, atom_from_basis_index, basis_size, basis_type)
+   SUBROUTINE get_atom_index_from_basis_function_index(qs_env, atom_from_basis_index, basis_size, &
+                                                       basis_type, first_bf_from_atom)
       TYPE(qs_environment_type), POINTER                 :: qs_env
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: atom_from_basis_index
       INTEGER                                            :: basis_size
       CHARACTER(LEN=*)                                   :: basis_type
+      INTEGER, ALLOCATABLE, DIMENSION(:), OPTIONAL       :: first_bf_from_atom
 
       INTEGER                                            :: iatom, LLL, natom, nkind
       INTEGER, DIMENSION(:), POINTER                     :: row_blk_end, row_blk_start
@@ -770,6 +776,8 @@ CONTAINS
             END IF
          END DO
       END DO
+
+      IF (PRESENT(first_bf_from_atom)) first_bf_from_atom(1:natom) = row_blk_start(:)
 
       DEALLOCATE (basis_set)
       DEALLOCATE (row_blk_start)
