@@ -5,12 +5,12 @@ echo "Starting installation..."
 
 # Force reinstall dependencies and log output
 echo "Installing nequip and torch..."
-pip install --force-reinstall nequip=0.6 torch==1.13
+pip install --force-reinstall nequip==0.6 torch==1.13
 
 # Skip cloning cp2k if it already exists
 if [ ! -d "/content/cp2k" ]; then
   echo "Cloning cp2k repository..."
-  cd /content && git clone --depth 1 https://github.com/cp2k/cp2k.git
+  git clone --recursive -b colab-nequip-2024.2  https://github.com/gabriele16/cp2k.git cp2k
 else
   echo "cp2k directory already exists, skipping clone."
 fi
