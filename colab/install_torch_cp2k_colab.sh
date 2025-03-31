@@ -42,7 +42,7 @@ fi
 
 # Force reinstall allegro
 echo "Reinstalling allegro..."
-pip install --force-reinstall allegro/
+pip install --force-reinstall allegro
 
 # Skip downloading libtorch if it already exists
 if [ ! -d "/content/libtorch" ]; then
@@ -84,7 +84,8 @@ if [[ "$INSTALL_CP2K" == "yes" ]]; then
       --with-cusolvermp=no \
       --with-spla=no \
       --with-ninja=no \
-      --enable-cuda
+      --enable-cuda \
+      --gpu-ver=P100
 
     # Copy architecture files and build CP2K
     cp /content/cp2k/tools/toolchain/install/arch/* /content/cp2k/arch/
