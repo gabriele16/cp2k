@@ -24,15 +24,13 @@ echo "Starting installation..."
 
 # Force reinstall dependencies and log output
 echo "Installing nequip and torch..."
-pip install --force-reinstall nequip==0.6 torch==1.13
 
-# Skip cloning cp2k if it already exists
-if [ ! -d "/content/cp2k" ]; then
-  echo "Cloning cp2k repository..."
-  cd /content && git clone --depth 1 https://github.com/cp2k/cp2k.git
-else
-  echo "cp2k directory already exists, skipping clone."
-fi
+pip install numpy==1.26.4
+pip install wandb
+pip install mkl mkl-include
+pip install --force-reinstall nequip==0.6 torch==1.13
+pip3 install nglview
+jupyter-nbextension enable nglview --py --sys-prefix
 
 # Skip cloning allegro if it already exists
 if [ ! -d "/content/allegro" ]; then
