@@ -95,6 +95,7 @@ if [[ "$INSTALL_CP2K" == "yes" ]]; then
 
     # Prepare prebuilt directory to archive
     echo "Creating prebuilt package..."
+    cd /content
     mkdir -p cp2k_prebuilt_cuda/exe
     cp -r cp2k/exe/local_cuda cp2k_prebuilt_cuda/exe/.
     cp -r cp2k/tools/toolchain cp2k_prebuilt_cuda/.
@@ -114,21 +115,23 @@ if [[ "$INSTALL_CP2K" == "yes" ]]; then
 else
     echo "Downloading precompiled CP2K package..."
     # Install gdown if not already installed
+    cd /content
     pip install gdown
 
     # Download the precompiled CP2K package from Google Drive using its file ID.
     # Replace the file ID below with the correct one for your precompiled package.
+    
     gdown https://drive.google.com/uc?id=1fVG4Fm92XN_vJNGcgkabu7unLM5sqbRm
 
     # Unpack the precompiled package
     tar -xzvf cp2k_prebuilt_cuda.tar.gz
 
     # Copy the executable and architecture files into the CP2K source directory.
-    cp -r cp2k_prebuilt_cuda/exe cp2k/.
-    cp -r cp2k_prebuilt_cuda/arch/* cp2k/arch/.
+    cp -r cp2k_prebuilt_cuda/exe /content/cp2k/.
+    cp -r cp2k_prebuilt_cuda/arch/* /content/cp2k/arch/.
 
     # Rename the existing toolchain directory and replace it with the precompiled one.
-    mv cp2k/tools/toolchain cp2k/tools/toolchain_not_built
-    cp -r cp2k_prebuilt_cuda/toolchain cp2k/tools/.
+    mv /cp2k/tools/toolchain /cp2k/tools/toolchain_not_built
+    cp -r cp2k_prebuilt_cuda/toolchain /content/cp2k/tools/.
 fi
 
