@@ -131,7 +131,7 @@ else
     cp -r cp2k_prebuilt_cuda/arch/* /content/cp2k/arch/.
 
     # Rename the existing toolchain directory and replace it with the precompiled one.
-    mv /cp2k/tools/toolchain /cp2k/tools/toolchain_not_built
+    mv /content/cp2k/tools/toolchain /content/cp2k/tools/toolchain_not_built
     cp -r cp2k_prebuilt_cuda/toolchain /content/cp2k/tools/.
 fi
 
