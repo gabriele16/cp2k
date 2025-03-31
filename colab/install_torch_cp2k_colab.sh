@@ -53,7 +53,7 @@ if [ ! -d "/content/libtorch" ]; then
 else
   echo "libtorch directory already exists, skipping download."
 fi
-
+cd /content/libtorch/lib && ln -s libnvrtc-builtins-7237cb5d.so.11.7 libnvrtc-builtins.so.11.8
 
 if [[ "$INSTALL_CP2K" == "yes" ]]; then
     echo "Compiling CP2K from source..."
