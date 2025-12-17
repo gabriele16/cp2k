@@ -27,8 +27,14 @@ echo "Installing nequip and torch..."
 
 pip install wandb
 pip install mkl mkl-include
-pip install --force-reinstall nequip==0.6 torch==1.13
-pip install --force-reinstall numpy==1.26.4
+# pip install --force-reinstall nequip==0.6 torch==1.13
+# pip install --force-reinstall numpy==1.26.4
+
+# 1. Uninstall the pre-installed packages that conflict with older torch/numpy
+pip uninstall -y torchaudio torchvision pytensor shap
+# 2. Install your required versions (combined for cleaner dependency resolution)
+pip install --force-reinstall nequip==0.6 torch==2.2 numpy==1.26.4
+
 pip install jupyter jupyter_contrib_nbextensions nglview
 #jupyter-nbextension enable nglview --py --sys-prefix
 
